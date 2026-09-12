@@ -9,11 +9,11 @@ import {
   onMessageReceived,
 } from './src/boundary.js';
 import { captureMessage } from './src/capture.js';
+import { interceptGeneration } from './src/frontier.js';
 
-// interceptor-placeholder: real no-op, body filled by frontier brief → docs/modules/bootstrap.md#interceptor-placeholder
-// eslint-disable-next-line no-unused-vars
+// interceptor-body: one delegating call, every decision lives in frontier → docs/modules/frontier.md#interceptor-body
 globalThis[INTERCEPTOR_GLOBAL] = async function (chat, contextSize, abort, type) {
-  return;
+  return interceptGeneration(chat, contextSize, abort, type);
 };
 
 let ready = false;

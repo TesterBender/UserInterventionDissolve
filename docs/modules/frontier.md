@@ -1,0 +1,59 @@
+# frontier
+Owns: INV-4, INV-5, INV-10 (docs/protocol/invariants.md)
+PLAN: §11, §12, §13, §24
+Depends on: host, constants, prompt, state
+
+`src/frontier.js` turns canonical state into the history the model sees. It exports one pure builder (`buildHistory`), one in-place array replacement (`applyToRequestChat`), one generation-type test (`shouldReconstruct`) and the whole body of the `generate_interceptor` global (`interceptGeneration`). It reads canonical state and nothing else: no `chat[]`, no per-message marker, no setting, no clock. It writes nothing at all — no metadata save, no chat save, no mutation of state.
+
+## Total reconstruction {#total-reconstruction}
+
+PLAN §12: the model-visible history is rebuilt in full on *every* request, not patched at the moments the collaborator happens to intervene. Each request throws away the per-request chat array and writes a fresh one from `{frozen, frontier}`, so an intervention leaves no continuation seam behind it: the seams of all past interventions vanish at once because they were never in the array to begin with. Normalisation happens every request; freezing (moving frontier text into a frozen span) happens only when the frontier reaches its transport target and belongs to `freeze` — this module never moves a byte between the two.
+
+The live `chat[]` is never an input and never a target (`docs/protocol/host-mapping.md#architecture`). The collaborator's own messages, brief 0009's `captured` marks and brief 0008's boundary trims all stay in the visible log exactly as they are; none of them is consulted here. That is what makes INV-10 structural rather than incidental: two chats with byte-identical canonical state and completely different live histories produce byte-identical arrays, because the live history is not reachable from this code path.
+
+## Shape of the reconstruction {#shape}
+
+In order: one assistant message per frozen span whose text is a non-empty string, then one assistant message carrying the frontier when it is non-blank, then exactly one user message carrying `CONTINUATION_CONTROL` (`docs/modules/prompt.md#continuation-control`). The frontier is passed through verbatim — not trimmed, not re-joined, not re-wrapped; `state.js` owns block joining (`docs/modules/state.md#mutation-is-storage`). `span.words` and `span.createdAt` are never read; they are bookkeeping for `freeze` and never reach the model.
+
+A produced message has exactly five fields (`docs/api/sillytavern.md#message-shape`): `name`, `is_user`, `is_system`, `mes`, `extra`. `is_system` is set to `false` explicitly because ST's prompt filter is `!x.is_system`. `extra` carries `{ [METADATA_KEY]: { reconstructed: true } }` and nothing else.
+
+Deliberately absent: `send_date`, `gen_started`, `gen_finished`, `swipes`, `swipe_id`, token counts, index and id. Every one of those varies per request or per wall-clock moment, and any of them would make two runs from the same canonical state differ byte-for-byte. Their absence is what lets INV-10 and INV-5 be tested by `JSON.stringify` comparison, and it is what gives the frozen prefix the stability PLAN §23 asks of prefix caching: the same canonical state serialises to the same bytes today and tomorrow.
+
+`assistantName` is `String(name2 ?? '')` and `userName` is `String(name1 ?? '')`, read off a fresh context per request. An empty persona name is legal (`docs/modules/bootstrap.md#capability-gate`) and is never substituted with a placeholder; `name2` is not added to `REQUIRED_KEYS`.
+
+## What the interceptor cannot see {#interceptor-scope}
+
+`generate_interceptor` receives `coreChat` — a fresh array of fresh objects built from the chat history alone (`docs/api/sillytavern.md#generate-interceptor`). The character card, the persona, world info, dialogue examples and system blocks are assembled elsewhere and are structurally out of reach on this path. "Only the chat-history portion is replaced" therefore needs no filtering code here: there is nothing else in the array to protect. Because the array is per-request, clearing and refilling it affects only the request in flight on both the chat- and text-completion paths, never stored history.
+
+`applyToRequestChat` never reassigns its argument — the caller's array object is what ST reads back, so the replacement is `chat.length = 0` followed by a `push` loop. A loop rather than `push(...history)`, because a long frozen list would otherwise be passed as one argument per span and could hit the engine's argument-count limit.
+
+## Interceptor body {#interceptor-body}
+
+`interceptGeneration(chat, contextSize, abort, type, ctx = getCtx())` is the whole body of the global; `index.js` holds one delegating line and no logic (`docs/modules/bootstrap.md#interceptor-placeholder`). Four steps:
+
+1. Return `false` when `shouldReconstruct(type)` is false.
+2. Read canonical state with `getState(ctx)`.
+3. Build the history from that state plus `ctx.name1` / `ctx.name2`.
+4. Return `applyToRequestChat(chat, history)` — `true` when it replaced anything.
+
+`ctx` is a defaulted parameter so tests can inject a host without a global (`docs/decisions/0002-structure-from-intercede.md`), and it is never cached (`docs/api/sillytavern.md#getcontext`). `contextSize` is accepted and ignored: no trimming, no budget arithmetic, no dropping of frozen spans to fit. `abort` is accepted and never called — this module has no failure mode that should cancel a generation; an empty or malformed state simply leaves the request array alone. Nothing is persisted: no `saveMetadata`, no `saveChat`, no mutation of canonical state. `getState` may lazily materialise state on first read (`docs/modules/state.md#lazy-init`); that is `state`'s documented behaviour, and this module adds no persistence of its own.
+
+## Generation types this module skips {#skipped-generation-types}
+
+`shouldReconstruct(type)` is `false` for `'quiet'` and `'impersonate'` and `true` for everything else, including `undefined` and unknown strings (`docs/api/sillytavern.md#generation-types`). A `quiet` generation is out-of-band: its output never becomes a manuscript block, so replacing its history would corrupt an operation the protocol has no stake in. An `impersonate` generation is ST writing the collaborator's own turn, which must see the chat as it stands. Everything else — `'normal'`, `'continue'`, `'regenerate'`, `'swipe'`, a host build that passes nothing, a future type string — is a manuscript request and is reconstructed, because failing open to "reconstruct" keeps INV-3 rather than silently leaking a live history.
+
+This is the same rule and the same reasoning as `src/boundary.js` (`docs/briefs/0008-boundary-module.md`, "Generation-type rule"). The two must not drift: if one module ever starts skipping a third type, the other has to follow in the same task.
+
+## Empty state is not a wipe {#empty-state}
+
+When there are no usable frozen spans *and* the frontier is blank, `buildHistory` returns `[]` and `applyToRequestChat` refuses an empty history, so the request array is left exactly as ST built it. A lone continuation-control turn would be worse than doing nothing: it would erase a real chat's history from the model's view and then ask it to "continue" from nothing.
+
+In practice this case is a genuinely empty chat. `state.js` materialises the frontier from the open chat on first read (`docs/modules/state.md#initialise-from-chat`), so a chat with any non-system content already has a non-blank frontier by the time the interceptor runs. Where the state really is blank, leaving the array alone is indistinguishable from replacing it.
+
+## INV-10 in one test {#inv-10}
+
+INV-10 — many live histories, one model-visible manuscript. The test is a byte comparison: two fake contexts whose `chat[]` differ completely (a long alternating log with several `continue` turns versus a single assistant message) but whose `chatMetadata` state is identical produce `JSON.stringify`-equal arrays. That test is only writable because the output contains nothing time-varying (see [Shape](#shape)); the moment a `send_date` appeared, the invariant would still hold in spirit but could no longer be checked mechanically, and the prefix-caching claim of PLAN §23 would quietly stop being true.
+
+## dryRun parity is elsewhere {#dryrun-parity}
+
+`generate_interceptor` is skipped during dryRun, the token-count preview (`docs/api/sillytavern.md#generate-interceptor`). The prompt manager therefore shows token numbers for the *live* history, not for the reconstruction, until brief 0012 applies the same transformation on the prompt-ready events. This affects the displayed count only: the request that is actually sent always goes through this module, because the real generation is never a dryRun.

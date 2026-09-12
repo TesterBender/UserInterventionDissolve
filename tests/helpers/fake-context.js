@@ -45,6 +45,7 @@ function defaultContext() {
       STREAM_TOKEN_RECEIVED: 'stream_token_received',
     },
     name1: 'User',
+    name2: 'Narrator',
     saveChat: vi.fn(),
     saveMetadata: vi.fn(),
     saveSettingsDebounced: vi.fn(),

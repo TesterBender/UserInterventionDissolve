@@ -17,9 +17,11 @@ Depends on: host, constants
 
 Before `ready` is set to `true`, `init()` requires: the global `SillyTavern` object and its context to exist, every name in `REQUIRED_KEYS` to be present on the context, and `EVENT(ctx)` (the `eventTypes`/`event_types` object) to be defined. "Present" is a presence test (`ctx[name] !== undefined`), not a truthiness test — `name1` is legitimately `''` for a persona-less setup and must not be treated as missing. If any check fails, `init()` logs one `console.error` naming the missing keys and returns without setting `ready`, so a later call to `init()` (e.g. from the APP_READY fallback, or a manual retry) can still succeed once the context is complete. This mirrors Intercede's "capability gate before init" (`docs/decisions/0002-structure-from-intercede.md`), adapted without the optional-keys tier or the probe function, neither of which this brief needs.
 
-## Interceptor placeholder {#interceptor-placeholder}
+## Interceptor {#interceptor-placeholder}
 
-The manifest's `generate_interceptor` key is wired to `globalThis[INTERCEPTOR_GLOBAL]` here so that later briefs only fill the function body — no packaging or host-door change is needed when `frontier` lands. The body in this brief is a real no-op: it must not read, mutate, reorder, or replace `chat`, and must not call `abort`, so that installing the extension with only this brief applied has zero effect on generation. The body that reconstructs model-visible history from canonical state is `docs/protocol/host-mapping.md#s12-frontier`.
+The manifest's `generate_interceptor` key is wired to `globalThis[INTERCEPTOR_GLOBAL]` here, in the entry file, so that the packaging contract (`docs/api/sillytavern.md#manifest`) and the host door stay in one place. The global's whole body is a single delegating call to `interceptGeneration` from `src/frontier.js` (`docs/modules/frontier.md#interceptor-body`): `index.js` holds no reconstruction logic, no generation-type test, no state read and no array mutation, and the global keeps the name and arity ST calls it with.
+
+The interceptor deliberately does not depend on `ready`. The capability gate protects the subscriptions and the state materialisation `init()` performs; the interceptor takes a fresh context of its own on every call and reads only what it needs, so a host that failed the gate still gets the same behaviour it would get from an unregistered global — the request array is left alone when there is nothing canonical to say (`docs/modules/frontier.md#empty-state`).
 
 ## State materialisation {#state-materialisation}
 
