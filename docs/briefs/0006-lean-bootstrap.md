@@ -1,5 +1,5 @@
 # Brief 0006 — lean bootstrap: manifest, host door, constants, fake context
-Status: draft
+Status: implemented
 Complexity: low
 PLAN sections: §23 (host requirements — the host must expose continuation, boundary, capture, reconstruction, frontier and freeze operations; this brief only opens the single door through which every later module reaches them, and asserts the required operations are present before declaring the extension ready)
 Invariants touched: none directly. The bootstrap creates the registration point that INV-2 (`boundary`) and INV-4 (`frontier`) handlers will later attach to; it must not implement either.
@@ -70,19 +70,19 @@ SillyTavern loads the extension: `manifest.json` is accepted, `index.js` runs at
 - (empty — nothing is blocked.) Non-blocking follow-up for the `st-api-verifier`: the *timing* fact "`globalThis.SillyTavern.getContext` is already defined when an extension's `index.js` executes" is not yet an entry in `docs/api/sillytavern.md`; the real-install evidence is `Intercede:../Test Probe Extension/index.js:1-5`. This brief proceeds on that evidence and on the documented APP_READY fallback, and does not require the entry to exist first.
 
 ## Acceptance
-- [ ] `manifest.json` parses and its top-level key set is exactly the twelve keys listed above, with the stated values; `manifest.generate_interceptor === INTERCEPTOR_GLOBAL` from `src/constants.js` (assert in the test).
-- [ ] With a fake context installed, importing `index.js` logs exactly one line equal to `` `${LOG_PREFIX} ready` `` and no error.
-- [ ] `init()` is idempotent: calling it again after a successful load produces no further log line and leaves the flag `true`.
-- [ ] With a fake context missing one `REQUIRED_KEYS` entry, `init()` logs an error naming that key, logs no `ready` line, and leaves the module not-ready; a subsequent `init()` with the key restored succeeds.
-- [ ] With a context whose `name1` is `''`, `init()` succeeds (presence test, not truthiness).
-- [ ] With a context exposing only the legacy `event_types` alias, `init()` succeeds; with neither alias, it fails loudly and does not become ready.
-- [ ] After import, `typeof globalThis[INTERCEPTOR_GLOBAL] === 'function'`; calling it with a populated chat array and a spy `abort` leaves the array deep-equal to its prior value (same length, same objects, same field values) and leaves `abort` uncalled, and it resolves to `undefined`.
-- [ ] `getCtx()` returns a distinct object each call when the fake's `getContext` builds fresh objects, proving no caching.
-- [ ] Fake-context shape test: every name in `REQUIRED_KEYS` is present on the fake context, and its `eventTypes` has exactly the eleven listed constants — so the harness cannot drift from `#context-keys`.
-- [ ] Leak test: a test reads `index.js` and every file in `src/` from disk and asserts the identifier `SillyTavern` occurs **zero** times outside `src/host.js` (and, in `src/host.js`, only inside `getCtx`). The test enumerates `src/` dynamically so a future module cannot slip past it.
-- [ ] `style.css` contains only the one prefixed root class; no unprefixed selector exists.
-- [ ] `npm run check` passes.
-- [ ] every new pointer comment resolves (`node tools/check-comments.mjs`).
+- [x] `manifest.json` parses and its top-level key set is exactly the twelve keys listed above, with the stated values; `manifest.generate_interceptor === INTERCEPTOR_GLOBAL` from `src/constants.js` (assert in the test).
+- [x] With a fake context installed, importing `index.js` logs exactly one line equal to `` `${LOG_PREFIX} ready` `` and no error.
+- [x] `init()` is idempotent: calling it again after a successful load produces no further log line and leaves the flag `true`.
+- [x] With a fake context missing one `REQUIRED_KEYS` entry, `init()` logs an error naming that key, logs no `ready` line, and leaves the module not-ready; a subsequent `init()` with the key restored succeeds.
+- [x] With a context whose `name1` is `''`, `init()` succeeds (presence test, not truthiness).
+- [x] With a context exposing only the legacy `event_types` alias, `init()` succeeds; with neither alias, it fails loudly and does not become ready.
+- [x] After import, `typeof globalThis[INTERCEPTOR_GLOBAL] === 'function'`; calling it with a populated chat array and a spy `abort` leaves the array deep-equal to its prior value (same length, same objects, same field values) and leaves `abort` uncalled, and it resolves to `undefined`.
+- [x] `getCtx()` returns a distinct object each call when the fake's `getContext` builds fresh objects, proving no caching.
+- [x] Fake-context shape test: every name in `REQUIRED_KEYS` is present on the fake context, and its `eventTypes` has exactly the eleven listed constants — so the harness cannot drift from `#context-keys`.
+- [x] Leak test: a test reads `index.js` and every file in `src/` from disk and asserts the identifier `SillyTavern` occurs **zero** times outside `src/host.js` (and, in `src/host.js`, only inside `getCtx`). The test enumerates `src/` dynamically so a future module cannot slip past it.
+- [x] `style.css` contains only the one prefixed root class; no unprefixed selector exists.
+- [x] `npm run check` passes.
+- [x] every new pointer comment resolves (`node tools/check-comments.mjs`).
 
 ## Docs to write/update
 - `docs/modules/bootstrap.md` — header per `docs/modules/README.md` (`Owns: —`, `PLAN: §23`, `Depends on: host, constants`), then one heading per pointer comment written in `index.js`, at least:
