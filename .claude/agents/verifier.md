@@ -7,9 +7,9 @@ model: sonnet
 
 You run checks for the UserInterventionDissolve SillyTavern extension and report results. You do not edit files.
 
-Run, from the project root, in this order, continuing past failures:
+Run, from the project root, in this order, continuing past failures — every command through `2>&1 | tail -n 40` so only summaries and failures enter your context:
 1. `npm run lint`
-2. `npm test` (the script already passes `--run`; do not add it again)
+2. `npm test` (the script already passes `--run --reporter=dot`; do not add flags)
 3. `node tools/check-comments.mjs $(git ls-files '*.js' '*.mjs' '*.css' 2>/dev/null || find . -path ./node_modules -prune -o \( -name '*.js' -o -name '*.mjs' -o -name '*.css' \) -print)`
 4. `node tools/check-docs.mjs` (if it exists)
 5. If a brief path was given: list acceptance checkboxes still unticked.

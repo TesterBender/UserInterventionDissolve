@@ -6,7 +6,7 @@
   "type": "module",
   "scripts": {
     "lint": "eslint .",
-    "test": "vitest --run",
+    "test": "vitest --run --reporter=dot",
     "test:watch": "vitest",
     "build:preset": "node tools/build-preset.mjs",
     "check:comments": "node tools/check-comments.mjs index.js src tools tests style.css",

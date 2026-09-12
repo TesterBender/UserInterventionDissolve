@@ -11,7 +11,7 @@ Request: $ARGUMENTS
 
 2. **Brief.**
    - trivial: write a 3-line inline brief (goal, one allowed file, one acceptance line) and skip to step 4.
-   - pinned-string (user asked to change a model-facing constant): append a dated `## Amendment N` to the brief that owns the constant — the user's request quoted, the new text verbatim in a fenced block, allowed files (constant's file, its test, its module doc) — commit it, launch `implementer` with `model: "sonnet"`, NO worktree, pointing at that amendment, then `verifier`, then commit. Skip steps 3 and 5. See `docs/workflow/workflow.md#pinned-string-lane`.
+   - pinned-string (user asked to change a model-facing constant): append a dated `## Amendment N` to the brief that owns the constant — the user's request quoted, the new text verbatim in a fenced block, allowed files (constant's file, its test, its module doc) — commit it, launch `implementer` with `model: "sonnet"`, NO worktree, pointing at that amendment; then run `npm run check 2>&1 | tail -n 8` and `git status --short` yourself (no verifier agent), then commit. Skip steps 3, 5 and 6. See `docs/workflow/workflow.md#pinned-string-lane`.
    - normal/large: launch `brief-writer` with the request. Receive the brief path(s) and the Verification-needed list.
 
 3. **Verify APIs.** If Verification-needed is non-empty, launch `st-api-verifier` with that list. If any item comes back `absent` or `verified-negative`, relaunch `brief-writer` with the verifier's result so the brief is rewritten around what actually exists. Do not proceed with an unverified API.

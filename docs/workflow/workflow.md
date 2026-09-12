@@ -43,8 +43,10 @@ Model-facing constants (`MANUSCRIPT_SYSTEM_PROMPT`, `CONTINUATION_CONTROL`, `REW
 
 1. The orchestrator appends a dated `## Amendment N` section to the brief that owns the constant: the user's request (quoted), the new text verbatim in a fenced block, and the files allowed (the constant's file, its test file, its module doc).
 2. A Sonnet `implementer` runs **in place** (no worktree) with the amendment as its brief. It changes the constant, the verbatim assertion, any forbidden-word cases the amendment names, and the doc heading that quotes the string. Nothing else.
-3. `verifier` runs. No `scope-auditor`: the diff is a constant plus the tests and doc that quote it, and the verifier's pointer and test checks cover it.
+3. No `verifier` agent and no `scope-auditor`. The orchestrator runs `npm run check 2>&1 | tail -n 8` itself and checks `git status --short` against the amendment's file list. A constant plus the tests and doc that quote it needs no second reader.
 4. The orchestrator commits on main.
+
+Token discipline for every lane: `npm test` uses vitest's dot reporter, and agents pipe `npm run check` through `tail` so the full log never enters an agent's context.
 
 Anything beyond that set of files, or any change to the sanitiser/tests that read the string, is a normal brief.
 
