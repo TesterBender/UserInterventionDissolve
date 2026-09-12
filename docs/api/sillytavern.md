@@ -178,6 +178,12 @@ checked: 1.18.0 @ 8172dcd on 2026-09-12
 evidence: `public/script.js:4249, 4341, 4380-4386, 5376` — `'normal' | 'continue' | 'regenerate' | 'swipe' | 'quiet' | 'impersonate'`; `saveReply` also handles `'append'`, `'appendFinal'` (`:6587`).
 notes: `noAttachTypes` list at `:4381-4387`.
 
+### Prompt scope for swipe, regenerate, continue {#swipe-scope}
+status: verified
+checked: 1.18.0 @ 8172dcd on 2026-09-13
+evidence: `public/script.js:4437-4439` — `let coreChat = chat.filter(...); if (type === 'swipe') { coreChat.pop(); }`; `:4333-4339` — regenerate (not swipe/quiet/impersonate/dryRun/depth, and last message not user) does `chat.length = chat.length - 1; await removeLastMessage();` before `coreChat` is built; `:4713-4718` — continue's last coreChat entry becomes `continue_mag`/prefix.
+notes: **swipe**: last message stays in `chat[]` (UI shows "..." but `chat[mesId].mes` is untouched — `overswipe REGENERATE` branch `:10346-10350` only calls `clearMessageData`, which strips `extra`/gen-timers, not `mes`); `coreChat.pop()` removes it regardless of content, so it is never sent to `runGenerationInterceptors`/prompt build. **regenerate**: the message is deleted from `chat[]` itself beforehand, so `coreChat` naturally excludes it (no separate pop needed, and `type==='regenerate'` is not in the pop condition at `:4438`). **continue**: last message stays in both `chat[]` and `coreChat`; loop at `:4711-4718` sets `continue_mag = coreChat[j].mes` and marks it a prefix (`isPrefix`, `:4474-4475`, `depth = coreChat.length - i - 2`). Result landing: `saveReply` (`:6583-6612`) uses `chat_id = chat.length - 1` for both `'swipe'` (same index, `:6624-6633`) and `'continue'`/`'append'` (same index, appends to `lastMessage.mes`, `:6638-6659`); each emits `eventSource.emit(event_types.MESSAGE_RECEIVED, chat_id, type)` with the literal `type` string unchanged. `runGenerationInterceptors(coreChat, this_max_context, type)` (`:4505`) receives `type` unmodified from `Generate(type, …)` — confirmed values `'swipe' | 'regenerate' | 'continue'` (also `'normal' | 'quiet' | 'impersonate'`, `:4249,4341,4380-4386`).
+
 ### Chat-completion body assembly and dryRun {#body-assembly}
 status: verified
 checked: 1.18.0 @ 8172dcd on 2026-09-12
