@@ -1,5 +1,5 @@
 # Brief 0020a — the mutable frontier becomes derived from the visible chat
-Status: implemented
+Status: done
 Complexity: high
 PLAN sections: §9 (collaborator input is captured and *transformed* into a manuscript block before it reaches the model; the transform is what INV-3 needs, not the moment it happens), §10 (editing authority is manuscript-wide **within the mutable frontier** — the collaborator may change Mara blocks, model tags, buffers, ordering and wording of anything not yet frozen), §12 (normalization happens **every request**; the next request reconstructs the still-mutable manuscript from scratch so earlier live seams disappear), §16 (freezing is append-only and old frozen spans are not re-cut — unchanged by this brief and the reason frozen spans stay compiled-once)
 Invariants touched: INV-3 (the transform moves from capture-time to derive-time and must still apply to every user message), INV-4 (reconstruction every request — this brief makes it literal), INV-6 (frozen spans stay append-only and immutable), INV-10 (derivation must be a pure function of `(chat, state)` so many live histories collapse to one manuscript)
