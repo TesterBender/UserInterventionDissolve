@@ -15,7 +15,7 @@ Request: $ARGUMENTS
 
 3. **Verify APIs.** If Verification-needed is non-empty, launch `st-api-verifier` with that list. If any item comes back `absent` or `verified-negative`, relaunch `brief-writer` with the verifier's result so the brief is rewritten around what actually exists. Do not proceed with an unverified API.
 
-4. **Implement.** Launch `implementer` with only the brief path. Pick the model from the brief's Complexity line per `docs/workflow/workflow.md#model-tiering`: `high` → leave the agent default (Opus); `low` or trivial → pass `model: "sonnet"`. For large tasks, launch one implementer per brief in the same message; if the repo is git-initialised, use `isolation: "worktree"` for each.
+4. **Implement.** First `git add` and commit the brief on main (a worktree branches from HEAD; an uncommitted brief causes an add/add conflict at merge). Then launch `implementer` with only the brief path. Pick the model from the brief's Complexity line per `docs/workflow/workflow.md#model-tiering`: `high` → leave the agent default (Opus); `low` or trivial → pass `model: "sonnet"`. For large tasks, launch one implementer per brief in the same message; if the repo is git-initialised, use `isolation: "worktree"` for each.
    - `BLOCKED` → back to step 3.
    - `SCOPE_GAP` → tell the user; do not expand the brief yourself unless the gap is a one-line clarification that the PLAN section already settles.
 
