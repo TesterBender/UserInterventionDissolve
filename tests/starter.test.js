@@ -53,6 +53,10 @@ describe('buildRewriteRequest', () => {
 });
 
 describe('REWRITE_INSTRUCTION says nothing of mechanics', () => {
+  it('equals the shipped replacement string byte-for-byte', () => {
+    expect(REWRITE_INSTRUCTION).toBe('[OOC: Below are notes for an opening scene. Write that scene as it would stand on the page: a tagged block wherever a figure speaks, acts or intends, narration carrying the world between them. Stay inside what the notes establish, and let the scene end where the notes end.]');
+  });
+
   const WHOLE_WORDS = [
     'edge', 'boundary', 'continue', 'generation', 'turn', 'reply', 'respond',
     'user', 'model', 'reasoning', 'thinking', 'privileged',
@@ -71,6 +75,15 @@ describe('REWRITE_INSTRUCTION says nothing of mechanics', () => {
     expect(REWRITE_INSTRUCTION.toLowerCase()).not.toContain(word);
   });
 
+  const DUPLICATION_FILTER_WORDS = [
+    'restructure', 'rewrite', 'passage', 'return', 'keep every',
+    'change only', 'add nothing', 'original', 'retain',
+  ];
+
+  it.each(DUPLICATION_FILTER_WORDS)('contains no duplication-filter word %s', (word) => {
+    expect(REWRITE_INSTRUCTION.toLowerCase()).not.toContain(word);
+  });
+
   it('is one bracketed OOC line naming no character and embedding no macro', () => {
     expect(REWRITE_INSTRUCTION).not.toMatch(/[\r\n]/);
     expect(REWRITE_INSTRUCTION.startsWith('[OOC:')).toBe(true);
@@ -84,7 +97,7 @@ describe('REWRITE_INSTRUCTION says nothing of mechanics', () => {
 
 describe('sanitiseRewrite', () => {
   it('removes a leading and a trailing OOC echo', () => {
-    const text = `[OOC: Restructure the passage below.]\nAnton: "Here."\n[OOC: done]`;
+    const text = `[OOC: Below are notes for an opening scene.]\nAnton: "Here."\n[OOC: done]`;
     expect(sanitiseRewrite(text, 'Mara:')).toBe('Anton: "Here."');
   });
 

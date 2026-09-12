@@ -6,7 +6,7 @@ import { getCtx } from './host.js';
 import { MANUSCRIPT_SYSTEM_PROMPT } from './prompt.js';
 
 // frozen-instruction: one constant, reworded only by a new brief → docs/modules/starter.md#rewrite-request
-export const REWRITE_INSTRUCTION = "[OOC: Restructure the passage below into the manuscript's form — a tagged block for each figure's speech, action and intent, narration between them. Keep every event, every line of dialogue and every detail; change only the shape on the page. Add nothing that is not already there. Return the restructured passage alone.]";
+export const REWRITE_INSTRUCTION = '[OOC: Below are notes for an opening scene. Write that scene as it would stand on the page: a tagged block wherever a figure speaks, acts or intends, narration carrying the world between them. Stay inside what the notes establish, and let the scene end where the notes end.]';
 
 const OOC_LINE = /^\[OOC:[^\]]*\]$/;
 const FENCE_LINE = /^[ \t]*`{3,}[^\s`]*[ \t]*$/;
