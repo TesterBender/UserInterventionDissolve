@@ -123,7 +123,7 @@ function updateStarterControls() {
   document.getElementById(COPY_ID).disabled = document.getElementById(STARTER_OUTPUT_ID).value === '';
 }
 
-// starter-handlers: thin wrappers over the reformatter, nothing stored → docs/modules/starter.md#rewrite-request
+// starter-handlers: thin wrappers over the reformatter, nothing stored → docs/modules/ui-settings.md#starter-group
 async function runRestructure(ctx) {
   const output = document.getElementById(STARTER_OUTPUT_ID);
   rewriting = true;
