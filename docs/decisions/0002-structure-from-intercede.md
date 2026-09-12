@@ -41,3 +41,8 @@ Four surfaces, roughly 450 lines: a frontier editor panel (one textarea over the
 ## Consequences
 - The next brief is the bootstrap + host wrapper (`index.js`, `manifest.json`, `src/stcontext.js`, `tests/helpers/fake-context.js`), adapted per above; `boundary` then builds on it.
 - The UI brief starts from the four-surface minimum and must justify each addition against PLAN §9, §10, §19.
+
+## User ruling (2026-09-12)
+- **UI:** take only the aesthetic (look of `style.css`: drawer, modal, button treatment). No Intercede UI code or surfaces are inherited; the four-surface minimum above stands as the starting point.
+- **Adopt list:** not a mandate. Each item is used only in its most straightforward form and only if the boundary/bootstrap brief needs it; a simpler direct implementation wins where it suffices.
+- **Adapt list:** "maybe" — treated as notes on what not to copy blindly, not as work items.
