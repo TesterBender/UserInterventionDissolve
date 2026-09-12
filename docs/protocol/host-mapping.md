@@ -49,7 +49,7 @@ Either way, INV-3 holds because the model-visible history is rebuilt from canoni
 ## §13 — Continuation control {#s13-continuation}
 
 - The continuation string is a host constant per PLAN §13 (neutral, non-evaluative). Frozen history uses one byte-identical string; the live edge may use a variant only if a brief justifies it.
-- Triggering a continuation without adding a user message: the empty-composer send behaviour is **unverified** (`#empty-send`). Until verified, the extension registers a slash command via `SlashCommandParser` that calls `generate('normal')`; the reconstruction supplies the user turn, so no composer text is needed. Verify before writing the `continuation` brief.
+- Triggering a continuation without adding a user message: **verified** (`docs/api/sillytavern.md#empty-send`, `#slash-trigger`). Pressing Send on an empty composer runs `Generate('normal')` and pushes no user message; `/trigger` does the same; programmatically the call is `ctx.generate('normal')`. The reconstruction supplies the single continuation user turn, so the collaborator's workflow is: type a block and send when it is their character's turn, or send empty to let the manuscript continue. Caveat: a chat-completion preset with a non-empty `send_if_empty` injects a synthetic user message and breaks the neutral seam; the reference preset leaves it at its default, and `frontier` drops any such message during reconstruction anyway.
 
 ## §14 — Outcomes and recovery {#s14-recovery}
 

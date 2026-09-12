@@ -191,8 +191,16 @@ notes: Install locations (`src/endpoints/extensions.js:489-511`): per-user `<use
 ## Unverified — do not use until checked {#unverified}
 
 ### Sending with an empty textarea {#empty-send}
-status: unverified
-notes: Whether pressing send with an empty composer runs `Generate('normal')` without pushing a user message (candidate trigger for the neutral continuation seam, §13). Verify at `public/script.js` around `:4341-4394` before relying on it; alternative is a registered slash command that calls `generate('normal')` or `generateRaw`.
+status: verified
+checked: 1.18.0 @ 8172dcd on 2026-09-12
+evidence: `public/script.js:4361-4366` — `let textareaText; if (type !== 'regenerate' ... ) { textareaText = String($('#send_textarea').val()); $('#send_textarea').val('')...}`; `public/script.js:4392-4400` — `if ((textareaText != '' || (hasPendingFileAttachment() && ...)) && ...) { ... sendMessageAsUser(...) } else if (textareaText == '' && ... main_api == 'openai' && oai_settings.send_if_empty.trim().length > 0 ...) { sendMessageAsUser(oai_settings.send_if_empty...) }`.
+notes: `sendTextareaMessage()` (`script.js:1705`) sets `generateType='normal'` and calls `Generate('normal')` unless `power_user.continue_on_send` (default `false`, `power-user.js:207`) is true AND textarea is empty AND last message is not user/system — only then does type become `'continue'`. With defaults, Send/Enter on an empty box → `Generate('normal')`, and inside `Generate()` the empty-string branch skips `sendMessageAsUser` entirely (no push, no bias, `type` stays `'normal'`, not coerced to `'continue'`, `force_name2` unaffected) — model continues straight from existing history. Exception: chat-completion (`main_api=='openai'`) with `oai_settings.send_if_empty` (default `''`, `openai.js:418`) set to a non-empty string injects that string as a synthetic user message instead — this is the only backend-specific quirk.
+
+### Trigger generation via slash command {#slash-trigger}
+status: verified
+checked: 1.18.0 @ 8172dcd on 2026-09-12
+evidence: `public/scripts/slash-commands.js:4986-5010` — `triggerGenerationCallback`: clears `#send_textarea`, then `outerResolve(new Promise(innerResolve => setTimeout(() => innerResolve(Generate('normal', { force_chid: chid })), 100)))`.
+notes: `/trigger [group-member] [await=true]` is the slash-command equivalent of an empty Send: it clears the composer then calls `Generate('normal', {force_chid})` directly, so `Generate()` sees empty `textareaText` and skips `sendMessageAsUser` — no new user message, same as §empty-send. Contrast: `/continue` (`slash-commands.js:1489`, `Generate('continue', ...)`) appends to/extends the last message instead of starting a new turn; `/send` only pushes a user message without generating; `/gen` runs an out-of-band quiet-prompt generation not written to chat as a normal turn. Recommended programmatic call for "continue with no new user message": `Generate('normal')` (or via context: `ctx.generate('normal')`, since `st-context.js:142` aliases `generate` to `Generate`) — equivalent to what `/trigger` does; do not use `executeSlashCommandsWithOptions('/trigger')` unless group-member targeting or slash-command queuing semantics are specifically needed.
 
 ### Group chats {#group-chats}
 status: unverified
