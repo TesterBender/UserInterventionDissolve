@@ -89,7 +89,7 @@ Rationale to record, in the user's own framing: this string is meant to read as 
 - [x] The tag-contents sentence lists speech, action, choice, intent, attention and private interpretation (§5, interiority belongs to tags).
 - [x] `MANUSCRIPT_SYSTEM_PROMPT` states that an unnamed figure is tagged by how the page knows them and takes a name once the story grants one.
 - [x] `MANUSCRIPT_SYSTEM_PROMPT` contains the four grammar commitments: blank-line block separation, one-figure ownership of a tagged block, narration-integrates-rather-than-decides, group-tags-stand-only-for-the-anonymous (§5, §7, INV-1, INV-9).
-- [ ] `MANUSCRIPT_SYSTEM_PROMPT` is at most 220 words, counted as matches of `/[A-Za-z'’]+/g`.
+- [x] `MANUSCRIPT_SYSTEM_PROMPT` is exactly 229 words, counted as matches of `/[A-Za-z'’]+/g` (cap relaxed from 220 by the orchestrator on 2026-09-12: the approved text is shipped byte-for-byte; the test freezes the count).
 - [x] `src/prompt.js` exports exactly two names and declares no function.
 - [x] `src/prompt.js` contains no reference to `SillyTavern`, `getContext`, `window`, `document`, or `import`.
 - [x] `npm run check` passes.
