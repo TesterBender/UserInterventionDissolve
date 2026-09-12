@@ -1,5 +1,5 @@
 # Brief 0012 — `frontier`: dryRun parity for the token-count preview
-Status: blocked (see Verification needed)
+Status: deferred (awaiting user decision, see Verification result below)
 Complexity: high
 PLAN sections: §12 (normalisation happens on every request; the model-visible manuscript is the reconstruction, so any preview of "what will be sent" that shows the raw live history is showing something that will never exist), §13 (the single continuation-control turn is part of that reconstruction and therefore part of its token cost)
 Invariants touched: INV-4, INV-5 (neither is *established* here — brief 0010 establishes both for the request that is actually sent; this brief only makes SillyTavern's dry-run token preview agree with it)
@@ -61,3 +61,8 @@ This brief must not be implemented until every item under **Verification needed*
   - rewrite `## dryRun parity is elsewhere {#dryrun-parity}` into the implemented behaviour: why the second application exists (the interceptor is skipped in dryRun), that it mutates in place because replacement is not honoured, and that it is idempotent by content.
   - `## Prompt-manager mapping {#prompt-manager-mapping}` — the verified element shape, the field-by-field mapping from an ST message, and the verified rule for locating the chat-history slice; state plainly that everything outside that slice (card, persona, world info, examples, system blocks) is left alone.
   - `## Text completion has no dryRun parity {#text-dryrun-gap}` — the accepted gap and its bound: the sent request is correct via the interceptor; only the preview can be wrong. Record the outcome of Verification item 4 here.
+
+## Verification result (2026-09-12)
+- docs/api/sillytavern.md#prompt-ready-history-slice is **verified-negative**: the CHAT_COMPLETION_PROMPT_READY array is flat `{role, content}` objects with no identifier and no `extra` (#prompt-ready-entry-shape, #prompt-ready-extra-survival); the chat-history slice cannot be located reliably. Only fragile content-matching against live `chat[]` text would work.
+- #before-combine-history-field is **verified**: on the text-completion path `data.finalMesSend[i].message` is honored by `combine()`, so text-completion preview parity IS achievable (contrary to this brief's original assumption).
+- Orchestrator decision: deferred. The sent request is already correct via the interceptor (brief 0010); parity only affects the token-count preview. Options for the user: (a) accept a stale preview on chat completion and implement only the text-completion `finalMesSend` splice; (b) implement content-matching on chat completion and accept fragility; (c) drop parity entirely.

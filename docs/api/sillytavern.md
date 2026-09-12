@@ -44,6 +44,24 @@ checked: 1.18.0 @ 8172dcd on 2026-09-12
 evidence: `public/scripts/openai.js:1607-1612` — `const chat = chatCompletion.getChat(); const eventData = { chat, dryRun }; await eventSource.emit(event_types.CHAT_COMPLETION_PROMPT_READY, eventData); … return [chat, …]`
 notes: Payload `{ chat, dryRun }`. `chat` is a fresh array of fresh message objects (`openai.js:4025-4037`). **In-place mutation (splice/push/edit) is honored; replacing `eventData.chat` is NOT** — the local `chat` is returned and becomes `generate_data.prompt` (`script.js:5244`) → `sendOpenAIRequest` (`script.js:6059, 6095`) → `generate_data.messages` (`openai.js:2744`). Second emit site in `generateRaw` (`script.js:3976-3980`) does honor replacement. Chat-completion API only.
 
+### CHAT_COMPLETION_PROMPT_READY element shape {#prompt-ready-entry-shape}
+status: verified
+checked: 1.18.0 @ 8172dcd on 2026-09-12
+evidence: `public/scripts/openai.js:4025-4032` — `const message = { role: item.role, content: item.content, ...(item.name ? { name: item.name } : {}), ...(item.tool_calls ? {...} : {}), ...(item.role === 'tool' ? { tool_call_id: item.identifier } : {}), ...(item.signature ? {...} : {}), ...(item.reasoning ? {...} : {}) };`
+notes: `getChat()` builds a fresh plain object per `Message` instance. Own keys: `role`, `content` always; `name`, `tool_calls`, `tool_call_id`, `signature`, `reasoning` only if truthy. **No `identifier` key** — stripped even though `Message.identifier` exists internally (`:3422`, `:3444`, set to e.g. `chatHistory-${n}` at `:945`). No `extra`, no back-reference to the ST chat message or the `Message` instance; every element is a brand-new object on every call. `role` ∈ {system, user, assistant, tool}.
+
+### CHAT_COMPLETION_PROMPT_READY chat-history slice {#prompt-ready-history-slice}
+status: verified-negative
+checked: 1.18.0 @ 8172dcd on 2026-09-12
+evidence: `public/scripts/openai.js:881` — `chatCompletion.add(new MessageCollection('chatHistory'), prompts.index('chatHistory'));`; `:3907-3911` — `if (null !== position && -1 !== position) { this.messages.collection[position] = collection; } else { this.messages.collection.push(collection); }`
+notes: `chatHistory` and `dialogueExamples` (`:1097`) each occupy one slot of `chatCompletion.messages.collection`, keyed by `prompts.index(id)` — the **preset's `prompt_order`**, not code call order (`populateDialogueExamples` can run before or after `populateChatHistory`, `:1328-1333`, and still land at its own fixed slot). `getChat()` (`:4021-4037`) flattens slots in array order but emits no slot boundary or identifier — no element in the flat `chat` array ties back to `chatHistory` (see #prompt-ready-entry-shape). **No reliable rule exists from the flat array alone.** The slice's start depends on chatHistory's rank in `prompt_order` plus the variable entry-count contributed by every preceding *enabled* section (world info, persona, description, scenario, dialogueExamples if earlier) — none derivable from `{role,content,...}` elements. The only usable signal inside an extension is content-matching: the contiguous run whose `content` equals (post name-prefix substitution, `:586-602`) the live `getContext().chat` message text, in order — fragile, not a marker.
+
+### coreChat `extra` does not survive into prompt-manager entries {#prompt-ready-extra-survival}
+status: verified-negative
+checked: 1.18.0 @ 8172dcd on 2026-09-12
+evidence: `public/script.js:635` — `messages[i] = { 'role': role, 'content': content, name: name, 'media': media, 'mediaDisplay': mediaDisplay, 'mediaIndex': mediaIndex, 'invocations': invocations, 'signature': signature, 'reasoning': reasoning };` — `setOpenAIMessages(chat)`, called with `coreChat` at `:4775`.
+notes: `coreChat`'s `.extra` object is never copied wholesale; `setOpenAIMessages` cherry-picks only `extra.media`, `extra.tool_invocations`, `extra.reasoning_signature`, `extra.reasoning` (`openai.js` via `script.js:609-621`) into a brand-new object with no reference to the source message. Of those, only `signature`/`reasoning`/derived `tool_calls` reach the final `CHAT_COMPLETION_PROMPT_READY` element (#prompt-ready-entry-shape); `extra` itself, and any custom `extra` field an extension sets, does not exist anywhere past `setOpenAIMessages`. Confirms marker-based idempotence via `extra` is unavailable — content-based comparison is the only option.
+
 ### CHAT_COMPLETION_SETTINGS_READY {#chat-completion-settings-ready}
 status: verified
 checked: 1.18.0 @ 8172dcd on 2026-09-12
@@ -61,6 +79,12 @@ status: verified
 checked: 1.18.0 @ 8172dcd on 2026-09-12
 evidence: `public/script.js:5175-5178` — emit with `data`; `return !data.combinedPrompt ? combine() : data.combinedPrompt;`
 notes: Text-completion path only (`main_api !== 'openai'`). Setting `data.combinedPrompt` replaces the entire text prompt. `data` fields at `:5151-5172` (`storyString, mesExmString, mesSendString, finalMesSend, main, jailbreak, …`).
+
+### GENERATE_BEFORE_COMBINE_PROMPTS history field {#before-combine-history-field}
+status: verified
+checked: 1.18.0 @ 8172dcd on 2026-09-12
+evidence: `public/script.js:5086` — `let finalMesSend = structuredClone(mesSend);`; `:5123-5126` — `const combine = () => { mesSendString = finalMesSend.map((e) => \`${e.extensionPrompts.join('')}${e.message}\`).join(''); ... }`; `:5151-5172` — `let data = { ..., mesSendString, finalMesSend, ... }`; `:5178` — `return !data.combinedPrompt ? combine() : data.combinedPrompt;`
+notes: `data.finalMesSend` is the **same array object** as the closure variable `finalMesSend` (shorthand property, not a copy); elements are `{message: string, extensionPrompts: string[]}`, one per chat-history line (built at `:4950`). `combine()` closes over `finalMesSend`/`mesSendString` and **recomputes `mesSendString` fresh from `finalMesSend` at call time, after the event** — so mutating `data.finalMesSend[i].message` in place **is honored**; mutating/setting `data.mesSendString` **is not** (combine() overwrites its own outer variable and never reads `data.mesSendString`). Setting `data.combinedPrompt` bypasses `combine()` entirely (whole-prompt override incl. storyString/mesExmString/generatedPromptCache). Text-completion path only (`main_api !== 'openai'`). This overturns brief 0012's assumption that only `combinedPrompt` is honored: in-place `finalMesSend[i].message` edits work too.
 
 ### GENERATE_AFTER_COMBINE_PROMPTS {#generate-after-combine-prompts}
 status: verified
