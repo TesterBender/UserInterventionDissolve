@@ -41,3 +41,11 @@ Each name is looked up on `EVENT(ctx)` (`docs/modules/host.md#event-alias`) and 
 ## Fake context omission sentinel {#fake-context-omit}
 
 `tests/helpers/fake-context.js`'s `installFakeContext(overrides)` shallow-merges `overrides` into the fake context object. The sentinel for "this key is absent" is the plain JS value `undefined`: any key in `overrides` whose value is `undefined` is `delete`d from the resulting context instead of being assigned, so `installFakeContext({ name1: undefined })` produces a context with no `name1` property at all (not a `name1: undefined` property — `requireKeys`'s presence test treats both the same, but deleting matches "absent" literally). Any other value shallow-overwrites the corresponding default.
+
+## Capture subscription {#capture-subscription}
+
+Capture adds one name to the same guarded subscription loop the boundary block already runs (see [Boundary subscriptions](#boundary-subscriptions)): `MESSAGE_SENT` (`docs/api/sillytavern.md#message-sent`) → `captureMessage` from `src/capture.js` (`docs/modules/capture.md#composer-path`). It is not a separate block, so an absent `MESSAGE_SENT` degrades exactly like an absent boundary event — the name is collected and reported in the one `console.warn` line, and the remaining listeners still register.
+
+The handler passes only the event payload — the message index — and lets `captureMessage` take a fresh context by default (`docs/api/sillytavern.md#getcontext`); it captures no `ctx` and assumes nothing else about the payload. Listener errors are swallowed by the emitter (`docs/api/sillytavern.md#events`), so there is no try/catch and no extra logging.
+
+`index.js` still holds wiring only. It contains no message test, no transformation and no save — every decision, including which messages are capture input and how the text becomes a manuscript block, lives in `src/capture.js`. Capture's whole cost in the entry file is one import line and one entry in the handler map.

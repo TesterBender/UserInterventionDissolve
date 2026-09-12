@@ -8,6 +8,7 @@ import {
   onStreamToken,
   onMessageReceived,
 } from './src/boundary.js';
+import { captureMessage } from './src/capture.js';
 
 // interceptor-placeholder: real no-op, body filled by frontier brief → docs/modules/bootstrap.md#interceptor-placeholder
 // eslint-disable-next-line no-unused-vars
@@ -58,6 +59,8 @@ export function init() {
     TEXT_COMPLETION_SETTINGS_READY: onTextCompletionSettings,
     STREAM_TOKEN_RECEIVED: onStreamToken,
     MESSAGE_RECEIVED: onMessageReceived,
+    // capture-subscription: MESSAGE_SENT joins the same guarded loop → docs/modules/bootstrap.md#capture-subscription
+    MESSAGE_SENT: (index) => captureMessage(index),
   };
   const absent = [];
   for (const [name, handler] of Object.entries(boundaryHandlers)) {

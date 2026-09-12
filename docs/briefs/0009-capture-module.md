@@ -1,5 +1,5 @@
 # Brief 0009 — `capture`: composer input → manuscript block on the frontier
-Status: draft
+Status: implemented
 Complexity: high
 PLAN sections: §9 (the collaborator's real input must not survive as a model-visible user turn containing the external character's action: capture it, transform it into manuscript text, merge it into the current manuscript immediately after the model-generated material), §10 (capture is character-specific — ordinary composer input after a stop produces the external character's tag block and nothing else; manuscript-wide editing of the frontier is a *separate* authority that does not go through the composer, and is not built here), §15 (barge-in: the collaborator may insert the external character at any valid block boundary without waiting for the model; once inserted the block is normalised exactly as if the stop had been reached, and after reconstruction the two cases must be indistinguishable)
 Invariants touched: INV-3 (this module is its owner), INV-4 (it writes to the frontier through `state`'s API only; it does not reconstruct anything)
@@ -44,6 +44,7 @@ When the collaborator sends a message in the normal composer, the text they wrot
 
 ## Files
 - allowed to create/modify: `src/capture.js`, `index.js` (the one guarded MESSAGE_SENT subscription only), `tests/capture.test.js`, `tests/helpers/fake-context.js` (user-message builder only, only if absent), `docs/modules/capture.md`, `docs/modules/bootstrap.md` (one added heading), and this brief's Status line.
+- amended: `tests/boundary.test.js` — inclusion assertions and count lower-bound only, authorised by orchestrator 2026-09-12.
 - must not touch: `src/grammar.js`, `src/state.js`, `src/boundary.js`, `src/host.js`, `src/constants.js`, `src/prompt.js`, `src/preset.js` (all import-only), `tests/bootstrap.test.js`, `tests/grammar.test.js`, `tests/state.test.js`, `tests/boundary.test.js`, `tests/prompt.test.js`, `tests/preset.test.js`, `manifest.json`, `style.css`, `package.json`, `eslint.config.js`, `vitest.config.js`, `tools/*`, `presets/`, `PLAN.txt`, `CLAUDE.md`, `docs/api/sillytavern.md`, `docs/protocol/*`, `docs/decisions/*`, other `docs/briefs/*`.
 
 ## ST APIs used
@@ -61,20 +62,20 @@ When the collaborator sends a message in the normal composer, the text they wrot
 - (empty — nothing is blocked.)
 
 ## Acceptance
-- [ ] `toManuscriptBlock('sets the cup down. "No."', 'Mara:')` === `'Mara: sets the cup down. "No."'`.
-- [ ] `toManuscriptBlock('Mara: sets the cup down.', 'Mara:')` is byte-identical to its input (no doubled tag), and the same holds for the case/space variants `'mara: …'` and `'Mara : …'`.
-- [ ] A two-block input (`'Mara: she stands.\n\nThe room settles.'`) is returned with the tag untouched and the second block byte-identical; an untagged two-block input gets exactly one prefix, on the first block only, with the blank-line separator and the second block preserved.
-- [ ] `toManuscriptBlock` returns `''` for `''`, `'   \n '`, `undefined` and a non-string; and returns the trimmed text untagged when `literal` is `''`.
-- [ ] `captureMessage` on a user message appends the transformed block to `getState(ctx).frontier` (exactly one blank line after any existing frontier text), sets `chat[index].extra[METADATA_KEY].captured === true`, and calls `ctx.saveMetadata` once and `ctx.saveChat` once; it returns `true`.
-- [ ] `chat[index].mes` is byte-identical before and after `captureMessage`, and `chat.length` is unchanged.
-- [ ] An assistant message (`is_user: false`), a system message (`is_system: true`), an out-of-range index, and a non-object entry each leave the frontier unchanged and call neither save; each returns `false`.
-- [ ] A message already carrying `extra[METADATA_KEY].captured === true` leaves the frontier unchanged and calls neither save; calling `captureMessage` twice on the same fresh message appends exactly one block.
-- [ ] A user message whose `mes` is `''` or whitespace-only leaves the frontier unchanged and calls neither save.
-- [ ] The marker write preserves a pre-existing sibling flag in the same namespace (`extra[METADATA_KEY] = { boundary: true }` ⇒ afterwards both `boundary` and `captured` are `true`).
-- [ ] Emitting `MESSAGE_SENT` with the index of a user message through the fake event source produces exactly the same effects as calling `captureMessage` directly (the `index.js` subscription is wired and guarded by presence on `EVENT(ctx)`).
-- [ ] `src/capture.js` contains no occurrence of the identifier `SillyTavern` and no hard-coded character name.
-- [ ] `npm run check` passes.
-- [ ] every new pointer comment resolves (`node tools/check-comments.mjs`).
+- [x] `toManuscriptBlock('sets the cup down. "No."', 'Mara:')` === `'Mara: sets the cup down. "No."'`.
+- [x] `toManuscriptBlock('Mara: sets the cup down.', 'Mara:')` is byte-identical to its input (no doubled tag), and the same holds for the case/space variants `'mara: …'` and `'Mara : …'`.
+- [x] A two-block input (`'Mara: she stands.\n\nThe room settles.'`) is returned with the tag untouched and the second block byte-identical; an untagged two-block input gets exactly one prefix, on the first block only, with the blank-line separator and the second block preserved.
+- [x] `toManuscriptBlock` returns `''` for `''`, `'   \n '`, `undefined` and a non-string; and returns the trimmed text untagged when `literal` is `''`.
+- [x] `captureMessage` on a user message appends the transformed block to `getState(ctx).frontier` (exactly one blank line after any existing frontier text), sets `chat[index].extra[METADATA_KEY].captured === true`, and calls `ctx.saveMetadata` once and `ctx.saveChat` once; it returns `true`.
+- [x] `chat[index].mes` is byte-identical before and after `captureMessage`, and `chat.length` is unchanged.
+- [x] An assistant message (`is_user: false`), a system message (`is_system: true`), an out-of-range index, and a non-object entry each leave the frontier unchanged and call neither save; each returns `false`.
+- [x] A message already carrying `extra[METADATA_KEY].captured === true` leaves the frontier unchanged and calls neither save; calling `captureMessage` twice on the same fresh message appends exactly one block.
+- [x] A user message whose `mes` is `''` or whitespace-only leaves the frontier unchanged and calls neither save.
+- [x] The marker write preserves a pre-existing sibling flag in the same namespace (`extra[METADATA_KEY] = { boundary: true }` ⇒ afterwards both `boundary` and `captured` are `true`).
+- [x] Emitting `MESSAGE_SENT` with the index of a user message through the fake event source produces exactly the same effects as calling `captureMessage` directly (the `index.js` subscription is wired and guarded by presence on `EVENT(ctx)`).
+- [x] `src/capture.js` contains no occurrence of the identifier `SillyTavern` and no hard-coded character name.
+- [x] `npm run check` passes.
+- [x] every new pointer comment resolves (`node tools/check-comments.mjs`).
 
 ## Docs to write/update
 - `docs/modules/capture.md` (new; header block `Owns: INV-3 (docs/protocol/invariants.md)` / `PLAN: §9, §10, §15` / `Depends on: host, constants, grammar, boundary, state`), one heading per pointer comment written in `src/capture.js`, at least:
@@ -86,3 +87,6 @@ When the collaborator sends a message in the normal composer, the text they wrot
   - `## Empty send is not a capture {#empty-send}` — pressing Send on an empty composer emits no MESSAGE_SENT at all (`docs/api/sillytavern.md#empty-send`); it is the continuation trigger and this module deliberately contains no code for it.
   - `## Editing is not capture {#editing-is-not-capture}` — §10's second half: manuscript-wide editing of the frontier is a distinct authority that does not go through the composer and is not implemented here; a later edit of the visible message does not re-enter the frontier.
 - `docs/modules/bootstrap.md` — add one heading, `## Capture subscription {#capture-subscription}`: the single guarded `MESSAGE_SENT` subscription, that the handler passes only the index and takes a fresh context, and that `index.js` still holds wiring only — every decision lives in `src/capture.js`.
+
+## Carry-forward
+- `getState()` materialises lazily and seeds the frontier from `chat[]` (`src/state.js` `initialiseFromChat`, `docs/modules/state.md#lazy-init`). If state has never been materialised when MESSAGE_SENT fires, the just-pushed user message is seeded into the frontier and then appended again by `captureMessage` — the same text twice. In practice bootstrap prevents this: `index.js` materialises state on CHAT_CHANGED and once at init for an already-open chat (`docs/modules/bootstrap.md#state-materialisation`). Capture deliberately adds no dedupe (out of scope, and step order is fixed by this brief). Flag for a future brief if a chat can ever become current without either of those two paths firing first.
