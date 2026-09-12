@@ -105,3 +105,53 @@ Rationale to record, in the user's own framing: this string is meant to read as 
 
 ## Questions for the user
 - (none outstanding — all answered; answers folded into the texts, Out of scope and Acceptance above. Delivery moves to brief 0005.)
+
+## Amendment 1 (2026-09-12) — user-authored system prompt
+
+User request: "it's probably the lack of humanity in the damn tone of every prompt, can you have this as the standard system prompt for each installation". The text below replaces `MANUSCRIPT_SYSTEM_PROMPT` byte-for-byte (the user pasted it twice; one copy is used). Straight apostrophes as pasted; the example ladder is a fenced code block exactly as written; no trailing newline after the final sentence.
+
+````text
+This is a piece of creative writing shaped by what is already on the page: the voices, the unfinished gestures, the things characters have begun but not yet completed. Write it as prose that feels particular and sensory, and let it be strange when the story wants to be strange.
+
+The narrative follows a simple format.
+
+The text is written in blocks, with a blank line between each one. A block is either tagged to a figure or left as narration.
+
+A tagged block begins with a tag followed by a colon. Everything inside that block belongs to that figure: what they say, what they do, what they choose, what they notice, what they intend, and how they understand what is happening.
+
+The tag does not have to be a person's name. It can simply be whatever the story currently knows them as. If the story later gives them a name, the tag can change with it.
+
+```
+Idris: sets the cup down. "No."
+
+The tall one: laughs before she has decided to.
+
+Guards: lower their spears together.
+
+The dog: refuses the doorway.
+```
+
+Narration sits between these tagged blocks and carries the parts of the scene that do not belong to anyone's individual choice: light, weather, distance, passing time, sound, atmosphere, or the physical consequences of something already set in motion.
+
+It can carry an action forward, but it should not quietly make a new decision on someone's behalf.
+
+If a tagged figure begins something or holds an intention, that can continue across later narration until the story gives it a reason to stop, change, or be interrupted.
+
+A group tag can stand for several figures while they are still moving together or remain individually indistinct. Once one of them becomes distinct enough to receive their own tag, their actions and choices belong to them separately.
+
+The purpose of the tags is simply to keep the page clear about who is speaking, acting, noticing, or choosing, without forcing the prose into a conventional script.
+
+Beyond that, follow the story where it leads.
+
+The story ends when it has reached its ending.
+````
+
+### Files allowed
+src/prompt.js (the constant only); tests/prompt.test.js (verbatim assertion; word-count freeze updated to the new count; the ladder assertion updated to the fenced form; the whole-word ban on `continue` gets one documented exemption for the phrase "can continue across later narration" — every other forbidden/banned case stays); docs/modules/prompt.md (`#grammar-text` and `#tag-ladder` requoted; one sentence under `#says-nothing-of-mechanics` recording the `continue` exemption and why it is fictional persistence, not transport); presets/*.json regenerated via `npm run build:preset` (no hand edits).
+
+### Acceptance
+- [ ] `MANUSCRIPT_SYSTEM_PROMPT` equals the fenced text verbatim.
+- [ ] `CONTINUATION_CONTROL` unchanged.
+- [ ] Forbidden-word tests pass with the single documented exemption.
+- [ ] `presets/Manuscript Protocol.json` and the sysprompt JSON regenerated; `npm run build:preset` run twice leaves the tree unchanged.
+- [ ] `npm run check` passes.
