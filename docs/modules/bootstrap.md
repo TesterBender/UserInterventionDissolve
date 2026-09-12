@@ -49,3 +49,20 @@ Capture adds one name to the same guarded subscription loop the boundary block a
 The handler passes only the event payload — the message index — and lets `captureMessage` take a fresh context by default (`docs/api/sillytavern.md#getcontext`); it captures no `ctx` and assumes nothing else about the payload. Listener errors are swallowed by the emitter (`docs/api/sillytavern.md#events`), so there is no try/catch and no extra logging.
 
 `index.js` still holds wiring only. It contains no message test, no transformation and no save — every decision, including which messages are capture input and how the text becomes a manuscript block, lives in `src/capture.js`. Capture's whole cost in the entry file is one import line and one entry in the handler map.
+
+## Recovery subscription {#recovery-subscription}
+
+Recovery does not get its own subscription. `src/recovery.js`'s MESSAGE_RECEIVED handler **must** run after `boundary`'s for the same event — it reads text `boundary` has trimmed and a marker `boundary` has written (`docs/modules/recovery.md#ordering`) — so the two are composed into the single `MESSAGE_RECEIVED` entry of the guarded handler map:
+
+```js
+MESSAGE_RECEIVED: async (...args) => {
+  await onMessageReceived(...args);
+  await onRecoveryMessageReceived(...args);
+},
+```
+
+Composition rather than a second `eventSource.on` call for the same event is what makes the order local and readable. The emitter does await listeners sequentially in registration order (`docs/api/sillytavern.md#events`), so two subscriptions registered in the right sequence would behave the same — but that ordering would then be an invisible property of two distant lines in `init()`, and any later reordering of the map or of the blocks would silently break it. Inside one entry the dependency is one `await` in front of another and cannot be reordered by accident. The composed handler also keeps the absent-event guard honest: if the host build lacks `MESSAGE_RECEIVED`, both handlers are skipped together and the name is reported once in the existing `console.warn`.
+
+The handler passes on only the event payload — `(index, type)` — and lets `onMessageReceived` take a fresh context by default (`docs/api/sillytavern.md#getcontext`); it captures no `ctx`. Listener errors are swallowed by the emitter (`docs/api/sillytavern.md#events`), so there is no try/catch; the two `await`s are there for ordering, not for error handling.
+
+`index.js` still holds wiring only. It contains no outcome classification, no rollback, no append and no save — every decision lives in `src/recovery.js`. Recovery's whole cost in the entry file is one import line and one map entry.

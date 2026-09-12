@@ -9,6 +9,7 @@ import {
   onMessageReceived,
 } from './src/boundary.js';
 import { captureMessage } from './src/capture.js';
+import { onMessageReceived as onRecoveryMessageReceived } from './src/recovery.js';
 
 // interceptor-placeholder: real no-op, body filled by frontier brief → docs/modules/bootstrap.md#interceptor-placeholder
 // eslint-disable-next-line no-unused-vars
@@ -58,7 +59,11 @@ export function init() {
     CHAT_COMPLETION_SETTINGS_READY: onChatCompletionSettings,
     TEXT_COMPLETION_SETTINGS_READY: onTextCompletionSettings,
     STREAM_TOKEN_RECEIVED: onStreamToken,
-    MESSAGE_RECEIVED: onMessageReceived,
+    // recovery-subscription: recovery runs after boundary on one event → docs/modules/bootstrap.md#recovery-subscription
+    MESSAGE_RECEIVED: async (...args) => {
+      await onMessageReceived(...args);
+      await onRecoveryMessageReceived(...args);
+    },
     // capture-subscription: MESSAGE_SENT joins the same guarded loop → docs/modules/bootstrap.md#capture-subscription
     MESSAGE_SENT: (index) => captureMessage(index),
   };
