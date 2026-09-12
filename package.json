@@ -8,6 +8,7 @@
     "lint": "eslint .",
     "test": "vitest --run",
     "test:watch": "vitest",
+    "build:preset": "node tools/build-preset.mjs",
     "check:comments": "node tools/check-comments.mjs index.js src/**/*.js tools/*.mjs style.css",
     "check:docs": "node tools/check-docs.mjs",
     "check": "npm run lint && npm test && npm run check:comments && npm run check:docs"

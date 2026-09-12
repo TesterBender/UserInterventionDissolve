@@ -1,5 +1,5 @@
 # Brief 0005 — reference preset bundle: ship the system prompt as an importable SillyTavern preset
-Status: draft
+Status: implemented
 Complexity: high
 PLAN sections: §13 (continuation control is a separate, semantically boring, byte-identical message authorizing more manuscript; the intended reading is `[manuscript] + CONTINUE`, not submit→judge→installment — this is why the continuation string is *not* preset material)
 Invariants touched: INV-5 (the continuation seam is a reconstructed turn, not a preset field), INV-9 / `docs/protocol/invariants.md#enforcement-model` (all semantic grammar is carried by prompt text, so the delivery vehicle for that text is protocol-relevant)
@@ -81,21 +81,21 @@ The repository ships a checked-in, human-readable SillyTavern preset bundle unde
 - (empty — all items resolved.)
 
 ## Acceptance
-- [ ] `npm run build:preset` is idempotent: running it twice in a row leaves the working tree unchanged.
-- [ ] Every file in `presets/` parses as JSON and is 2-space-indented with a single trailing newline.
-- [ ] `presets/Manuscript Protocol.json` contains `MANUSCRIPT_SYSTEM_PROMPT` verbatim as the `content` of exactly one `prompts[]` entry, and `prompts` has length 1 with that entry equal to `{identifier:"main", name:"Main Prompt", role:"system", system_prompt:true, content}`.
-- [ ] `prompt_order` has exactly one element and `prompt_order[0].character_id === 100001` (strictly the number, not the string).
-- [ ] `prompt_order[0].order.map(e => e.identifier)` deep-equals exactly `["main","worldInfoBefore","personaDescription","charDescription","charPersonality","scenario","enhanceDefinitions","nsfw","worldInfoAfter","dialogueExamples","chatHistory","jailbreak"]`, and every entry has `enabled === true` except `enhanceDefinitions`, which has `enabled === false`.
-- [ ] `presets/Manuscript Protocol.json` has no top-level `name` key and no key other than `prompts` and `prompt_order` (assert the top-level key set exactly).
-- [ ] The openai file's basename without extension equals the intended preset name, and `README.md` names that same string.
-- [ ] `presets/manuscript-protocol.sysprompt.json` deep-equals `{ name: "Manuscript Protocol", content: MANUSCRIPT_SYSTEM_PROMPT }`.
-- [ ] Staleness test: `tests/preset.test.js` deep-equals each committed `presets/*.json` against the corresponding `buildPresets()` output and fails if the constant is edited without regenerating.
-- [ ] No generated file contains `CONTINUATION_CONTROL`'s text or any substring of it; `tools/build-preset.mjs` does not import `CONTINUATION_CONTROL`.
-- [ ] `tools/build-preset.mjs` writes no file when imported (write happens only under the entry-module guard), so the test can import it safely.
-- [ ] `README.md` contains a section titled "Import the reference preset" with the three verified UI labels above and both filenames.
-- [ ] `package.json` differs from its previous contents by exactly the one `build:preset` script line.
-- [ ] `npm run check` passes.
-- [ ] every new pointer comment resolves (`node tools/check-comments.mjs`).
+- [x] `npm run build:preset` is idempotent: running it twice in a row leaves the working tree unchanged.
+- [x] Every file in `presets/` parses as JSON and is 2-space-indented with a single trailing newline.
+- [x] `presets/Manuscript Protocol.json` contains `MANUSCRIPT_SYSTEM_PROMPT` verbatim as the `content` of exactly one `prompts[]` entry, and `prompts` has length 1 with that entry equal to `{identifier:"main", name:"Main Prompt", role:"system", system_prompt:true, content}`.
+- [x] `prompt_order` has exactly one element and `prompt_order[0].character_id === 100001` (strictly the number, not the string).
+- [x] `prompt_order[0].order.map(e => e.identifier)` deep-equals exactly `["main","worldInfoBefore","personaDescription","charDescription","charPersonality","scenario","enhanceDefinitions","nsfw","worldInfoAfter","dialogueExamples","chatHistory","jailbreak"]`, and every entry has `enabled === true` except `enhanceDefinitions`, which has `enabled === false`.
+- [x] `presets/Manuscript Protocol.json` has no top-level `name` key and no key other than `prompts` and `prompt_order` (assert the top-level key set exactly).
+- [x] The openai file's basename without extension equals the intended preset name, and `README.md` names that same string.
+- [x] `presets/manuscript-protocol.sysprompt.json` deep-equals `{ name: "Manuscript Protocol", content: MANUSCRIPT_SYSTEM_PROMPT }`.
+- [x] Staleness test: `tests/preset.test.js` deep-equals each committed `presets/*.json` against the corresponding `buildPresets()` output and fails if the constant is edited without regenerating.
+- [x] No generated file contains `CONTINUATION_CONTROL`'s text or any substring of it; `tools/build-preset.mjs` does not import `CONTINUATION_CONTROL`.
+- [x] `tools/build-preset.mjs` writes no file when imported (write happens only under the entry-module guard), so the test can import it safely.
+- [x] `README.md` contains a section titled "Import the reference preset" with the three verified UI labels above and both filenames.
+- [x] `package.json` differs from its previous contents by exactly the one `build:preset` script line.
+- [x] `npm run check` passes.
+- [x] every new pointer comment resolves (`node tools/check-comments.mjs`).
 
 ## Docs to write/update
 - `docs/modules/preset.md#single-source-of-truth` — why the JSON is generated, never hand-edited; what the staleness test guarantees; the exact command to regenerate after `src/prompt.js` changes.
