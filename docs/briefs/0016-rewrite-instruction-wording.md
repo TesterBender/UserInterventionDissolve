@@ -92,3 +92,24 @@ src/starter.js (constant, wrapper constants, `buildRewriteRequest` assembly, the
 - [x] Existing forbidden-word and banned-word tests pass; `prompt`/`system` do not appear in the instruction.
 - [x] `sanitiseRewrite` strips a `<content>…</content>` echo and still strips `[OOC: …]` echoes and fences.
 - [x] `npm run check` passes.
+
+## Amendment 2 (2026-09-12) — plain ask, no OOC wrapper
+
+User request, verbatim: "Have OOC user prefill be changed into just a straightforward ask without OOC, since it's now bounded into a <content> tag thing, so it makes it less intimidating. Also, this is the newer, less clinical wording cause what the heck: "Rewrite this opening scene in the tagged-block format described above. Keep every event and line of dialogue; change only the presentation.""
+
+`REWRITE_INSTRUCTION` becomes exactly (no brackets, no trailing newline):
+
+```text
+Rewrite this opening scene in the tagged-block format described above. Keep every event and line of dialogue; change only the presentation.
+```
+
+The `<content>` wrapper and assembly order from Amendment 1 are unchanged. The `[OOC: …]` echo strip in `sanitiseRewrite` stays (harmless). The constant-specific banned-word list from decision 0003 is **withdrawn for this constant** by the user's choice: the notes-framing did not stop the filter either, so the wording theory is unconfirmed. Decision 0003 gets a status line saying so.
+
+### Files allowed
+src/starter.js (constant only); tests/starter.test.js (verbatim assertion; remove the decision-0003 banned `it.each` list; keep the mechanics-vocabulary lists — confirm they still pass); docs/modules/starter.md (`#rewrite-request` requoted; `#tos-filter` gains one sentence that the banned list was withdrawn by user decision and the trigger remains unidentified); docs/decisions/0003-duplication-filter-wording.md (append `## Status (2026-09-12)`: banned-word rule withdrawn for REWRITE_INSTRUCTION by user decision; framing rule for other constants stands until evidence says otherwise).
+
+### Acceptance
+- [ ] `REWRITE_INSTRUCTION` equals the line verbatim.
+- [ ] Prompt assembly unchanged: `<content>\n…\n</content>\n\n` + instruction.
+- [ ] Mechanics-vocabulary tests pass; decision-0003 list removed for this constant.
+- [ ] `npm run check` passes.
