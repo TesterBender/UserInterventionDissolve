@@ -1,7 +1,7 @@
 # freeze
 Owns: INV-6 (cut point), INV-7 (cut selection), INV-10 (with frontier) (docs/protocol/invariants.md)
 PLAN: §16, §17, §18
-Depends on: grammar, constants
+Depends on: grammar, constants, state (apply step), host (notice only)
 
 `src/freeze.js` answers one question: given the current mutable frontier text and the reserved external literal, where — if anywhere — may a span be cut off the front and promoted into immutable history? `selectCut` decides and `maybeFreeze` applies, mapping the chosen offset back onto the message the cut fell in (see [Watermark mapping](#watermark-mapping)). The selection half reads no SillyTavern context, no clock, no `chat[]` and no canonical state; the apply half reads and mutates canonical state through `src/state.js`, and one small notice function reads the live context (see [Frozen-edit notice](#frozen-edit-notice)).
 
