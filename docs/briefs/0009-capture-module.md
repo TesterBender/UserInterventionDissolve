@@ -44,7 +44,7 @@ When the collaborator sends a message in the normal composer, the text they wrot
 
 ## Files
 - allowed to create/modify: `src/capture.js`, `index.js` (the one guarded MESSAGE_SENT subscription only), `tests/capture.test.js`, `tests/helpers/fake-context.js` (user-message builder only, only if absent), `docs/modules/capture.md`, `docs/modules/bootstrap.md` (one added heading), and this brief's Status line.
-- amended: `tests/boundary.test.js` — inclusion assertions only, authorised by orchestrator 2026-09-12.
+- amended: `tests/boundary.test.js` — inclusion assertions and count lower-bound only, authorised by orchestrator 2026-09-12.
 - must not touch: `src/grammar.js`, `src/state.js`, `src/boundary.js`, `src/host.js`, `src/constants.js`, `src/prompt.js`, `src/preset.js` (all import-only), `tests/bootstrap.test.js`, `tests/grammar.test.js`, `tests/state.test.js`, `tests/boundary.test.js`, `tests/prompt.test.js`, `tests/preset.test.js`, `manifest.json`, `style.css`, `package.json`, `eslint.config.js`, `vitest.config.js`, `tools/*`, `presets/`, `PLAN.txt`, `CLAUDE.md`, `docs/api/sillytavern.md`, `docs/protocol/*`, `docs/decisions/*`, other `docs/briefs/*`.
 
 ## ST APIs used

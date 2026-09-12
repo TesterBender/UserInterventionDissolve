@@ -59,6 +59,8 @@ export function init() {
     TEXT_COMPLETION_SETTINGS_READY: onTextCompletionSettings,
     STREAM_TOKEN_RECEIVED: onStreamToken,
     MESSAGE_RECEIVED: onMessageReceived,
+    // capture-subscription: MESSAGE_SENT joins the same guarded loop → docs/modules/bootstrap.md#capture-subscription
+    MESSAGE_SENT: (index) => captureMessage(index),
   };
   const absent = [];
   for (const [name, handler] of Object.entries(boundaryHandlers)) {
@@ -70,12 +72,6 @@ export function init() {
   }
   if (absent.length > 0) {
     console.warn(`${LOG_PREFIX} absent events: ${absent.join(', ')}`);
-  }
-
-  // capture-subscription: one guarded MESSAGE_SENT listener, wiring only → docs/modules/bootstrap.md#capture-subscription
-  const messageSent = E.MESSAGE_SENT;
-  if (messageSent !== undefined) {
-    ctx.eventSource.on(messageSent, (index) => captureMessage(index));
   }
 }
 

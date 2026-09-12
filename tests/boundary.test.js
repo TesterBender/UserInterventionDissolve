@@ -433,6 +433,10 @@ describe('index.js boundary subscriptions', () => {
       'CHAT_COMPLETION_SETTINGS_READY',
       'TEXT_COMPLETION_SETTINGS_READY',
     ]));
+    expect(subscribedNames(ctx)).not.toContain('STREAM_TOKEN_RECEIVED');
+    expect(subscribedNames(ctx)).not.toContain('MESSAGE_RECEIVED');
+    expect(ctx.eventSource.on.mock.calls.map(([id]) => id)).not.toContain('stream_token_received');
+    expect(ctx.eventSource.on.mock.calls.map(([id]) => id)).not.toContain('message_received');
     expect(warn).toHaveBeenCalledTimes(1);
     expect(warn.mock.calls[0][0]).toContain('STREAM_TOKEN_RECEIVED, MESSAGE_RECEIVED');
   });
