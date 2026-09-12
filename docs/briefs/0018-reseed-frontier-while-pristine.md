@@ -1,5 +1,5 @@
 # Brief 0018 — re-seed the frontier from the visible chat while canonical state is pristine
-Status: implemented
+Status: done
 Complexity: high
 PLAN sections: §4 (canonical history is the persistent conditioning surface actually shown to the model; §12-style reconstruction reads it and nothing else, so an initial frontier that no longer matches the chat the collaborator is looking at is simply wrong input), §10 (editorial authority is manuscript-wide *within the mutable frontier*: before anything is frozen the whole frontier is the collaborator's to change, and choosing a different greeting is the earliest such change), §19 (cold start: the opening exemplar is the collaborator's chosen greeting; an alternate greeting is that choice being made)
 Invariants touched: INV-4 (the frontier is the single mutable surface the reconstruction reads; this brief keeps its *initial seed* honest and changes nothing about per-request reconstruction), INV-10 (nothing about the live interaction — which swipe, how many edits — is recorded; only the resulting visible text is re-read)
