@@ -1,5 +1,7 @@
+import { getCtx } from './host.js';
 import { parseManuscript, findTagLiteral } from './grammar.js';
-import { FREEZE_MIN_WORDS, FREEZE_MAX_WORDS, FREEZE_DENSE_RADIUS } from './constants.js';
+import { getState, pushFrozen, advanceWatermark } from './state.js';
+import { METADATA_KEY, FREEZE_MIN_WORDS, FREEZE_MAX_WORDS, FREEZE_DENSE_RADIUS } from './constants.js';
 
 // sentence-final: copy of grammar's private TERMINAL → docs/modules/freeze.md#salience-heuristics
 const SENTENCE_FINAL = /[.!?…]["”'’)\]*]*$/;
@@ -134,4 +136,54 @@ export function selectCut(frontierText, literal, opts = {}) {
     target,
     overrun: cumWords[chosen] > max,
   };
+}
+
+// freeze-apply: cut offset mapped onto a message, remainder re-derived → docs/modules/freeze.md#watermark-mapping
+export function maybeFreeze(state, derived, literal, opts = {}) {
+  const cut = selectCut(derived.text, literal, opts);
+  if (cut === null) return null;
+
+  const segments = derived.segments;
+  const segment = segments.find((s) => s.start <= cut.frozenEnd && cut.frozenEnd <= s.end);
+  if (segment === undefined) return null;
+
+  let messageId = null;
+  let offset = 0;
+  let consumedIds;
+
+  if (cut.frozenEnd === segment.end) {
+    consumedIds = segments.filter((s) => s.end <= cut.frozenEnd).map((s) => s.id);
+  } else {
+    // partial-refusal: no honest offset into mes, so no freeze this time → docs/modules/freeze.md#watermark-mapping
+    if (segment.sourceStart === null || segment.id === null) return null;
+    consumedIds = segments.filter((s) => s.end <= segment.start).map((s) => s.id);
+    messageId = segment.id;
+    offset = segment.sourceStart + (cut.frozenEnd - segment.start);
+  }
+
+  // push-refusal: a refused span leaves the state byte-identical → docs/modules/freeze.md#overrun
+  if (!pushFrozen(state, { text: derived.text.slice(0, cut.frozenEnd), words: cut.words })) return null;
+  advanceWatermark(state, { messageId, offset, consumedIds });
+
+  return {
+    frozenIndex: state.frozen.length - 1,
+    words: cut.words,
+    target: cut.target,
+    overrun: cut.overrun,
+    blockIndex: cut.blockIndex,
+    watermark: { messageId, offset },
+  };
+}
+
+// pinned-string: the only user-visible text in the freeze path → docs/modules/freeze.md#frozen-edit-notice
+export const FROZEN_EDIT_NOTICE = 'That part of the manuscript is already frozen; this edit stays in the log only.';
+
+// frozen-edit-notice: one toast, consumed messages only, writes nothing → docs/modules/freeze.md#frozen-edit-notice
+export function noticeFrozenEdit(index, ctx = getCtx()) {
+  const id = ctx.chat?.[index]?.extra?.[METADATA_KEY]?.id;
+  if (typeof id !== 'string') return false;
+  if (!getState(ctx).frozenIds.includes(id)) return false;
+
+  globalThis.toastr?.info(FROZEN_EDIT_NOTICE);
+  return true;
 }

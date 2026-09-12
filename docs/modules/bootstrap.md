@@ -78,9 +78,18 @@ The handler passes on only the event payload — `(index, type)` — and lets `o
 
 `index.js` still holds wiring only. It contains no outcome classification, no rollback, no append and no save — every decision lives in `src/recovery.js`. Recovery's whole cost in the entry file is one import line and one map entry.
 
-## No edit, swipe or delete subscriptions {#no-edit-subscriptions}
+## Edit and swipe subscriptions {#no-edit-subscriptions}
 
-`MESSAGE_SWIPED`, `MESSAGE_EDITED` and `MESSAGE_DELETED` are not subscribed to at all. Every one of them changes `chat[]`, and `chat[]` is read fresh by the derivation on the next request (`docs/modules/derive.md#derivation-rule`), so an edit takes effect with no listener, no handler and nothing saved — the events carry no information the next request does not already have. Emitting any of them changes nothing in this extension.
+`MESSAGE_EDITED` and `MESSAGE_SWIPED` are subscribed to in the same guarded handler map, each as one call into the frozen-edit notice:
+
+```js
+MESSAGE_EDITED: (id) => noticeFrozenEdit(id),
+MESSAGE_SWIPED: (id) => noticeFrozenEdit(id),
+```
+
+Both payloads are the message id-as-index (`docs/api/sillytavern.md#message-lifecycle-events`), which is the argument the notice wants. Neither handler changes anything: the extension still reacts to an edit by deriving the frontier fresh on the next request (`docs/modules/derive.md#derivation-rule`), with nothing written and nothing saved. The only reason these events are listened to at all is to tell the collaborator when the message they just edited was already compiled into a frozen span and the edit therefore reaches the visible log only (`docs/modules/freeze.md#frozen-edit-notice`).
+
+`MESSAGE_DELETED` stays unsubscribed. Its payload is `chat.length`, not the deleted index, so the deleted message cannot be identified — and the message is gone by then anyway, so there is nothing to say about it.
 
 `MESSAGE_SWIPED` is unrelated to `recovery`'s swipe handling, which classifies a *model resample* arriving on MESSAGE_RECEIVED with `type` `'swipe'`/`'regenerate'` (`docs/modules/recovery.md#swipes`) — a different event on a different path.
 

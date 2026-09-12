@@ -96,7 +96,41 @@ describe('deriveFrontier', () => {
   it('carries the message id into its segment', () => {
     const chat = [withId(makeAssistantMessage({ mes: 'He waits.' }), 'abc123')];
     const { segments } = deriveFrontier(chat, emptyState(), LITERAL);
-    expect(segments).toEqual([{ id: 'abc123', start: 0, end: 'He waits.'.length }]);
+    expect(segments).toEqual([{ id: 'abc123', start: 0, end: 'He waits.'.length, sourceStart: 0 }]);
+  });
+
+  it('gives sourceStart the leading-whitespace offset for an offset-preserving block', () => {
+    const chat = [
+      makeAssistantMessage({ mes: '\n  The hall is cold.  ' }),
+      makeMessage({ name: 'Mara', mes: '  Mara: she waits.  ' }),
+    ];
+
+    const { text, segments } = deriveFrontier(chat, emptyState(), LITERAL);
+
+    for (const [i, segment] of segments.entries()) {
+      expect(segment.sourceStart).toBe(chat[i].mes.length - chat[i].mes.trimStart().length);
+      expect(chat[i].mes.slice(segment.sourceStart)).toContain(text.slice(segment.start, segment.end));
+    }
+    expect(segments.map((segment) => segment.sourceStart)).toEqual([3, 2]);
+  });
+
+  it('gives sourceStart null when the user block gained a tag header', () => {
+    const chat = [makeMessage({ name: 'Mara', mes: ' she waits. ' })];
+    const { text, segments } = deriveFrontier(chat, emptyState(), LITERAL);
+
+    expect(text).toBe('Mara: she waits.');
+    expect(segments[0].sourceStart).toBeNull();
+  });
+
+  it('adds the watermark offset into sourceStart', () => {
+    const chat = [withId(makeAssistantMessage({ mes: 'Frozen half. Mutable half.' }), 'w')];
+    const offset = 'Frozen half.'.length;
+    const state = emptyState({ watermark: { messageId: 'w', offset } });
+
+    const { text, segments } = deriveFrontier(chat, state, LITERAL);
+
+    expect(segments[0].sourceStart).toBe(offset + 1);
+    expect(chat[0].mes.slice(segments[0].sourceStart)).toBe(text);
   });
 
   it('skips every message whose id is in frozenIds', () => {

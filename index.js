@@ -13,6 +13,7 @@ import { interceptGeneration } from './src/frontier.js';
 import { armSolo, consumeSoloFlag } from './src/solo.js';
 import { renderSettings, refreshReservedLiteral } from './src/ui/settings.js';
 import { onMessageReceived as onRecoveryMessageReceived } from './src/recovery.js';
+import { noticeFrozenEdit } from './src/freeze.js';
 
 // interceptor-body: one delegating call, every decision lives in frontier → docs/modules/frontier.md#interceptor-body
 globalThis[INTERCEPTOR_GLOBAL] = async function (chat, contextSize, abort, type) {
@@ -70,6 +71,9 @@ export function init() {
     },
     // capture-subscription: MESSAGE_SENT joins the same guarded loop → docs/modules/bootstrap.md#capture-subscription
     MESSAGE_SENT: (index) => captureMessage(index),
+    // frozen-edit-notice: edit and swipe carry the notice and nothing else → docs/modules/bootstrap.md#no-edit-subscriptions
+    MESSAGE_EDITED: (id) => noticeFrozenEdit(id),
+    MESSAGE_SWIPED: (id) => noticeFrozenEdit(id),
   };
   const absent = [];
   for (const [name, handler] of Object.entries(boundaryHandlers)) {

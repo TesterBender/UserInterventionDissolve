@@ -2,7 +2,9 @@ import { getCtx } from './host.js';
 import { METADATA_KEY } from './constants.js';
 import { isTrailingBlockComplete, truncateToLastCompleteBlock } from './grammar.js';
 import { reservedLiteral, findBoundary, trimAtBoundary } from './boundary.js';
-import { ensureMessageId, assignIds } from './derive.js';
+import { ensureMessageId, assignIds, deriveFrontier } from './derive.js';
+import { getState, save } from './state.js';
+import { maybeFreeze } from './freeze.js';
 
 // duplicated-eligibility: same list as boundary, wired independently → docs/modules/recovery.md#ordering
 const SKIPPED_RECEIPT_TYPES = ['quiet', 'impersonate', 'first_message'];
@@ -66,10 +68,15 @@ export async function onMessageReceived(index, type, ctx = getCtx()) {
 
   ensureMessageId(message);
   message.extra[METADATA_KEY] = { ...message.extra[METADATA_KEY], received: true };
-  // freeze-disabled: re-enabled with the watermark mapping → docs/modules/recovery.md#freeze-hookup
 
   // assign-ids: once per batch, on the save this handler already makes → docs/modules/derive.md#message-ids
   assignIds(ctx.chat);
+
+  // freeze-after-receipt: one attempt per receipt, on a fresh derivation → docs/modules/recovery.md#freeze-hookup
+  const state = getState(ctx);
+  const result = maybeFreeze(state, deriveFrontier(ctx.chat, state, literal), literal, {});
+
   await ctx.saveChat();
+  if (result !== null) await save(ctx);
   return outcome;
 }

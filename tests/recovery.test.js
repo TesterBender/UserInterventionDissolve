@@ -274,8 +274,14 @@ describe('onMessageReceived — swipes and regeneration', () => {
   });
 });
 
-describe('onMessageReceived — freeze is off', () => {
-  it('freezes nothing and imports nothing from freeze', async () => {
+describe('onMessageReceived — freeze hook-up', () => {
+  function words(n, label) {
+    const parts = [];
+    for (let i = 0; i < n; i += 1) parts.push(`${label}${i}`);
+    return `${parts.join(' ')}.`;
+  }
+
+  it('freezes nothing and saves no metadata on a short manuscript', async () => {
     const ctx = installFakeContext({ name1: 'Mara' });
     const state = seed(ctx);
     ctx.chat.push(makeAssistantMessage({ mes: 'She left.' }));
@@ -285,8 +291,41 @@ describe('onMessageReceived — freeze is off', () => {
     expect(state.frozen).toEqual([]);
     expect(state.frozenIds).toEqual([]);
     expect(state.watermark).toEqual({ messageId: null, offset: 0 });
-    expect(SOURCE).not.toContain('freeze.js');
-    expect(SOURCE).not.toContain('maybeFreeze');
+    expect(ctx.saveMetadata).not.toHaveBeenCalled();
+    expect(ctx.saveChat).toHaveBeenCalledTimes(1);
+  });
+
+  it('freezes once against the derived frontier and saves metadata', async () => {
+    const ctx = installFakeContext({ name1: 'Mara' });
+    const state = seed(ctx);
+    for (let i = 0; i < 60; i += 1) {
+      ctx.chat.push(makeAssistantMessage({ mes: words(100, `b${i}w`) }));
+    }
+
+    await onMessageReceived(ctx.chat.length - 1, 'normal');
+
+    expect(state.frozen).toHaveLength(1);
+    expect(state.frozen[0].words).toBeGreaterThanOrEqual(3000);
+    expect(state.frozenIds.length).toBeGreaterThan(0);
+    expect(ctx.saveMetadata).toHaveBeenCalledTimes(1);
+
+    const remainder = deriveFrontier(ctx.chat, state, '').text;
+    expect(state.frozen[0].text.endsWith(remainder)).toBe(false);
+    expect(remainder).not.toContain(state.frozen[0].text);
+  });
+
+  it('attempts a freeze once per receipt only', async () => {
+    const ctx = installFakeContext({ name1: 'Mara' });
+    const state = seed(ctx);
+    for (let i = 0; i < 60; i += 1) {
+      ctx.chat.push(makeAssistantMessage({ mes: words(100, `b${i}w`) }));
+    }
+
+    await onMessageReceived(ctx.chat.length - 1, 'normal');
+    await onMessageReceived(ctx.chat.length - 1, 'normal');
+
+    expect(state.frozen).toHaveLength(1);
+    expect(ctx.saveMetadata).toHaveBeenCalledTimes(1);
   });
 });
 
@@ -379,10 +418,10 @@ describe('source hygiene', () => {
     expect(SOURCE).not.toContain('Anton');
   });
 
-  it('keeps no session-level record and writes no canonical state', () => {
+  it('keeps no session-level record and saves metadata only through state', () => {
     expect(SOURCE).not.toContain('lastAppend');
     expect(SOURCE).not.toContain('appendedText');
-    expect(SOURCE).not.toContain('state.js');
     expect(SOURCE).not.toContain('saveMetadata');
+    expect(SOURCE.match(/maybeFreeze\(/g)).toHaveLength(1);
   });
 });

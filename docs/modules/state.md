@@ -62,6 +62,14 @@ A one-time bump is allowed here while [Unknown version](#unknown-version) still 
 
 A pushed span is **compiled once and remembered** (`docs/protocol/host-mapping.md#s16-freeze`): from then on the `chat[]` messages it was compiled from are no longer inputs, and their ids sit in `frozenIds` so derivation skips them. Editing, deleting or swiping *those* messages changes the visible log only. Everything above the watermark is the opposite: it is re-read on every request.
 
+## Advance watermark {#advance-watermark}
+
+`advanceWatermark(state, { messageId, offset, consumedIds })` is the **only** writer of `frozenIds` and `watermark`, and `freeze`'s apply step is its only caller (`docs/modules/freeze.md#watermark-mapping`). It mutates in place and returns nothing: every id in `consumedIds` that is a non-empty string and not already listed is appended to `frozenIds`, and `watermark` is replaced by `{ messageId: messageId ?? null, offset: <finite offset, else 0> }`.
+
+It is append-only in the same sense `pushFrozen` is: there is no removal path, no un-consume, no way to walk the watermark backwards to an earlier message, and no sorting or re-indexing of `frozenIds` — order there carries no meaning, membership is the only query. A `null` id is skipped rather than stored, because a message with no id cannot be named by a later derivation and a `null` entry would match nothing.
+
+The two writes belong in one function because they are one event: a freeze consumes whole messages *and* leaves at most one message half-consumed, and a state that recorded only one of the two would send text twice or lose it. Nothing else in the codebase may move them independently.
+
 ## Unknown version
 
 A stored structure whose `version` is neither `STATE_VERSION` nor the migratable `1` (including a missing `version`) is returned **unchanged**: not repaired, not overwritten, not normalised, not migrated. One `console.warn` naming the unknown version is emitted, at most once per state object — a module-level `WeakSet` of already-warned objects keeps a per-request caller from filling the console.

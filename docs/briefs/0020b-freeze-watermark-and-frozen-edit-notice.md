@@ -1,5 +1,5 @@
 # Brief 0020b — freezing against the derived frontier: watermark mapping and the frozen-edit notice
-Status: draft
+Status: implemented
 Complexity: high
 PLAN sections: §16 (freezing promotes the mutable frontier into immutable history; append-only, old spans never re-cut, target 3,000–4,200 words with jitter, overrun allowed for a better boundary), §17 (cut selection avoids the external character and high-salience structure — unchanged heuristics, re-used verbatim), §12 (the frontier is normalized every request; freezing is the separate, occasional event that moves text out of it), §10 (editing authority is manuscript-wide within the mutable frontier — the notice tells the collaborator when an edit has fallen outside it)
 Invariants touched: INV-6 (append-only, cuts only at complete block boundaries — now also "never inside a message whose transform is not offset-preserving"), INV-7 (cut selection heuristics unchanged), INV-4 (freezing is the only thing that moves the watermark), INV-10 (the watermark records a text offset, never a turn count, index or timestamp)
@@ -80,18 +80,18 @@ Freezing works again, against the derived frontier: after a receipt, `recovery` 
 - (empty — every entry above is `status: verified`.)
 
 ## Acceptance
-- [ ] A derived frontier long enough to cut freezes: `state.frozen` gains one span whose text is `derived.text.slice(0, cut.frozenEnd)`, and the next `deriveFrontier` with the updated state returns exactly the remainder — byte-identical to `derived.text.slice(cut.index)` after trimming the delimiter.
-- [ ] Fully consumed messages land in `state.frozenIds` and the watermark is `{ messageId: null, offset: 0 }`; a cut inside an assistant message sets `watermark = { messageId: <that id>, offset }` with `mes.slice(offset)` equal to the un-frozen remainder of that message.
-- [ ] A cut that would fall strictly inside a segment with `sourceStart === null` returns `null` and leaves `state` deep-equal to before (no span pushed, no watermark move).
-- [ ] `pushFrozen` refusal (mid-block text) leaves `frozenIds` and `watermark` untouched.
-- [ ] `advanceWatermark` never adds a duplicate or a `null` id and never removes one.
-- [ ] After a freeze, a second `maybeFreeze` on the newly derived (now short) frontier returns `null`; freezing happens once per receipt.
-- [ ] INV-10: freezing twice from two different live histories that yield the same derived text and state produces deep-equal `frozen`, `frozenIds` and `watermark`.
-- [ ] `noticeFrozenEdit` calls `globalThis.toastr.info` exactly once with the exact `FROZEN_EDIT_NOTICE` text for a message whose id is in `frozenIds`; returns `false` and calls nothing for an unfrozen message, for the watermark message, for a message with no id, for an out-of-range index, and when `globalThis.toastr` is undefined (no throw).
-- [ ] Emitting MESSAGE_EDITED and MESSAGE_SWIPED after importing `index.js` routes the payload id to `noticeFrozenEdit`; MESSAGE_DELETED has no subscriber.
-- [ ] Every pre-existing `selectCut` test passes unchanged and `src/freeze.js`'s heuristic code is byte-identical apart from the new exports.
-- [ ] `npm run check` passes.
-- [ ] every new pointer comment resolves (`node tools/check-comments.mjs`).
+- [x] A derived frontier long enough to cut freezes: `state.frozen` gains one span whose text is `derived.text.slice(0, cut.frozenEnd)`, and the next `deriveFrontier` with the updated state returns exactly the remainder — byte-identical to `derived.text.slice(cut.index)` after trimming the delimiter.
+- [x] Fully consumed messages land in `state.frozenIds` and the watermark is `{ messageId: null, offset: 0 }`; a cut inside an assistant message sets `watermark = { messageId: <that id>, offset }` with `mes.slice(offset)` equal to the un-frozen remainder of that message.
+- [x] A cut that would fall strictly inside a segment with `sourceStart === null` returns `null` and leaves `state` deep-equal to before (no span pushed, no watermark move).
+- [x] `pushFrozen` refusal (mid-block text) leaves `frozenIds` and `watermark` untouched.
+- [x] `advanceWatermark` never adds a duplicate or a `null` id and never removes one.
+- [x] After a freeze, a second `maybeFreeze` on the newly derived (now short) frontier returns `null`; freezing happens once per receipt.
+- [x] INV-10: freezing twice from two different live histories that yield the same derived text and state produces deep-equal `frozen`, `frozenIds` and `watermark`.
+- [x] `noticeFrozenEdit` calls `globalThis.toastr.info` exactly once with the exact `FROZEN_EDIT_NOTICE` text for a message whose id is in `frozenIds`; returns `false` and calls nothing for an unfrozen message, for the watermark message, for a message with no id, for an out-of-range index, and when `globalThis.toastr` is undefined (no throw).
+- [x] Emitting MESSAGE_EDITED and MESSAGE_SWIPED after importing `index.js` routes the payload id to `noticeFrozenEdit`; MESSAGE_DELETED has no subscriber.
+- [x] Every pre-existing `selectCut` test passes unchanged and `src/freeze.js`'s heuristic code is byte-identical apart from the new exports.
+- [x] `npm run check` passes.
+- [x] every new pointer comment resolves (`node tools/check-comments.mjs`).
 
 ## Docs to write/update
 - `docs/modules/freeze.md` — new `## Watermark mapping {#watermark-mapping}` (derived-text offset → `(messageId, offset)`; the fully-vs-partially-consumed cases; why a cut inside a non-offset-preserving user block is refused rather than approximated, and that refusing costs nothing because the next receipt retries); new `## Frozen-edit notice {#frozen-edit-notice}` (the pinned string verbatim, that it is the only UI in the freeze path, why the watermark message is excluded, and that `toastr` is a page global accessed defensively — `docs/api/sillytavern.md#toastr`). Restore the `maybeFreeze` description under the existing candidates heading.

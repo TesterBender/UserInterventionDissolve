@@ -139,6 +139,49 @@ describe('index.js bootstrap', () => {
   });
 });
 
+describe('frozen-edit subscriptions', () => {
+  beforeEach(() => {
+    vi.resetModules();
+  });
+
+  afterEach(() => {
+    delete globalThis.toastr;
+    uninstall();
+    vi.restoreAllMocks();
+    delete globalThis[INTERCEPTOR_GLOBAL];
+  });
+
+  it('routes MESSAGE_EDITED and MESSAGE_SWIPED payload ids to the notice, and leaves MESSAGE_DELETED unsubscribed', async () => {
+    const info = vi.fn();
+    globalThis.toastr = { info };
+    const chat = [
+      { name: 'Anton', is_user: false, is_system: false, mes: 'One.', extra: { [METADATA_KEY]: { id: 'a' } } },
+      { name: 'Anton', is_user: false, is_system: false, mes: 'Two.', extra: { [METADATA_KEY]: { id: 'b' } } },
+    ];
+    const ctx = installFakeContext({
+      chat,
+      chatMetadata: {
+        [METADATA_KEY]: { version: 2, frozen: [], frozenIds: ['a'], watermark: { messageId: null, offset: 0 } },
+      },
+    });
+    vi.spyOn(console, 'log').mockImplementation(() => {});
+    const { FROZEN_EDIT_NOTICE } = await import('../src/freeze.js');
+    await import('../index.js');
+
+    await ctx.eventSource.emit(ctx.eventTypes.MESSAGE_EDITED, 0);
+    await ctx.eventSource.emit(ctx.eventTypes.MESSAGE_SWIPED, 0);
+    expect(info).toHaveBeenCalledTimes(2);
+    expect(info).toHaveBeenCalledWith(FROZEN_EDIT_NOTICE);
+
+    await ctx.eventSource.emit(ctx.eventTypes.MESSAGE_EDITED, 1);
+    await ctx.eventSource.emit(ctx.eventTypes.MESSAGE_SWIPED, 1);
+    await ctx.eventSource.emit(ctx.eventTypes.MESSAGE_DELETED, chat.length);
+    expect(info).toHaveBeenCalledTimes(2);
+    expect(ctx.saveChat).not.toHaveBeenCalled();
+    expect(ctx.saveMetadata).not.toHaveBeenCalled();
+  });
+});
+
 describe('the /uidsolo slash command', () => {
   beforeEach(() => {
     vi.resetModules();

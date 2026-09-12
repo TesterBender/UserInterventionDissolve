@@ -48,16 +48,20 @@ export function deriveFrontier(chat, state, literal) {
     if (id !== null && frozenIds.has(id)) continue;
 
     const offset = watermark.offset;
-    const source = id === watermark.messageId && Number.isFinite(offset) && offset > 0
-      ? message.mes.slice(offset)
-      : message.mes;
+    const cut = id === watermark.messageId && Number.isFinite(offset) && offset > 0;
+    const source = cut ? message.mes.slice(offset) : message.mes;
 
     const block = message.is_user === true ? toManuscriptBlock(source, literal) : source.trim();
     if (block === '') continue;
 
+    // source-start: offset into mes, null when the transform shifted it → docs/modules/derive.md#derivation-rule
+    const sourceStart = block === source.trim()
+      ? (cut ? offset : 0) + (source.length - source.trimStart().length)
+      : null;
+
     const start = blocks.length === 0 ? 0 : end + BLOCK_DELIMITER.length;
     end = start + block.length;
-    segments.push({ id, start, end });
+    segments.push({ id, start, end, sourceStart });
     blocks.push(block);
   }
 

@@ -3,7 +3,7 @@ Owns: INV-6 (cut point), INV-7 (cut selection), INV-10 (with frontier) (docs/pro
 PLAN: §16, §17, §18
 Depends on: grammar, constants
 
-`src/freeze.js` answers one question: given the current mutable frontier text and the reserved external literal, where — if anywhere — may a span be cut off the front and promoted into immutable history? `selectCut` decides, and that is currently the module's whole exported surface besides `countWords`. The module reads no SillyTavern context, no clock, no `chat[]` and no canonical state; it imports nothing from `src/state.js`.
+`src/freeze.js` answers one question: given the current mutable frontier text and the reserved external literal, where — if anywhere — may a span be cut off the front and promoted into immutable history? `selectCut` decides and `maybeFreeze` applies, mapping the chosen offset back onto the message the cut fell in (see [Watermark mapping](#watermark-mapping)). The selection half reads no SillyTavern context, no clock, no `chat[]` and no canonical state; the apply half reads and mutates canonical state through `src/state.js`, and one small notice function reads the live context (see [Frozen-edit notice](#frozen-edit-notice)).
 
 ## Target and jitter {#target-jitter}
 
@@ -35,7 +35,7 @@ A boundary is the gap between two blocks — the blank line that PLAN §5 makes 
 
 A frontier of fewer than two blocks therefore has no candidate at all, and neither does a frontier that has not yet reached `min`; both return `null`, which means "do not freeze" and is a normal outcome.
 
-**`maybeFreeze` is absent between brief 0020a and brief 0020b.** It applied a cut by moving text into `state.frozen` and assigning the remainder back to a stored `state.frontier`; the frontier is no longer stored, so the function it applied the cut to is gone (`docs/modules/derive.md#derivation-rule`, `docs/modules/recovery.md#freeze-hookup`). Everything on this page below and above that sentence — `selectCut`, the candidate rules, the jitter, the salience heuristics, the word counting — is unchanged and untouched; 0020b re-introduces the apply step in its derived form, mapping the chosen offset onto a `(messageId, offset)` watermark.
+`maybeFreeze(state, derived, literal, opts)` is the apply step. `derived` is the `{ text, segments }` object the derivation just produced (`docs/modules/derive.md#derivation-rule`); the function runs `selectCut` over `derived.text`, and a `null` cut means "do not freeze" and is returned as `null`. Otherwise the frozen prefix `derived.text.slice(0, cut.frozenEnd)` is offered to `pushFrozen` (`docs/modules/state.md#append-only`) and, if accepted, the cut offset is translated into a watermark by [Watermark mapping](#watermark-mapping). The remaining frontier is not stored anywhere: it is whatever the *next* derivation produces from the updated state, which is why nothing here assigns a remainder. The return value is `{ frozenIndex, words, target, overrun, blockIndex, watermark }` — reporting only, for tests and for the caller's decision to save metadata.
 
 The chosen cut reports two offsets into the frontier text. `frozenEnd` is `blocks[i].end` — the end of the last frozen block, with the trailing whitespace `parseManuscript` already trimmed off. `index` is `blocks[i + 1].start` — where the remaining frontier begins. Everything between them is the inter-block delimiter, which is a separator and belongs to neither side, so it is dropped. Both sides are otherwise taken **verbatim**: `text = frontier.slice(0, frozenEnd)` and `rest = frontier.slice(index)`, with no re-joining, no normalisation, no delimiter repair and no trimming beyond those offsets. Rolling back an incomplete trailing block is `recovery`'s job (INV-8); this module only declines to cut at one.
 
@@ -70,11 +70,38 @@ The letters-only regex in `tests/prompt.test.js` (`/[A-Za-z'’]+/g`) is deliber
 
 ## Purity and INV-10 {#purity}
 
-`selectCut`'s inputs are the frontier text, the reserved literal and an options object — nothing else. No host context, no `chat[]`, no clock, no randomness, no module-level mutable state; `src/freeze.js` contains no occurrence of `SillyTavern`, `Date.now`, `Math.random` or `performance`, and imports nothing from `src/host.js`. The module is now pure end to end: with the apply step gone it mutates nothing at all, and `createdAt` is deliberately left for `pushFrozen` to fill, which keeps `Date.now()` out of this module entirely.
+`selectCut`'s inputs are the frontier text, the reserved literal and an options object — nothing else. No host context, no `chat[]`, no clock, no randomness, no module-level mutable state; `src/freeze.js` contains no occurrence of `SillyTavern`, `Date.now`, `Math.random` or `performance`. `maybeFreeze` adds no impurity of its own: it is a function of `(state, derived, literal, opts)` that mutates only the state object it was handed, and `createdAt` is deliberately left for `pushFrozen` to fill, which keeps `Date.now()` out of this module entirely. `noticeFrozenEdit` is the single exception, and it only reads.
 
 That is what makes INV-10 testable here: two live interaction histories that normalise to the same frontier string produce byte-identical frozen span text and the same remaining frontier. Whether a passage arrived in one generation or six, whether the human intervened or not, cannot influence the cut, because none of that is an input.
 
 The other half of the story is `docs/protocol/host-mapping.md#s16-freeze`: "compiled once, remembered". Once a span is pushed it is never recompiled from `chat[]` and never revisited, so a later edit, deletion or swipe of the messages it came from changes the visible log only. Re-cutting, merging, splitting and removing frozen spans are all forbidden by INV-6, and this module exports no such operation.
+
+## Watermark mapping {#watermark-mapping}
+
+`selectCut` reports `frozenEnd`, a character offset into the **derived** text. Canonical state records instead which messages have been fully consumed and how far into one partially consumed message the cut went (`docs/modules/state.md#shape`), so the offset has to be mapped back onto `chat[]`. `derived.segments` is what makes that possible: each entry carries the block's `start`/`end` in the derived text, the message `id` it came from, and `sourceStart`, the offset inside that message's `mes` that corresponds to `start` (`docs/modules/derive.md#derivation-rule`).
+
+The cut lands in the one segment `s` with `s.start <= frozenEnd <= s.end`, and there are exactly two cases.
+
+- **Fully consumed** — `frozenEnd === s.end`. The cut fell on a block boundary that is also a message boundary, so every segment ending at or before it has been compiled in full: their ids go into `frozenIds` and the watermark becomes `{ messageId: null, offset: 0 }`. No message is partially consumed.
+- **Partially consumed** — `frozenEnd` strictly inside `s`. One message was cut through: the segments ending at or before `s.start` are fully consumed, and the watermark becomes `{ messageId: s.id, offset: s.sourceStart + (frozenEnd - s.start) }`, so the next derivation takes `mes.slice(offset)` and resumes exactly where the frozen span ended.
+
+A partial cut is **refused** — `maybeFreeze` returns `null` and pushes nothing — when `s.sourceStart` is `null` or `s.id` is `null`. `sourceStart` is `null` precisely when the block is not a verbatim slice of `mes`: a user turn that gained a tag-header prefix at derive time has derived offsets that do not line up with the message text, so no honest `(messageId, offset)` exists for a point inside it. Cutting anyway would either duplicate or drop characters on the next derivation. This is the INV-6 rule "never freeze through the middle of a block" extended from blocks to message transforms, and refusing costs nothing: freezing is attempted again after the next receipt (`docs/modules/recovery.md#freeze-hookup`), by which time the frontier is longer and the jittered target picks a different boundary. There is no retry loop, no approximation and no second scan inside one call.
+
+A segment whose `id` is `null` is dropped by `advanceWatermark`'s non-empty-string check (`docs/modules/state.md#advance-watermark`), so a message that never got an id is never marked consumed. Recovery assigns ids before freezing, so in the live path this does not arise.
+
+A `pushFrozen` refusal short-circuits everything: no span, no watermark move, state byte-identical. The mutable region is never shortened without a corresponding frozen span.
+
+## Frozen-edit notice {#frozen-edit-notice}
+
+`noticeFrozenEdit(index, ctx)` is the one impure function in this module and the only user-visible surface in the whole freeze path. It reads `ctx.chat[index]`, and if that message's id is listed in `state.frozenIds` it shows one toast:
+
+> That part of the manuscript is already frozen; this edit stays in the log only.
+
+and returns `true`. For anything else — no such message, no id, an id that is not frozen — it returns `false` and shows nothing. It writes nothing, saves nothing and changes no message.
+
+The **watermark message is deliberately excluded**. Only its head has been compiled; editing its tail re-derives correctly on the next request, which is ordinary authorial editing under §10, not a log-only edit. Telling the collaborator otherwise would be wrong.
+
+`toastr` is a page global in SillyTavern, not an import (`docs/api/sillytavern.md#toastr`), so the call is `globalThis.toastr?.info(...)`: message only, no title, no options, and no console fallback — a host without the global simply shows nothing, which is the correct failure mode for an advisory notice.
 
 ## Three horizons {#three-horizons}
 
@@ -86,6 +113,6 @@ The consequence §18 asks for follows directly: dense external-character activit
 
 - **No pre-freeze lint.** §20's own closing caveat and `docs/decisions/0001-prompt-level-grammar.md` make lint advisory to the editor and never a gate on promotion (`docs/protocol/invariants.md#enforcement-model`). There is no warning, flag, report object or "would be rejected" field here, and no lint anywhere yet.
 - **No semantic salience.** §17 also names emotional peaks, chapter-like resolutions, POV resets and obvious handoffs. Those are not mechanically detectable and are not attempted — no sentiment scoring, no keyword lists, no model call.
-- **No persistence.** No `saveMetadata`, no `save()`, no `getState()`, no `chatMetadata`. The caller applies a cut and saves.
-- **No caller.** Nothing invokes `selectCut` today. Deciding *when* a freeze is attempted, applying it to the watermark and persisting the result is brief 0020b's (`docs/modules/recovery.md#freeze-hookup`), not this module's.
+- **No persistence.** No `saveMetadata` and no `save()` call: `maybeFreeze` mutates the state object and reports that it did, and the caller decides whether to persist (`docs/modules/recovery.md#freeze-hookup`).
+- **No schedule.** Deciding *when* a freeze is attempted is the caller's: once per receipt, nowhere else. This module has no timer, no on-load path and no manual command.
 - **No seeding, no token targets, no settings.** §19's seed span has no privileged meaning here, the target is counted in words rather than tokens, and none of the target, jitter or radius is readable or writable from `extensionSettings` or any UI.

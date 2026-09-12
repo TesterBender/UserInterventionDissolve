@@ -73,6 +73,16 @@ export function pushFrozen(state, span) {
   return true;
 }
 
+// advance-watermark: the only writer of frozenIds and watermark → docs/modules/state.md#advance-watermark
+export function advanceWatermark(state, { messageId, offset, consumedIds }) {
+  for (const id of consumedIds) {
+    if (typeof id !== 'string' || id === '') continue;
+    if (state.frozenIds.includes(id)) continue;
+    state.frozenIds.push(id);
+  }
+  state.watermark = { messageId: messageId ?? null, offset: Number.isFinite(offset) ? offset : 0 };
+}
+
 // save-metadata-only: message markers are saved by their own handlers → docs/modules/state.md#save
 export async function save(ctx = getCtx()) {
   await ctx.saveMetadata();

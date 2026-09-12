@@ -63,11 +63,18 @@ Trying to do better would not work anyway: STOPPED carries no arguments and ENDE
 
 ## Freeze hook-up {#freeze-hookup}
 
-**Automatic freezing is switched off between brief 0020a and brief 0020b.** This module imports nothing from `src/freeze.js` and calls nothing on receipt; one pointer comment marks the old call site.
+A freeze is attempted **once per receipt and nowhere else** — not on send, not on edit, not on chat load, and with no timer. The receipt is the moment the manuscript last grew, so it is the only moment at which a new cut can become available.
 
-The reason is mechanical rather than a change of policy. `selectCut` returns a character offset into the frontier *text* (`docs/modules/freeze.md#candidates`), and the frontier is now a derived string whose relationship to `chat[]` is the segment list (`docs/modules/derive.md#derivation-rule`). Until a cut offset can be mapped back to a `(messageId, offset)` watermark, a freeze could not record which messages it had consumed, and the next derivation would send the frozen text a second time. Brief 0020b adds that mapping and restores the call. Nothing partial is attempted in the meantime: no word-count stopgap, no cut that leaves the watermark alone.
+The attempt runs after the receipt markers are written and after `assignIds(ctx.chat)`, so every message the derivation can see already has an id and can be named by `frozenIds` or the watermark:
 
-When it returns, the rule is unchanged — recovery makes no decision about *whether* the manuscript is long enough. That is `freeze`'s word-count rule alone (`docs/modules/freeze.md#target-jitter`), which is what keeps PLAN §18's three horizons apart: the generation horizon must never become the transport horizon, and "one generation, one chunk" is exactly the conflation §18 forbids.
+```js
+const state = getState(ctx);
+const result = maybeFreeze(state, deriveFrontier(ctx.chat, state, literal), literal, {});
+```
+
+The frontier handed to `maybeFreeze` is derived fresh from the live chat (`docs/modules/derive.md#derivation-rule`); this module keeps no copy of it and passes the `{ text, segments }` object straight through, because the segments are what let the chosen cut be mapped back to a `(messageId, offset)` watermark (`docs/modules/freeze.md#watermark-mapping`). `result === null` means no span was pushed — no candidate, a refused cut, or a cut inside a non-offset-preserving block — and in that case canonical state is untouched and **no metadata save happens**. Only a real freeze costs a `saveMetadata()`; the `saveChat()` this handler already performs is unrelated and unconditional.
+
+The rule is unchanged — recovery makes no decision about *whether* the manuscript is long enough. That is `freeze`'s word-count rule alone (`docs/modules/freeze.md#target-jitter`), which is what keeps PLAN §18's three horizons apart: the generation horizon must never become the transport horizon, and "one generation, one chunk" is exactly the conflation §18 forbids.
 
 ## Ordering with boundary {#ordering}
 

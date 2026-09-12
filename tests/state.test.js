@@ -3,7 +3,7 @@ import fs from 'node:fs';
 import path from 'node:path';
 import { installFakeContext, uninstall, makeMessage, makeAssistantMessage } from './helpers/fake-context.js';
 import { METADATA_KEY, STATE_VERSION, INTERCEPTOR_GLOBAL } from '../src/constants.js';
-import { createState, migrateV1, getState, pushFrozen, save } from '../src/state.js';
+import { createState, migrateV1, getState, pushFrozen, save, advanceWatermark } from '../src/state.js';
 import { deriveFrontier } from '../src/derive.js';
 import * as stateModule from '../src/state.js';
 
@@ -251,12 +251,43 @@ describe('pushFrozen', () => {
 
   it('exports no removal, replacement or frontier path', () => {
     expect(Object.keys(stateModule).sort()).toEqual([
+      'advanceWatermark',
       'createState',
       'getState',
       'migrateV1',
       'pushFrozen',
       'save',
     ]);
+  });
+});
+
+describe('advanceWatermark', () => {
+  it('appends consumed ids and replaces the watermark, returning nothing', () => {
+    const state = createState();
+    expect(advanceWatermark(state, { messageId: 'm1', offset: 12, consumedIds: ['a', 'b'] })).toBeUndefined();
+    expect(state.frozenIds).toEqual(['a', 'b']);
+    expect(state.watermark).toEqual({ messageId: 'm1', offset: 12 });
+
+    advanceWatermark(state, { messageId: null, offset: 0, consumedIds: ['c'] });
+    expect(state.frozenIds).toEqual(['a', 'b', 'c']);
+    expect(state.watermark).toEqual({ messageId: null, offset: 0 });
+  });
+
+  it('never adds a duplicate, a null, an empty string or a non-string, and never removes one', () => {
+    const state = createState();
+    advanceWatermark(state, { messageId: 'm1', offset: 3, consumedIds: ['a', 'b'] });
+    advanceWatermark(state, { messageId: 'm2', offset: 4, consumedIds: ['a', null, '', 7, undefined, 'b', 'c'] });
+
+    expect(state.frozenIds).toEqual(['a', 'b', 'c']);
+    expect(state.watermark).toEqual({ messageId: 'm2', offset: 4 });
+  });
+
+  it('normalises a missing id to null and a non-finite offset to zero', () => {
+    const state = createState();
+    advanceWatermark(state, { messageId: undefined, offset: undefined, consumedIds: [] });
+    expect(state.watermark).toEqual({ messageId: null, offset: 0 });
+    expect(state.frozenIds).toEqual([]);
+    expect(JSON.parse(JSON.stringify(state))).toEqual(state);
   });
 });
 
@@ -333,7 +364,7 @@ describe('index.js state materialisation', () => {
   });
 });
 
-describe('index.js after the edit subscriptions were removed', () => {
+describe('index.js edit and swipe subscriptions', () => {
   beforeEach(() => {
     vi.resetModules();
   });
@@ -364,21 +395,18 @@ describe('index.js after the edit subscriptions were removed', () => {
     expect(ctx.saveChat).not.toHaveBeenCalled();
   });
 
-  it('initialises with those names absent from eventTypes and never names them', async () => {
+  it('stays ready when the two events are absent, and never names MESSAGE_DELETED', async () => {
     const ctx = installFakeContext();
     delete ctx.eventTypes.MESSAGE_SWIPED;
     delete ctx.eventTypes.MESSAGE_EDITED;
-    delete ctx.eventTypes.MESSAGE_DELETED;
     vi.spyOn(console, 'log').mockImplementation(() => {});
     const warnSpy = vi.spyOn(console, 'warn').mockImplementation(() => {});
     const mod = await import('../index.js');
 
     expect(mod.isReady()).toBe(true);
-    expect(warnSpy).not.toHaveBeenCalled();
+    expect(warnSpy).toHaveBeenCalledTimes(1);
+    expect(warnSpy.mock.calls[0][0]).toContain('MESSAGE_EDITED, MESSAGE_SWIPED');
 
-    const source = fs.readFileSync(path.resolve('index.js'), 'utf8');
-    for (const name of ['MESSAGE_SWIPED', 'MESSAGE_EDITED', 'MESSAGE_DELETED']) {
-      expect(source).not.toContain(name);
-    }
+    expect(fs.readFileSync(path.resolve('index.js'), 'utf8')).not.toContain('MESSAGE_DELETED');
   });
 });

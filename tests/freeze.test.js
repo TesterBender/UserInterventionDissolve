@@ -1,11 +1,12 @@
-import { describe, it, expect } from 'vitest';
+import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
 import fs from 'node:fs';
 import path from 'node:path';
-import { countWords, selectCut } from '../src/freeze.js';
+import { countWords, selectCut, maybeFreeze, noticeFrozenEdit, FROZEN_EDIT_NOTICE } from '../src/freeze.js';
 import { createState, pushFrozen } from '../src/state.js';
 import { deriveFrontier } from '../src/derive.js';
 import { isTrailingBlockComplete, parseManuscript } from '../src/grammar.js';
-import { FREEZE_MIN_WORDS, FREEZE_MAX_WORDS, FREEZE_DENSE_RADIUS } from '../src/constants.js';
+import { installFakeContext, uninstall } from './helpers/fake-context.js';
+import { METADATA_KEY, FREEZE_MIN_WORDS, FREEZE_MAX_WORDS, FREEZE_DENSE_RADIUS } from '../src/constants.js';
 
 const LITERAL = 'Mara:';
 const ABSENT = 'Zed:';
@@ -258,13 +259,13 @@ describe('INV-6: complete blocks only', () => {
   });
 });
 
-describe('no apply step between briefs 0020a and 0020b', () => {
-  it('exports selectCut and countWords only, and touches no state', () => {
-    expect(SOURCE).not.toContain('maybeFreeze');
-    expect(SOURCE).not.toContain('state.js');
+describe('module surface', () => {
+  it('exports the selection pair, the apply step and the notice', () => {
     expect(SOURCE.match(/^export function \w+/gm)).toEqual([
       'export function countWords',
       'export function selectCut',
+      'export function maybeFreeze',
+      'export function noticeFrozenEdit',
     ]);
   });
 
@@ -274,6 +275,209 @@ describe('no apply step between briefs 0020a and 0020b', () => {
 
     expect(cut.blockIndex).toBe(0);
     expect(pushFrozen(createState(), { text: text.slice(0, cut.frozenEnd) })).toBe(false);
+  });
+});
+
+describe('maybeFreeze', () => {
+  const OPTS = { min: 150, max: 350 };
+
+  function assistant(mes, id) {
+    return { name: 'Anton', is_user: false, is_system: false, mes, extra: { [METADATA_KEY]: { id } } };
+  }
+
+  function user(mes, id) {
+    return { name: 'Mara', is_user: true, is_system: false, mes, extra: { [METADATA_KEY]: { id } } };
+  }
+
+  it('freezes the prefix, consumes whole messages and leaves the remainder derivable', () => {
+    const chat = [assistant(buf(100), 'a'), assistant(buf(100), 'b'), assistant(buf(100), 'c'), assistant(buf(100), 'd')];
+    const state = createState();
+    const derived = deriveFrontier(chat, state, LITERAL);
+    const cut = selectCut(derived.text, LITERAL, OPTS);
+
+    const result = maybeFreeze(state, derived, LITERAL, OPTS);
+
+    expect(result.frozenIndex).toBe(0);
+    expect(result.words).toBe(cut.words);
+    expect(result.blockIndex).toBe(cut.blockIndex);
+    expect(result.watermark).toEqual({ messageId: null, offset: 0 });
+    expect(state.frozen).toHaveLength(1);
+    expect(state.frozen[0].text).toBe(derived.text.slice(0, cut.frozenEnd));
+    expect(state.watermark).toEqual({ messageId: null, offset: 0 });
+    expect(state.frozenIds).toEqual(
+      derived.segments.filter((segment) => segment.end <= cut.frozenEnd).map((segment) => segment.id),
+    );
+
+    expect(deriveFrontier(chat, state, LITERAL).text).toBe(derived.text.slice(cut.index));
+  });
+
+  it('records a cut inside an assistant message as the watermark', () => {
+    const chat = [
+      assistant(manuscript([buf(100), buf(100), buf(100)]), 'a'),
+      assistant(buf(100), 'b'),
+    ];
+    const state = createState();
+    const derived = deriveFrontier(chat, state, LITERAL);
+    const cut = selectCut(derived.text, LITERAL, OPTS);
+
+    const result = maybeFreeze(state, derived, LITERAL, OPTS);
+
+    expect(result.watermark.messageId).toBe('a');
+    expect(state.watermark).toEqual(result.watermark);
+    expect(state.frozenIds).toEqual([]);
+    expect(chat[0].mes.slice(state.watermark.offset)).toBe(
+      derived.text.slice(cut.frozenEnd, derived.segments[0].end),
+    );
+    expect(chat[0].mes.slice(state.watermark.offset).trim()).toBe(
+      derived.text.slice(cut.index, derived.segments[0].end),
+    );
+    expect(deriveFrontier(chat, state, LITERAL).text).toBe(derived.text.slice(cut.index));
+  });
+
+  it('refuses a cut that falls inside a transformed user block and moves nothing', () => {
+    const blocks = [];
+    for (let i = 0; i < 6; i += 1) blocks.push(buf(100));
+    const chat = [
+      assistant(manuscript([buf(100), buf(100)]), 'a'),
+      user(manuscript(blocks), 'b'),
+    ];
+    const state = createState();
+    const derived = deriveFrontier(chat, state, LITERAL);
+    const cut = selectCut(derived.text, LITERAL, { min: 450, max: 550 });
+
+    expect(derived.segments[1].sourceStart).toBeNull();
+    expect(cut.frozenEnd).toBeGreaterThan(derived.segments[1].start);
+    expect(cut.frozenEnd).toBeLessThan(derived.segments[1].end);
+
+    const before = JSON.parse(JSON.stringify(state));
+    expect(maybeFreeze(state, derived, LITERAL, { min: 450, max: 550 })).toBeNull();
+    expect(state).toEqual(before);
+  });
+
+  it('leaves frozenIds and the watermark untouched when pushFrozen refuses', () => {
+    const chat = [
+      assistant('w0 w1 w2 no terminal punctuation here', 'a'),
+      assistant(buf(100), 'b'),
+      assistant(buf(100), 'c'),
+    ];
+    const state = createState();
+    const derived = deriveFrontier(chat, state, LITERAL);
+    const before = JSON.parse(JSON.stringify(state));
+
+    expect(maybeFreeze(state, derived, LITERAL, { min: 6, max: 6 })).toBeNull();
+    expect(state).toEqual(before);
+  });
+
+  it('returns null when no cut is available at all', () => {
+    const state = createState();
+    expect(maybeFreeze(state, deriveFrontier([assistant(buf(10), 'a')], state, LITERAL), LITERAL, OPTS)).toBeNull();
+    expect(state).toEqual(createState());
+  });
+
+  it('freezes once: a second attempt on the newly derived frontier declines', () => {
+    const chat = [assistant(buf(100), 'a'), assistant(buf(100), 'b'), assistant(buf(100), 'c'), assistant(buf(100), 'd')];
+    const state = createState();
+
+    expect(maybeFreeze(state, deriveFrontier(chat, state, LITERAL), LITERAL, OPTS)).not.toBeNull();
+    expect(maybeFreeze(state, deriveFrontier(chat, state, LITERAL), LITERAL, OPTS)).toBeNull();
+    expect(state.frozen).toHaveLength(1);
+  });
+
+  it('INV-10: two live histories with the same derived text freeze identically', () => {
+    const blocks = [buf(100), buf(100), buf(100), buf(100)];
+    const chatA = [
+      assistant(blocks[0], 'a'),
+      assistant(blocks[1], 'b'),
+      assistant(blocks[2], 'c'),
+      assistant(blocks[3], 'd'),
+    ];
+    const chatB = [
+      { mes: 'housekeeping', is_system: true, extra: {} },
+      assistant(blocks[0], 'a'),
+      assistant(blocks[1], 'b'),
+      { mes: 'more housekeeping', is_system: true, extra: {} },
+      assistant(blocks[2], 'c'),
+      assistant(blocks[3], 'd'),
+    ];
+
+    const stateA = createState();
+    const stateB = createState();
+    const derivedA = deriveFrontier(chatA, stateA, LITERAL);
+    const derivedB = deriveFrontier(chatB, stateB, LITERAL);
+    expect(derivedA.text).toBe(derivedB.text);
+
+    maybeFreeze(stateA, derivedA, LITERAL, OPTS);
+    maybeFreeze(stateB, derivedB, LITERAL, OPTS);
+
+    expect(stateA.frozen.map((span) => span.text)).toEqual(stateB.frozen.map((span) => span.text));
+    expect(stateA.frozenIds).toEqual(stateB.frozenIds);
+    expect(stateA.watermark).toEqual(stateB.watermark);
+  });
+});
+
+describe('noticeFrozenEdit', () => {
+  let info;
+
+  beforeEach(() => {
+    info = vi.fn();
+    globalThis.toastr = { info };
+  });
+
+  afterEach(() => {
+    delete globalThis.toastr;
+    uninstall();
+  });
+
+  function seed(ctx, overrides = {}) {
+    ctx.chatMetadata[METADATA_KEY] = { ...createState(), ...overrides };
+  }
+
+  function message(id) {
+    return { name: 'Anton', is_user: false, is_system: false, mes: 'He waits.', extra: { [METADATA_KEY]: { id } } };
+  }
+
+  it('shows one toast with the pinned text for a consumed message', () => {
+    const ctx = installFakeContext({ chat: [message('a')] });
+    seed(ctx, { frozenIds: ['a'] });
+
+    expect(noticeFrozenEdit(0, ctx)).toBe(true);
+    expect(info).toHaveBeenCalledTimes(1);
+    expect(info).toHaveBeenCalledWith(FROZEN_EDIT_NOTICE);
+    expect(FROZEN_EDIT_NOTICE).toBe(
+      'That part of the manuscript is already frozen; this edit stays in the log only.',
+    );
+  });
+
+  it('says nothing for an unfrozen message, the watermark message, a message with no id or a bad index', () => {
+    const ctx = installFakeContext({
+      chat: [message('a'), message('w'), { mes: 'no id', is_system: false, extra: {} }],
+    });
+    seed(ctx, { frozenIds: ['z'], watermark: { messageId: 'w', offset: 4 } });
+
+    for (const index of [0, 1, 2, 9, -1, undefined]) {
+      expect(noticeFrozenEdit(index, ctx)).toBe(false);
+    }
+    expect(info).not.toHaveBeenCalled();
+  });
+
+  it('writes nothing, saves nothing and does not throw without the toastr global', () => {
+    delete globalThis.toastr;
+    const ctx = installFakeContext({ chat: [message('a')] });
+    seed(ctx, { frozenIds: ['a'] });
+    const before = JSON.stringify(ctx.chat);
+
+    expect(noticeFrozenEdit(0, ctx)).toBe(true);
+    expect(JSON.stringify(ctx.chat)).toBe(before);
+    expect(ctx.saveChat).not.toHaveBeenCalled();
+    expect(ctx.saveMetadata).not.toHaveBeenCalled();
+  });
+
+  it('defaults ctx to the live host context', () => {
+    const ctx = installFakeContext({ chat: [message('a')] });
+    seed(ctx, { frozenIds: ['a'] });
+
+    expect(noticeFrozenEdit(0)).toBe(true);
+    expect(info).toHaveBeenCalledTimes(1);
   });
 });
 
@@ -309,13 +513,13 @@ describe('purity and INV-10', () => {
       .toEqual(selectCut(textB, LITERAL, { min: 150, max: 350 }));
   });
 
-  it('names no clock, no randomness and no host', () => {
+  it('names no clock and no randomness, and touches the host in one place only', () => {
     expect(SOURCE).not.toMatch(/SillyTavern/);
     expect(SOURCE).not.toMatch(/Date\.now/);
     expect(SOURCE).not.toMatch(/Math\.random/);
     expect(SOURCE).not.toMatch(/performance/);
-    expect(SOURCE).not.toMatch(/host\.js/);
-    expect(SOURCE).not.toMatch(/\b(getState|save|saveMetadata|getCtx)\b/);
+    expect(SOURCE).not.toMatch(/\b(save|saveMetadata|saveChat)\b/);
+    expect(SOURCE.match(/getCtx\(\)/g)).toHaveLength(1);
   });
 });
 
