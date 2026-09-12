@@ -40,7 +40,7 @@ Beyond that, follow the story where it leads.
 
 The story ends when it has reached its ending.`;
 
-const EXPECTED_CONTROL = 'Continue the manuscript directly from the current endpoint. Preserve established causal, stylistic, perspectival, and formatting continuity. Do not recap, restart, summarize, or force resolution.';
+const EXPECTED_CONTROL = 'Continue naturally from where the manuscript leaves off, with the full preceding context in mind. Let what has already been established—character intentions, scene dynamics, tone, and unfolding circumstances—inform what follows, while staying consistent with the existing voice and perspective.';
 
 const SOURCE = readFileSync('src/prompt.js', 'utf8');
 

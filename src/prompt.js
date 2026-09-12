@@ -42,7 +42,7 @@ The story ends when it has reached its ending.`;
 
 // continuation-control: one frozen byte-stable string, never recomposed → docs/modules/prompt.md#continuation-control
 export const CONTINUATION_CONTROL =
-  'Continue the manuscript directly from the current endpoint. Preserve established causal, stylistic, perspectival, and formatting continuity. Do not recap, restart, summarize, or force resolution.';
+  'Continue naturally from where the manuscript leaves off, with the full preceding context in mind. Let what has already been established—character intentions, scene dynamics, tone, and unfolding circumstances—inform what follows, while staying consistent with the existing voice and perspective.';
 
 // solo-continuation: canonical string by reference plus one pinned sentence → docs/modules/prompt.md#solo-continuation
 export const SOLO_CONTINUATION_CONTROL = `${CONTINUATION_CONTROL} For this stretch, {{user}} is in the scene but stays out of the writing; let the others carry it.`;

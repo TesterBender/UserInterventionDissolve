@@ -163,3 +163,17 @@ User-authored replacement of `MANUSCRIPT_SYSTEM_PROMPT` (byte-for-byte; 462 word
 - [x] constant equals the user's text verbatim
 - [x] presets regenerated, idempotent
 - [x] `npm run check` passes
+
+## Amendment 3 (2026-09-13) — user-authored continuation control
+
+User request: "fix both the user prefill prompts with this more natural and actually creative-writing inclined continue". `CONTINUATION_CONTROL` becomes, byte-for-byte (em dashes as pasted):
+
+```text
+Continue naturally from where the manuscript leaves off, with the full preceding context in mind. Let what has already been established—character intentions, scene dynamics, tone, and unfolding circumstances—inform what follows, while staying consistent with the existing voice and perspective.
+```
+
+`SOLO_CONTINUATION_CONTROL` is composed from it by reference and therefore changes with it; its trailing sentence is unchanged. Applied by the orchestrator under the pinned-string lane; only the constant and its verbatim test changed. PLAN §13's byte-identity requirement still holds: one string, frozen once.
+
+- [x] constant equals the user's text verbatim
+- [x] solo variant = new text + unchanged solo sentence
+- [x] `npm run check` passes
