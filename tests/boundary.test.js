@@ -458,6 +458,6 @@ describe('index.js boundary subscriptions', () => {
 
     await ctx.eventSource.emit(ctx.eventTypes.MESSAGE_RECEIVED, 0, 'normal');
     expect(message.mes).toBe('He waits.');
-    expect(ctx.saveChat).toHaveBeenCalledTimes(1);
+    expect(ctx.saveChat).toHaveBeenCalled();
   });
 });

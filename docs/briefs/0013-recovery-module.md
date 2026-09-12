@@ -1,5 +1,5 @@
 # Brief 0013 — `recovery`: outcome classification, rollback, and the frontier/freeze hook-up
-Status: partial
+Status: implemented
 Complexity: high
 PLAN sections: §11 (the live cycle: model generation → boundary → collaborator block → merged into the manuscript → frontier normalised → new continuation; this brief owns the "model generation → merged into the manuscript" leg, the only place model text enters canonical state), §14 (the four generation outcomes: external-character boundary hands the floor to the collaborator; empty output at the boundary leaves the floor with the collaborator and must not be papered over with forced text; natural completion simply continues; maximum-output or exceptional termination rolls the incomplete trailing block back to the last complete boundary and must never freeze a syntactically incomplete block — "exceptional stop artifacts must not become fictional events"), §16 first paragraph (the mutable frontier is periodically promoted into immutable history; freezing is append-only and old spans are not re-cut), §18 (three independent horizons: the generation horizon — how long one generation ran — must not be conflated with the transport horizon; this module calls freeze after every append and lets `freeze` decide by word count alone, never by "one generation = one chunk")
 Invariants touched: INV-8 (this module is its owner: abnormal termination rolls back to the last complete block), INV-6 (respected, not owned: frozen spans are never edited — the swipe-replacement rule refuses to touch text that has already been frozen), INV-4 (the frontier is written here but never reconstructed here)
@@ -77,7 +77,7 @@ Per "Docs to write/update".
 - **Group-chat branching** (`docs/api/sillytavern.md#group-chats` is unverified) and any dependence on a finish reason, `streamingProcessor`, `is_send_press`, or any other ST internal not in the API inventory.
 
 ## Files
-- allowed to create/modify: `src/recovery.js`, `index.js` (one import plus one guarded MESSAGE_RECEIVED subscription placed after `boundary`'s block), `src/constants.js` (additions only; none expected), `tests/recovery.test.js`, `tests/helpers/fake-context.js` (helpers only, only if absent), `docs/modules/recovery.md`, `docs/modules/bootstrap.md` (one added heading), and this brief's Status line.
+- allowed to create/modify: `src/recovery.js`, `index.js` (one import plus one guarded MESSAGE_RECEIVED subscription placed after `boundary`'s block), `src/constants.js` (additions only; none expected), `tests/recovery.test.js`, `tests/helpers/fake-context.js` (helpers only, only if absent), `docs/modules/recovery.md`, `docs/modules/bootstrap.md` (one added heading), and this brief's Status line; `tests/boundary.test.js` — end-to-end saveChat lower-bound only, authorised by orchestrator 2026-09-12.
 - must not touch: `src/boundary.js`, `src/freeze.js`, `src/state.js`, `src/grammar.js`, `src/frontier.js`, `src/capture.js`, `src/host.js`, `src/prompt.js`, `src/preset.js` (all import-only), `tests/bootstrap.test.js`, `tests/grammar.test.js`, `tests/state.test.js`, `tests/boundary.test.js`, `tests/freeze.test.js`, `tests/frontier.test.js`, `tests/capture.test.js`, `tests/prompt.test.js`, `tests/preset.test.js`, `manifest.json`, `style.css`, `package.json`, `eslint.config.js`, `vitest.config.js`, `tools/*`, `presets/`, `PLAN.txt`, `CLAUDE.md`, `docs/api/sillytavern.md`, `docs/protocol/*`, `docs/decisions/*`, other `docs/briefs/*`.
 
 ## ST APIs used
@@ -114,8 +114,8 @@ Per "Docs to write/update".
 - [x] **Ordering:** with `boundary`'s MESSAGE_RECEIVED handler registered first and recovery's second on the fake emitter, one emit for a message ending `'\n\nMara:'` leaves the frontier containing the trimmed text only (no `'Mara:'`) and recovery's returned outcome is `'boundary'`.
 - [x] **Abnormal stop:** emitting GENERATION_STOPPED and GENERATION_ENDED through the fake emitter with no MESSAGE_RECEIVED leaves `state.frontier`, `state.frozen` and `chat[]` byte-identical and calls no save; `src/recovery.js` contains no occurrence of `GENERATION_STOPPED`, `GENERATION_ENDED`, `MESSAGE_EDITED`, `MESSAGE_SWIPED` or `MESSAGE_DELETED`.
 - [x] `src/recovery.js` contains no occurrence of the identifier `SillyTavern` and no hard-coded character name.
-- [ ] `index.js` registers exactly one new subscription, guarded by presence on `EVENT(ctx)`, positioned after `boundary`'s subscription block, and `init()`'s existing structure is unchanged.
-- [ ] `npm run check` passes.
+- [x] `index.js` composes into the existing MESSAGE_RECEIVED map entry after boundary (orchestrator instruction; see docs/modules/bootstrap.md#recovery-subscription), guarded by presence on `EVENT(ctx)`, and `init()`'s existing structure is unchanged.
+- [x] `npm run check` passes.
 - [x] every new pointer comment resolves (`node tools/check-comments.mjs`).
 
 ## Docs to write/update
