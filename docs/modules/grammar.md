@@ -15,17 +15,33 @@ Leading and trailing whitespace of a segment is trimmed off before the block is 
 
 ## Tag header
 
-A tag block is a block whose first characters are an actor name followed by a colon — §5's `Anton: sets the cup down.`. The recognised shape is a module constant:
+A tag block is a block whose start matches `<tag>:` followed by whitespace or end-of-line — §5's `Anton: sets the cup down.`. The rule is confident matching, case-insensitively: any name-shaped run of characters at block start, immediately followed by `:` and then whitespace or end-of-block, is a tag, regardless of the initial character's case. The recognised shape is a module constant:
 
-- an uppercase letter, then 0–39 further characters drawn from letters, digits, spaces, `-` and `'` (so `Anton`, `The Innkeeper`, `Jean-Luc`, `D'Vora` are actors);
+```js
+/^(?!["“”'‘’«»])([\p{L}\p{N}][\p{L}\p{N} '’\-.]{0,39}):(?=\s|$)/u
+```
+
+- a first character that is a unicode letter or digit;
+- then 0–39 further characters drawn from unicode letters, digits, space, `'`, `’`, `-`, `.` (so `Anton`, `anton`, `The Innkeeper`, `The tall woman in the doorway`, `Guard 2`, `Dr. Weiss`, `Jean-Luc`, `D'Vora`, `Élodie`, `Zoë` are all tags);
 - immediately followed by `:`;
 - followed by end-of-block or a whitespace character.
 
-The header is anchored at offset 0 of the block. A `Name:` further in is prose about someone, not a commitment by them, and a header that begins after leading whitespace is not at a block start at all. Anchoring is what keeps the tag/buffer split decidable from structure alone.
+There are exactly two exclusions, both expressed by the pattern itself, and nothing more:
 
-Deliberately rejected non-tags: `12:30 by the clock.` (starts with a digit, and the colon is not followed by whitespace), `she said: "no"` (lowercase initial — dialogue attribution in prose, not an actor name), and any block whose colon appears after the first character. The uppercase requirement is what separates an actor name from a mid-sentence clause opener; it costs the ability to tag a lowercase-named actor, which the protocol does not use.
+1. a block whose first character is a quote mark (`"`, `“`, `”`, `'`, `‘`, `’`, `«`) is never a tag — it is quoted prose, e.g. `"No," she said.`;
+2. the tag part must be non-empty — a block beginning with `:` (e.g. `: nothing.`) is never a tag.
 
-The actor name is reported trimmed, and the body is the block text with the header and the whitespace that separates it from the body removed. A block with no valid header is `kind: 'buffer'`, `actor: null`, and its body is the whole block.
+`12:30 by the clock.` remains a buffer for the reason that already applied: the colon is not followed by whitespace or end-of-line. There is no verb-detection or stop-word heuristic to rescue attribution-shaped prose — the user's rule is confident matching, and heuristics are refused.
+
+The header is anchored at offset 0 of the block, and the character class contains no newline, so the tag part cannot span lines — a colon that appears only on the block's second line produces no header. A `Name:` further in is prose about someone, not a commitment by them, and a header that begins after leading whitespace is not at a block start at all. Anchoring is what keeps the tag/buffer split decidable from structure alone.
+
+The accepted cost: a lowercase attribution such as `she said: "no"` at block start now parses as a tag block with actor `she said`. The seed span and the system prompt make that shape unlikely at block start, and a wrongly-tagged block is a legibility cost, not a safety one — nothing downstream grants authority on the strength of a tag's *case*. (Brief 0001's uppercase-initial narrowing, which existed to reject this shape, is superseded by brief 0004.)
+
+Because `.` and space are both admitted tag characters, a block that opens with a complete sentence ending in a period, followed by a capitalised name and a colon — `He turned. Anton: left.` — matches the whole leading run `He turned. Anton` as the tag part, not just `Anton`. This is the same class of cost as the `she said:` case above: the pattern's job is confident structural matching of a name-then-colon shape at block start, not sentence boundary detection, and a wrongly-scoped tag is a legibility cost rather than a safety one.
+
+The actor name is reported trimmed, exactly as matched, with **no lowercasing or other case normalisation** — `parseTagHeader` and `parseManuscript` apply no case transformation to any returned value. This matters because `boundary` builds its §8 stop literal from the persona name verbatim (`docs/protocol/host-mapping.md#s8-boundary`); an actor string normalised here could never be compared against that literal. `normalise()` exists only for the case-insensitive comparison inside `classifyActor`, below, and is never applied to a returned actor.
+
+The body is the block text with the header and the whitespace that separates it from the body removed. A block with no valid header is `kind: 'buffer'`, `actor: null`, and its body is the whole block.
 
 ## Actor classification
 
