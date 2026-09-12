@@ -74,16 +74,55 @@ describe('parseTagHeader', () => {
 
   it('rejects non-tags', () => {
     expect(parseTagHeader('12:30 by the clock.')).toBeNull();
-    expect(parseTagHeader('she said: "no"')).toBeNull();
+    // tag-header: lowercase attribution now parses as a tag → docs/modules/grammar.md#tag-header
+    expect(parseTagHeader('she said: "no"')).toEqual({ actor: 'she said', body: '"no"' });
     expect(parseTagHeader('The cup: it was empty.')).not.toBeNull();
-    expect(parseTagHeader('He turned. Anton: sets the cup down.')).toBeNull();
+    // tag-header: period+space in a leading sentence is itself a matched tag → docs/modules/grammar.md#tag-header
+    expect(parseTagHeader('He turned. Anton: sets the cup down.')).toEqual({
+      actor: 'He turned. Anton',
+      body: 'sets the cup down.',
+    });
     expect(parseTagHeader('  Anton: sets the cup down.')).toBeNull();
   });
 
-  it('makes the rejected shapes parse as buffer blocks', () => {
+  it('parses a lowercase single-word tag with the actor preserved verbatim', () => {
+    expect(parseTagHeader('anton: waits.')).toEqual({ actor: 'anton', body: 'waits.' });
+  });
+
+  it('accepts long multi-word tags with an article', () => {
+    expect(parseTagHeader('The tall woman in the doorway: steps back.').actor).toBe(
+      'The tall woman in the doorway',
+    );
+  });
+
+  it('accepts digits, periods and unicode letters inside a tag', () => {
+    expect(parseTagHeader('Guard 2: nods.').actor).toBe('Guard 2');
+    expect(parseTagHeader('Dr. Weiss: frowns.').actor).toBe('Dr. Weiss');
+    expect(parseTagHeader('Élodie: waits.').actor).toBe('Élodie');
+    expect(parseTagHeader('Zoë: waits.').actor).toBe('Zoë');
+  });
+
+  it('rejects a block that opens with a quote mark', () => {
+    expect(parseTagHeader('"No," she said.')).toBeNull();
+  });
+
+  it('rejects an empty tag part', () => {
+    expect(parseTagHeader(': nothing.')).toBeNull();
+  });
+
+  it('rejects a tag part longer than 40 characters', () => {
+    const longTag = 'A'.repeat(41);
+    expect(parseTagHeader(`${longTag}: waits.`)).toBeNull();
+  });
+
+  it('rejects a colon that appears only on the block\'s second line', () => {
+    expect(parseTagHeader('He turned.\nAnton: waits.')).toBeNull();
+  });
+
+  it('parses the previously-rejected shapes as tag or buffer blocks', () => {
     const blocks = parseManuscript('12:30 by the clock.\n\nshe said: "no"\n\nHe turned. Anton: left.');
-    expect(blocks.map((b) => b.kind)).toEqual(['buffer', 'buffer', 'buffer']);
-    expect(blocks.map((b) => b.actor)).toEqual([null, null, null]);
+    expect(blocks.map((b) => b.kind)).toEqual(['buffer', 'tag', 'tag']);
+    expect(blocks.map((b) => b.actor)).toEqual([null, 'she said', 'He turned. Anton']);
   });
 });
 

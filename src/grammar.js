@@ -1,8 +1,8 @@
 // block-delimiter: blank line is the only block separator, CRLF included → docs/modules/grammar.md#block-delimiter
 const DELIMITER = /\r?\n(?:[ \t]*\r?\n)+/g;
 
-// tag-header: uppercase-initial actor name, anchored at block start → docs/modules/grammar.md#tag-header
-const TAG_HEADER = /^([A-Z][A-Za-z0-9 \-']{0,39}):(?=\s|$)/;
+// tag-header: any name-then-colon at block start is a tag → docs/modules/grammar.md#tag-header
+const TAG_HEADER = /^(?!["“”'‘’«»])([\p{L}\p{N}][\p{L}\p{N} '’\-.]{0,39}):(?=\s|$)/u;
 
 // block-completeness: terminal punctuation plus balanced double quotes → docs/modules/grammar.md#block-completeness
 const TERMINAL = /[.!?…]["”'’)\]*]*$/;

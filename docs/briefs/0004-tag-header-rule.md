@@ -1,5 +1,5 @@
 # Brief 0004 — Tag header: recognise any `name:` at block start, case-insensitively
-Status: draft
+Status: implemented
 Complexity: low
 PLAN sections: §5 (a manuscript is atomic blocks separated by a blank line; a block is a tag block or a buffer block; the tag block's shape is `Anton: sets the cup down. "No."` — a name, a colon, then the block body), §8 (the reserved external literal is the bare tag `Mara:`, not `\n\nMara:`; the stop is keyed to the reserved tag syntax itself)
 Invariants touched: INV-1 (tag/buffer split is what makes commitment legible), INV-2 (the boundary stop literal is the persona name verbatim, so the actor text this module returns must not be case-normalised)
@@ -50,15 +50,17 @@ Invariants touched: INV-1 (tag/buffer split is what makes commitment legible), I
 - (empty)
 
 ## Acceptance
-- [ ] `parseTagHeader('she said: "no"')` returns `{ actor: 'she said', body: '"no"' }`.
-- [ ] `parseTagHeader('anton: waits.').actor === 'anton'` — the actor is returned with its original case, never lowercased.
-- [ ] `The tall woman in the doorway:`, `Guard 2:`, `Dr. Weiss:`, `Élodie:`, `Jean-Luc:`, `D'Vora:`, `The Innkeeper:` all parse as tags with the actor text verbatim.
-- [ ] `"No," she said.`, `: nothing.`, `12:30 by the clock.`, `  Anton: sets the cup down.`, `He turned. Anton: sets the cup down.` all parse as buffers.
-- [ ] A tag part of 41+ characters parses as a buffer; a colon that appears only on the block's second line does not produce a header.
-- [ ] `src/grammar.js` applies no case transformation to any value returned from `parseTagHeader` or `parseManuscript`.
-- [ ] `docs/modules/grammar.md#tag-header` states the rule, the pattern, the two exclusions and the accepted `she said:` cost, and no longer claims an uppercase initial is required.
-- [ ] `npm run check` passes.
-- [ ] every new pointer comment resolves (`node tools/check-comments.mjs`).
+- [x] `parseTagHeader('she said: "no"')` returns `{ actor: 'she said', body: '"no"' }`.
+- [x] `parseTagHeader('anton: waits.').actor === 'anton'` — the actor is returned with its original case, never lowercased.
+- [x] `The tall woman in the doorway:`, `Guard 2:`, `Dr. Weiss:`, `Élodie:`, `Jean-Luc:`, `D'Vora:`, `The Innkeeper:` all parse as tags with the actor text verbatim.
+- [x] `"No," she said.`, `: nothing.`, `12:30 by the clock.`, `  Anton: sets the cup down.` parse as buffers. `He turned. Anton: sets the cup down.` parses as a tag with actor `He turned. Anton` — accepted by the orchestrator on 2026-09-12 under the user rule "assume confidently whatever begins with `
+
+name:` is a tag"; periods and spaces stay admitted so `Dr. Vance:` works. Documented in docs/modules/grammar.md#tag-header.
+- [x] A tag part of 41+ characters parses as a buffer; a colon that appears only on the block's second line does not produce a header.
+- [x] `src/grammar.js` applies no case transformation to any value returned from `parseTagHeader` or `parseManuscript`.
+- [x] `docs/modules/grammar.md#tag-header` states the rule, the pattern, the two exclusions and the accepted `she said:` cost, and no longer claims an uppercase initial is required.
+- [x] `npm run check` passes.
+- [x] every new pointer comment resolves (`node tools/check-comments.mjs`).
 
 ## Docs to write/update
 - `docs/modules/grammar.md#tag-header` — rewritten per the In-scope bullet: the user's confident-match rule, the exact pattern and what each part admits, the two exclusions and why they are the only ones, why the header stays anchored at block start, the accepted cost of lowercase attributions parsing as tags, and that the actor is returned verbatim because `boundary`'s stop literal is the persona name verbatim (§8).
