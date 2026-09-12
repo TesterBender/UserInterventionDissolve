@@ -17,16 +17,18 @@ SillyTavern's own `chat[]` remains the user-facing view and is left honest: the 
 | §14 | Classify generation outcome, roll back incomplete blocks | no finish reason exposed; classify from text; edit message + `swipes[swipe_id]`, `saveChat` | `recovery` |
 | §15 | Barge-in | same path as §9 (a user message at any time is a capture) | `capture` |
 | §16, §17 | Freeze at low-salience block boundary, append-only | pure function over canonical state; persist via `saveMetadata` | `freeze` |
-| §5–§7, §20 | Grammar, aggregate-tag ownership, lint before freeze | pure functions, no ST API | `grammar`, `lint` |
+| §5–§7, §20 | Grammar structure (blocks, tag headers, completeness) | pure functions, no ST API | `grammar` |
+| §5–§7, §20, §21 | Grammar semantics, aggregate ownership, lint | system prompt via the prompt manager / `setExtensionPrompt`, seed span, collaborator discipline — not code (`docs/protocol/invariants.md#enforcement-model`) | `prompt` (text asset), `ui` (editor) |
 | §19 | Seed span | stored as frozen span 0 in canonical state; entered through the extension UI | `ui`, `freeze` |
 | §23 opt. | Prefix caching | byte-identical frozen turns + identical continuation string; nothing else needed client-side | `frontier` |
 
 ## §8 — Hard boundary {#s8-boundary}
 
-- **Chat completion:** in CHAT_COMPLETION_SETTINGS_READY, append the reserved tag literal (`Mara:` — the tag itself, not `\n\nMara:`, per PLAN §8) to `generate_data.stop`. This runs after ST's 4-string cap, so it is not truncated client-side; Claude is uncapped server-side (`docs/api/sillytavern.md#stop-chat-completion`). Provider-side caps (OpenAI: 4) are the provider's; the extension should place the reserved tag **first** in the array so a provider that truncates keeps it.
+- **The reserved literal is the persona name.** The external character is whatever `{{user}}` resolves to: `substituteParams('{{user}}')` (equivalently `name1`, `docs/api/sillytavern.md#context-keys`), read fresh on every request since the context captures it by value. The stop literal is `${name1}:` — the tag itself, not `\n\n${name1}:`, per PLAN §8. No character name is configured or stored by the extension.
+- **Chat completion:** in CHAT_COMPLETION_SETTINGS_READY, append that literal to `generate_data.stop`. This runs after ST's 4-string cap, so it is not truncated client-side; Claude is uncapped server-side (`docs/api/sillytavern.md#stop-chat-completion`). Provider-side caps (OpenAI: 4) are the provider's; the extension should place the reserved tag **first** in the array so a provider that truncates keeps it.
 - **Text completion:** in TEXT_COMPLETION_SETTINGS_READY, prepend to both `stopping_strings` and `stop` (`#stop-text-completion`).
 - **Fallback for backends that ignore stop strings:** subscribe to STREAM_TOKEN_RECEIVED (cumulative text); when the text contains the reserved tag at a block boundary, call `stopGeneration()`. The stop applies on the next chunk and the partial text is kept as the message (`#stopgeneration`), so `recovery` must then trim from the tag onward. Non-streaming backends with no stop support get the same trim applied at MESSAGE_RECEIVED.
-- The reserved literal is disallowed elsewhere in manuscript content; `lint` rejects it before freeze (PLAN §8 last paragraph).
+- PLAN §8 asks that the literal not occur elsewhere in manuscript content. That is a prompt-level instruction plus the seed's demonstration; `recovery` treats any occurrence at a block start as the boundary, which is the only code-side consequence.
 
 ## §9 — Capture {#s9-capture}
 

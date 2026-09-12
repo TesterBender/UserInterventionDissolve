@@ -67,4 +67,4 @@ Invariants touched: INV-1, INV-9 (and INV-6/INV-8 are served by the boundary hel
 - `docs/modules/grammar.md#block-completeness` — the exact completeness rule, why it is textual (no finish reason exists), and that `freeze`/`recovery` must not define their own (§14, INV-6, INV-8).
 
 ## Carry-forward (from scope audit)
-- INV-9 detector blind spot: tag headers require an uppercase initial, so a lowercase `everyone:` block parses as a buffer and `findForbiddenUniversalTags` will not report it. The `lint` brief must add a case-insensitive universal-tag scan over buffer-leading words. See docs/modules/grammar.md#tag-header.
+- Withdrawn by docs/decisions/0001-prompt-level-grammar.md: universal tags are flavor text, not a rule; no detector is needed. Removal of the detector is brief 0002.
