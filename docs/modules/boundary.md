@@ -72,7 +72,7 @@ The message is not deleted, no placeholder text is substituted, no generation is
 
 ## Boundary marker {#boundary-marker}
 
-A trimmed message gets `extra[METADATA_KEY] = { …, boundary: true }` (`docs/modules/host.md#metadata-namespace` names the key; here it namespaces the message's `extra`, not `chatMetadata`). It is the signal `recovery` and `capture` read later to know that the floor passed to the collaborator at this message.
+A trimmed message gets `extra[METADATA_KEY] = { …, boundary: true }` (`docs/modules/host.md#metadata-namespace` names the key; here it namespaces the message's `extra`, not `chatMetadata`). It is the signal `recovery` reads later to know that the floor passed to the collaborator at this message.
 
 It is a **message-local flag, not canonical state**. It lives on the message object, travels with the chat file, and says nothing about the frontier or the frozen spans; `boundary` never contributes to what the model sees. This module writes nothing into `chatMetadata` and reads no canonical state (`docs/modules/state.md#mutation-is-storage` is not involved).
 
