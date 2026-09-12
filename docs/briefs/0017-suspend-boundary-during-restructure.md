@@ -1,5 +1,5 @@
 # Brief 0017 — suspend the boundary during the starter restructure call
-Status: implemented
+Status: done
 Complexity: high
 PLAN sections: §8 "Hard boundary" (generation must be terminated before the model can commit the externally owned character's block; the stop is keyed to the reserved tag literal itself — this brief scopes *when* that stop is armed, never weakens the rule for manuscript generation), §10 (editorial authority: the collaborator or editor may modify any material in the mutable frontier, including the externally owned character's blocks — the rewrite output is material the collaborator edits and installs by hand, not a committed model turn)
 Invariants touched: INV-2 (owner: `boundary`; this brief adds a suspension window scoped to one off-path call and must not widen it), INV-3 / INV-10 (named only because the sanitiser is their guarantee for this module; unchanged in kind here)
@@ -17,7 +17,7 @@ Note also that `currentType` is sticky across generations (carry-forward in `doc
   - `suspendBoundary()` increments the counter and returns a `resume()` function. `resume()` is **idempotent per handle**: it decrements at most once no matter how often it is called (a captured local flag), and never lets the counter go below `0`.
   - A counter, not a boolean, so two overlapping suspensions cannot release each other early.
   - `resetBoundaryState()` also sets `suspendDepth = 0` (tests only; it is already exported for that).
-- `src/boundary.js`: while `suspendDepth > 0`, three handlers return immediately and do nothing else — `onChatCompletionSettings`, `onTextCompletionSettings` (no stop field is created, no array is touched, the body is byte-identical on return) and `onStreamToken` (no `reservedLiteral` call, no `stopGeneration`, and `stoppedThisGeneration` is left as it was). The suspension check is the **first** statement in each of the three, before the existing type/dry-run guards.
+- `src/boundary.js`: while `suspendDepth > 0`, the two settings-ready handlers (`onChatCompletionSettings`, `onTextCompletionSettings`) return immediately and do nothing else (no stop field is created, no array is touched, the body is byte-identical on return). `onStreamToken` is deliberately NOT gated: `generateRaw` never streams (docs/api/sillytavern.md#generateraw), so a gate there is unreachable from the only caller and would only disarm a concurrent live generation's fallback (amended by scope audit, 2026-09-12). The suspension check is the **first** statement in each gated handler, before the existing type/dry-run guards.
 - `src/boundary.js`: `onGenerationStarted` and `onMessageReceived` are **not** suspendable. `generateRaw` writes nothing to `chat[]`, so the receipt handler cannot see the rewrite; making it suspendable would only create a way for a leaked suspension to disarm the last line of defence on a real message.
 - `src/starter.js`: `restructureStarter` imports `suspendBoundary` from `./boundary.js` (it already imports `reservedLiteral` from there) and wraps the call exactly as
   `const resume = suspendBoundary(); try { … await ctx.generateRaw(…) … } finally { resume(); }`.
@@ -62,7 +62,9 @@ INV-2 is "the model cannot generate the externally owned character's committing 
 - [x] `suspendBoundary()` returns a function; with one suspension outstanding, `onChatCompletionSettings({})` and `onTextCompletionSettings({})` leave the body deep-equal to `{}` (no `stop`, no `stopping_strings` key created).
 - [x] Nested/overlapping: two `suspendBoundary()` handles, releasing the first, still suppresses injection; releasing the second restores it. Calling one handle's `resume()` twice does not release the other suspension, and the counter never goes negative (a stray extra `resume()` followed by a fresh `suspendBoundary()` still suspends).
 - [x] After `resume()`, `onChatCompletionSettings(body)` again puts the reserved literal at `body.stop[0]`, and `onTextCompletionSettings` at `stopping_strings[0]` and `stop[0]`.
-- [x] While suspended, `onStreamToken('He waits.\n\nMara: steps in.')` does not call `ctx.stopGeneration()`; after `resume()` the same text does call it exactly once.
+- [x] While suspended, `onStreamToken('He waits.
+
+Mara: steps in.')` STILL calls `ctx.stopGeneration()` exactly once (stream fallback is never suspended — amended by scope audit, 2026-09-12).
 - [x] `onMessageReceived` still trims, marks and saves while a suspension is outstanding (the receipt path is not suspendable).
 - [x] `resetBoundaryState()` clears an outstanding suspension.
 - [x] `restructureStarter` releases the suspension when `generateRaw` resolves **and** when it rejects: after either, `onChatCompletionSettings({})` injects the literal again. (Assert through the exported handlers, not by reading module internals.)
