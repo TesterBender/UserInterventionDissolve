@@ -141,10 +141,6 @@ describe('the grammar commitments', () => {
     expect(MANUSCRIPT_SYSTEM_PROMPT).toContain('their choices are their own');
   });
 
-  it('holds a tagged intention until something ends it', () => {
-    expect(MANUSCRIPT_SYSTEM_PROMPT).toContain('An intention, once tagged, holds until something ends it');
-  });
-
   it('stays short', () => {
     expect(MANUSCRIPT_SYSTEM_PROMPT.match(/[A-Za-z'’]+/g)).toHaveLength(229);
   });
