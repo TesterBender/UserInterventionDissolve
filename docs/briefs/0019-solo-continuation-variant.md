@@ -1,5 +1,5 @@
 # Brief 0019 — One-shot solo continuation variant
-Status: implemented
+Status: done
 Complexity: high
 PLAN sections: §13 (continuation control must be semantically boring and non-evaluative; frozen history preferably uses one byte-identical canonical string — the live edge is not required to be that same string, and `docs/protocol/host-mapping.md#s13-continuation` states the live edge "may use a variant only if a brief justifies it"); §12 via `docs/protocol/host-mapping.md#s12-frontier` (the model-visible history is rebuilt from canonical state on every request, so a per-request variant lives only in the request array).
 Invariants touched: INV-5, INV-10 (and INV-4 by construction: the variant cannot outlive one request).
