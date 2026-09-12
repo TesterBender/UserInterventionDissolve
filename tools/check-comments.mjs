@@ -1,7 +1,7 @@
 #!/usr/bin/env node
 // pointer-policy: enforces one-line comment→docs pointers → docs/workflow/comment-policy.md#rule
-import { readFileSync, existsSync } from 'node:fs';
-import { resolve, relative, dirname, extname } from 'node:path';
+import { readFileSync, existsSync, statSync, readdirSync } from 'node:fs';
+import { resolve, relative, dirname, extname, join } from 'node:path';
 import { fileURLToPath } from 'node:url';
 
 const ROOT = resolve(dirname(fileURLToPath(import.meta.url)), '..');
@@ -74,6 +74,13 @@ function checkFile(absPath) {
   return problems;
 }
 
+// dir-walk: a directory argument expands to every code file beneath it → docs/workflow/comment-policy.md#rule
+function expandPath(p) {
+  if (!existsSync(p)) return [p];
+  if (!statSync(p).isDirectory()) return [p];
+  return readdirSync(p).flatMap((name) => expandPath(join(p, name)));
+}
+
 function main() {
   const args = process.argv.slice(2);
   let files = [];
@@ -85,7 +92,7 @@ function main() {
     const fp = payload?.tool_input?.file_path || payload?.tool_response?.filePath;
     if (fp) files = [resolve(fp)];
   } else {
-    files = args.filter((a) => !a.startsWith('--')).map((a) => resolve(a));
+    files = args.filter((a) => !a.startsWith('--')).map((a) => resolve(a)).flatMap(expandPath);
   }
   const problems = files.flatMap(checkFile);
   if (problems.length === 0) {
