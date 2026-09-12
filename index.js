@@ -20,8 +20,11 @@ export function init() {
     ctx = undefined;
   }
   const missing = ctx ? requireKeys(ctx, REQUIRED_KEYS) : REQUIRED_KEYS;
+  if (ctx && missing.length === 0 && EVENT(ctx) === undefined) {
+    missing.push('eventTypes/event_types');
+  }
 
-  if (!ctx || missing.length > 0 || EVENT(ctx) === undefined) {
+  if (!ctx || missing.length > 0) {
     console.error(`${LOG_PREFIX} missing required context: ${missing.join(', ') || 'no context'}`);
     return;
   }

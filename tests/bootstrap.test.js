@@ -118,6 +118,7 @@ describe('index.js bootstrap', () => {
     const mod = await import('../index.js');
     expect(mod.isReady()).toBe(false);
     expect(errSpy).toHaveBeenCalledTimes(1);
+    expect(errSpy.mock.calls[0][0]).toContain('eventTypes/event_types');
   });
 
   it('wires a no-op generate_interceptor', async () => {

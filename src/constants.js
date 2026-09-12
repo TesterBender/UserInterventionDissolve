@@ -1,10 +1,10 @@
-// log-prefix: shared console line prefix → docs/modules/bootstrap.md#capability-gate
+// log-prefix: shared console line prefix → docs/modules/bootstrap.md#log-prefix
 export const LOG_PREFIX = '[UID]';
 
-// metadata-key: chatMetadata namespace for canonical state → docs/protocol/host-mapping.md#s16-freeze
+// metadata-key: chatMetadata namespace for canonical state → docs/modules/host.md#metadata-namespace
 export const METADATA_KEY = 'userInterventionDissolve';
 
-// settings-key: extensionSettings namespace → docs/modules/host.md#required-keys
+// settings-key: extensionSettings namespace → docs/modules/host.md#settings-namespace
 export const SETTINGS_KEY = 'userInterventionDissolve';
 
 // interceptor-global: must equal manifest.json's generate_interceptor value → docs/modules/bootstrap.md#interceptor-placeholder
