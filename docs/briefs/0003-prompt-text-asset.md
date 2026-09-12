@@ -1,5 +1,5 @@
 # Brief 0003 — `prompt`: system-prompt grammar text, canonical continuation string, seed guidance
-Status: draft
+Status: implemented
 Complexity: high
 PLAN sections: §5 (blocks separated by a blank line; tag blocks commit one actor, buffers integrate — "tags apply impulses, buffers integrate them"), §6 (a tagged intention may persist across later buffers without retagging; actor/action/target/persistence/termination need no explicit syntax), §7 (an aggregate commits only currently unindividuated members and must not silently include an individually tagged character; universal tags are the failure case this guards against), §8 (the visible manuscript rules do not state that the externally owned character is special — same grammar as everyone else), §13 (continuation control is semantically boring and non-evaluative; one canonical byte-identical string in frozen history; the intended reading is `[manuscript] + CONTINUE`, not submit→judge→installment), §19 (a hand-prepared seed span is the initial in-context exemplar; lists what it must demonstrate), §20 (lint targets name the failure modes the prompt must pre-empt; "the grammar exists to preserve agency, not to flatten prose into legalese"), §21 (the model may create circumstances affecting the external character but may not commit their voluntary response), §22 (reasoning propagates forward from causes, not backward from a desired outcome)
 Invariants touched: INV-1, INV-5, INV-9 (and the enforcement model in `docs/protocol/invariants.md#enforcement-model`, which assigns all semantic grammar to this text asset)
@@ -80,20 +80,20 @@ Rationale to record, in the user's own framing: this string is meant to read as 
 - (empty for this brief.) Carried to brief 0005: `setExtensionPrompt(key, value, position, depth, scan, role)` signature and the semantics of `position`, `depth`, `role`; only the key's presence on the context is verified today (`docs/api/sillytavern.md#context-keys`). Also open for 0005: whether an ST extension can ship a prepackaged preset profile.
 
 ## Acceptance
-- [ ] `MANUSCRIPT_SYSTEM_PROMPT` and `CONTINUATION_CONTROL` are byte-identical to the approved texts above; a test compares each against an inline copy.
-- [ ] `CONTINUATION_CONTROL` is byte-identical across reads (`Object.is` on two reads) and contains no newline and no leading/trailing whitespace.
-- [ ] `MANUSCRIPT_SYSTEM_PROMPT` contains none of these as whole words, case-insensitive: `edge`, `boundary`, `continue`, `generation`, `turn`, `reply`, `respond`, `user`, `model`, `reasoning`, `thinking`, `privileged`.
-- [ ] `MANUSCRIPT_SYSTEM_PROMPT` additionally contains none of: `assistant`, `chat`, `message`, `prompt`, `token`, `span`, `chunk`, `freeze`, `summarize`, `recap`, `bold`, `italic`, `markdown`.
-- [ ] `MANUSCRIPT_SYSTEM_PROMPT` contains no `{{` macro delimiter and no occurrence of `Mara`; the only whitelisted personal name is `Idris`.
-- [ ] The tag ladder is exactly four consecutive indented lines each matching `/^\s+[^\n:]{1,40}: .+$/`, includes one collective and one non-personal tag, and contains no environmental-force tag (§5, §7, INV-9).
-- [ ] The tag-contents sentence lists speech, action, choice, intent, attention and private interpretation (§5, interiority belongs to tags).
-- [ ] `MANUSCRIPT_SYSTEM_PROMPT` states that an unnamed figure is tagged by how the page knows them and takes a name once the story grants one.
-- [ ] `MANUSCRIPT_SYSTEM_PROMPT` contains the four grammar commitments: blank-line block separation, one-figure ownership of a tagged block, narration-integrates-rather-than-decides, group-tags-stand-only-for-the-anonymous (§5, §7, INV-1, INV-9).
-- [ ] `MANUSCRIPT_SYSTEM_PROMPT` is at most 220 words, counted as matches of `/[A-Za-z'’]+/g`.
-- [ ] `src/prompt.js` exports exactly two names and declares no function.
-- [ ] `src/prompt.js` contains no reference to `SillyTavern`, `getContext`, `window`, `document`, or `import`.
-- [ ] `npm run check` passes.
-- [ ] every new pointer comment resolves (`node tools/check-comments.mjs`).
+- [x] `MANUSCRIPT_SYSTEM_PROMPT` and `CONTINUATION_CONTROL` are byte-identical to the approved texts above; a test compares each against an inline copy.
+- [x] `CONTINUATION_CONTROL` is byte-identical across reads (`Object.is` on two reads) and contains no newline and no leading/trailing whitespace.
+- [x] `MANUSCRIPT_SYSTEM_PROMPT` contains none of these as whole words, case-insensitive: `edge`, `boundary`, `continue`, `generation`, `turn`, `reply`, `respond`, `user`, `model`, `reasoning`, `thinking`, `privileged`.
+- [x] `MANUSCRIPT_SYSTEM_PROMPT` additionally contains none of: `assistant`, `chat`, `message`, `prompt`, `token`, `span`, `chunk`, `freeze`, `summarize`, `recap`, `bold`, `italic`, `markdown`.
+- [x] `MANUSCRIPT_SYSTEM_PROMPT` contains no `{{` macro delimiter and no occurrence of `Mara`; the only whitelisted personal name is `Idris`.
+- [x] The tag ladder is exactly four consecutive indented lines each matching `/^\s+[^\n:]{1,40}: .+$/`, includes one collective and one non-personal tag, and contains no environmental-force tag (§5, §7, INV-9).
+- [x] The tag-contents sentence lists speech, action, choice, intent, attention and private interpretation (§5, interiority belongs to tags).
+- [x] `MANUSCRIPT_SYSTEM_PROMPT` states that an unnamed figure is tagged by how the page knows them and takes a name once the story grants one.
+- [x] `MANUSCRIPT_SYSTEM_PROMPT` contains the four grammar commitments: blank-line block separation, one-figure ownership of a tagged block, narration-integrates-rather-than-decides, group-tags-stand-only-for-the-anonymous (§5, §7, INV-1, INV-9).
+- [x] `MANUSCRIPT_SYSTEM_PROMPT` is exactly 229 words, counted as matches of `/[A-Za-z'’]+/g` (cap relaxed from 220 by the orchestrator on 2026-09-12: the approved text is shipped byte-for-byte; the test freezes the count).
+- [x] `src/prompt.js` exports exactly two names and declares no function.
+- [x] `src/prompt.js` contains no reference to `SillyTavern`, `getContext`, `window`, `document`, or `import`.
+- [x] `npm run check` passes.
+- [x] every new pointer comment resolves (`node tools/check-comments.mjs`).
 
 ## Docs to write/update
 - `docs/modules/prompt.md#grammar-text` — what the system prompt frames and what it deliberately leaves unsaid; why it is craft framing plus a short rule list rather than a rule list alone (§5–§7, §20's legalese caveat, decision 0001).
