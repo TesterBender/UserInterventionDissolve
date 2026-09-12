@@ -184,7 +184,25 @@ checked: 1.18.0 @ 8172dcd on 2026-09-12
 evidence: `public/scripts/openai.js:3043` `sendOpenAIRequest(type, messages, signal, { jsonSchema })`; `:2742-2766` builds `generate_data` (`messages` at `:2744`); prompt manager `:1597-1604`, `squash_system_messages` applied only when `dryRun == false` (`:1599`).
 notes: Hook order for chat completion: `generate_interceptor` (skipped in dryRun) → CHAT_COMPLETION_PROMPT_READY → GENERATE_AFTER_DATA → [dryRun returns] → CHAT_COMPLETION_SETTINGS_READY → fetch.
 
+### generateRaw {#generateraw}
+status: verified
+checked: 1.18.0 @ 8172dcd on 2026-09-12
+evidence: `public/script.js:4063` — `export async function generateRaw({ prompt = '', api = null, instructOverride = false, quietToLoud = false, systemPrompt = '', responseLength = null, trimNames = true, prefill = '', jsonSchema = null } = {})`; `:3866-3904 createRawPrompt` builds the array from only `prompt`/`systemPrompt`, no chat/card/WI; `:4009-4010` openai branch — `generateData = prompt; … sendOpenAIRequest('quiet', generateData, …)`.
+notes: Returns a cleaned string (or extracted JSON string if `jsonSchema` set, via `generateRawData`). Uses `main_api`'s **connection settings** (temperature, model, preset — read by `sendOpenAIRequest`/`getKoboldGenerationData`/etc. from `oai_settings`/`kai_settings`) but the prompt/system-prompt content is **entirely replaced** by the args — no character card, WI, persona, or chat history is injected (`createRawPrompt`, `:3865-3904`). Fires `GENERATE_AFTER_COMBINE_PROMPTS` (text) or `CHAT_COMPLETION_PROMPT_READY` (chat, array form) at `:3970-3980`, and honors in-place mutation of that event's payload the same as the main path (see #chat-completion-prompt-ready). Does **not** fire `GENERATION_STARTED`/`CHAT_COMPLETION_SETTINGS_READY`, and `runGenerationInterceptors` (`generate_interceptor`) is never called for it — that only runs inside `Generate()` (`public/script.js:4505`). This is the right call for "rewrite this text under this system prompt, nothing else in context."
+
+### generateQuietPrompt {#generatequietprompt}
+status: verified
+checked: 1.18.0 @ 8172dcd on 2026-09-12
+evidence: `public/script.js:3025` — `export async function generateQuietPrompt({ quietPrompt = '', quietToLoud = false, skipWIAN = false, quietImage = null, quietName = null, responseLength = null, forceChId = null, jsonSchema = null, removeReasoning = true, trimToSentence = false } = {})`; `:3049` — `let result = await Generate('quiet', generateOptions);`.
+notes: `quietPrompt` is injected as an extra instruction inside the **full normal pipeline** — chat history, character card, world info, persona, extension prompts, `generate_interceptor`, and all prompt-manager events all run (same path as a normal send, type `'quiet'`), unlike `generateRaw` which replaces context wholesale. Wrong choice for "nothing else in context"; use `generateRaw` for that.
+
 ## Data {#data}
+
+### Alternate greetings write path {#alternate-greetings}
+status: verified
+checked: 1.18.0 @ 8172dcd on 2026-09-12
+evidence: field lives at `public/script.js:586` `alternate_greetings: []` and is read at `:7653` `characters[this_chid]?.data?.alternate_greetings`; write endpoint `src/endpoints/characters.js:1326` `router.post('/merge-attributes', …)` → single mode calls `mergeCharacterUpdate` (`:1274-1302`) which does `character = deepMerge(character, update)`; `src/util.js:489-491` `isObject` — `typeof item === 'object' && !Array.isArray(item)` — so arrays are **not** recursively merged, they are wholesale-replaced (`util.js:503-505 Object.assign(output, {[key]: source[key]})`).
+notes: No context-exposed helper covers this — `writeExtensionField`/`writeExtensionFieldBulk` (`st-context.js:81-82,206-207`) are hardcoded to `data.extensions.<key>` only (`extensions.js:2068`), not top-level `data.alternate_greetings`. Extension must `fetch('/api/characters/merge-attributes', { headers: getRequestHeaders(), body: JSON.stringify({ avatar: character.avatar, data: { alternate_greetings: [...existing, newGreeting] } }) })` (pattern per `extensions.js:2093-2105`, `slash-commands.js:5412-5419`) — **must send the full array**, since replace-not-merge means omitting existing entries deletes them. No automatic UI refresh or `CHARACTER_EDITED` emit on merge-attributes response; caller must update the local `characters[chid]` object itself (or call the context-exposed `getOneCharacter(avatar)`, `st-context.js:69,230`) and, if UI sync is wanted, emit `event_types.CHARACTER_EDITED` manually (pattern: `slash-commands.js:5432-5436`).
 
 ### Message object shape {#message-shape}
 status: verified
