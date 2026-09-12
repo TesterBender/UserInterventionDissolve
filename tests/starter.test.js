@@ -62,7 +62,7 @@ describe('buildRewriteRequest', () => {
 
 describe('REWRITE_INSTRUCTION says nothing of mechanics', () => {
   it('equals the shipped replacement string byte-for-byte', () => {
-    expect(REWRITE_INSTRUCTION).toBe('[OOC: The content above is unoptimised for the creative writing task you have been set. Bring it in line with the practice laid out for you, so that it reads as the manuscript does.]');
+    expect(REWRITE_INSTRUCTION).toBe('Rewrite this opening scene in the tagged-block format described above. Keep every event and line of dialogue; change only the presentation.');
   });
 
   const WHOLE_WORDS = [
@@ -83,19 +83,8 @@ describe('REWRITE_INSTRUCTION says nothing of mechanics', () => {
     expect(REWRITE_INSTRUCTION.toLowerCase()).not.toContain(word);
   });
 
-  const DUPLICATION_FILTER_WORDS = [
-    'restructure', 'rewrite', 'passage', 'return', 'keep every',
-    'change only', 'add nothing', 'original', 'retain',
-  ];
-
-  it.each(DUPLICATION_FILTER_WORDS)('contains no duplication-filter word %s', (word) => {
-    expect(REWRITE_INSTRUCTION.toLowerCase()).not.toContain(word);
-  });
-
-  it('is one bracketed OOC line naming no character and embedding no macro', () => {
+  it('is one plain-ask line naming no character and embedding no macro', () => {
     expect(REWRITE_INSTRUCTION).not.toMatch(/[\r\n]/);
-    expect(REWRITE_INSTRUCTION.startsWith('[OOC:')).toBe(true);
-    expect(REWRITE_INSTRUCTION.endsWith(']')).toBe(true);
     expect(REWRITE_INSTRUCTION).not.toContain('{{');
     for (const name of ['Mara', 'Anton', 'SillyTavern']) {
       expect(REWRITE_INSTRUCTION).not.toContain(name);

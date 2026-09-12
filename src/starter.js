@@ -6,7 +6,7 @@ import { getCtx } from './host.js';
 import { MANUSCRIPT_SYSTEM_PROMPT } from './prompt.js';
 
 // frozen-instruction: one constant, reworded only by a new brief → docs/modules/starter.md#rewrite-request
-export const REWRITE_INSTRUCTION = '[OOC: The content above is unoptimised for the creative writing task you have been set. Bring it in line with the practice laid out for you, so that it reads as the manuscript does.]';
+export const REWRITE_INSTRUCTION = 'Rewrite this opening scene in the tagged-block format described above. Keep every event and line of dialogue; change only the presentation.';
 
 // content-wrapper: starter text framed as <content> before the instruction → docs/modules/starter.md#rewrite-request
 const CONTENT_OPEN = '<content>\n';

@@ -17,3 +17,6 @@ The first starter-reformatter instruction ("Restructure the passage below … ch
 - `REWRITE_INSTRUCTION` (src/starter.js) is reworded as scene direction; its test forbids the banned words for that constant.
 - The system prompt and continuation string already comply (they never mention source text at all).
 - Future briefs that add model-facing text cite this record and include a banned-word assertion.
+
+## Status (2026-09-12)
+The banned-word rule is withdrawn for `REWRITE_INSTRUCTION` by user decision (brief 0016 amendment 2): neither the notes-framing nor the content-first wording confirmed the vocabulary theory, so `REWRITE_INSTRUCTION` is now a plain ask that uses several of the banned words, and its `it.each` banned-word test is removed. The framing rule — model-facing text reads as a request to write, never as a transform-and-echo of supplied text — stands for every other constant until evidence says otherwise.

@@ -109,7 +109,7 @@ The `<content>` wrapper and assembly order from Amendment 1 are unchanged. The `
 src/starter.js (constant only); tests/starter.test.js (verbatim assertion; remove the decision-0003 banned `it.each` list; keep the mechanics-vocabulary lists — confirm they still pass); docs/modules/starter.md (`#rewrite-request` requoted; `#tos-filter` gains one sentence that the banned list was withdrawn by user decision and the trigger remains unidentified); docs/decisions/0003-duplication-filter-wording.md (append `## Status (2026-09-12)`: banned-word rule withdrawn for REWRITE_INSTRUCTION by user decision; framing rule for other constants stands until evidence says otherwise).
 
 ### Acceptance
-- [ ] `REWRITE_INSTRUCTION` equals the line verbatim.
-- [ ] Prompt assembly unchanged: `<content>\n…\n</content>\n\n` + instruction.
-- [ ] Mechanics-vocabulary tests pass; decision-0003 list removed for this constant.
-- [ ] `npm run check` passes.
+- [x] `REWRITE_INSTRUCTION` equals the line verbatim.
+- [x] Prompt assembly unchanged: `<content>\n…\n</content>\n\n` + instruction.
+- [x] Mechanics-vocabulary tests pass; decision-0003 list removed for this constant.
+- [x] `npm run check` passes.
