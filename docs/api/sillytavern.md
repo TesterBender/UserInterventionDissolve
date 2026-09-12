@@ -196,7 +196,18 @@ checked: 1.18.0 @ 8172dcd on 2026-09-12
 evidence: `public/script.js:3025` — `export async function generateQuietPrompt({ quietPrompt = '', quietToLoud = false, skipWIAN = false, quietImage = null, quietName = null, responseLength = null, forceChId = null, jsonSchema = null, removeReasoning = true, trimToSentence = false } = {})`; `:3049` — `let result = await Generate('quiet', generateOptions);`.
 notes: `quietPrompt` is injected as an extra instruction inside the **full normal pipeline** — chat history, character card, world info, persona, extension prompts, `generate_interceptor`, and all prompt-manager events all run (same path as a normal send, type `'quiet'`), unlike `generateRaw` which replaces context wholesale. Wrong choice for "nothing else in context"; use `generateRaw` for that.
 
-## Data {#data}
+### Slash command registration {#slash-command-registration}
+status: verified
+checked: 1.18.0 @ 8172dcd on 2026-09-12
+evidence: `public/scripts/slash-commands/SlashCommandParser.js:65-73` — `static addCommandObject(command) { const reserved = ['/', '#', ':', 'parser-flag', 'breakpoint']; … if (command.name.toLowerCase().startsWith(start) …) throw new Error('Illegal Name. …'); }` then calls `addCommandObjectUnsafe`; `:79-81` — `if ([command.name, ...command.aliases].some(x => Object.hasOwn(this.commands, x))) console.trace('WARN: Duplicate slash command registered!', …)`; `SlashCommand.js:44-47` `static fromProps(props) { return Object.assign(new this(), props); }`; `st-context.js:96-97,164-169` exposes `SlashCommandParser`, `SlashCommand`, `SlashCommandArgument`, `SlashCommandNamedArgument`, `ARGUMENT_TYPE`.
+notes: `const { SlashCommandParser, SlashCommand } = ctx; SlashCommandParser.addCommandObject(SlashCommand.fromProps({ name: 'mycmd', callback: (namedArgs, unnamedArgs) => string|Promise<string>, aliases: [], namedArgumentList: [], unnamedArgumentList: [], helpString: '…', returns: '…' }));` — every field is just assigned onto the instance (no schema check beyond the name/alias guard), so unknown keys are silently accepted too. Name rule is a **blocklist**, not a charset allowlist: only rejects names/aliases starting with `/`, `#`, `:`, `parser-flag`, `breakpoint` (case-insensitive) — hyphens, digits, underscores all pass fine (matches `Intercede:index.js:190-217`, which registers hyphenated names). Collision is **not fatal**: re-registering an existing name/alias only `console.trace`-warns and overwrites `this.commands[name]` — last registration wins, no throw, no event.
+
+### ctx.generate('normal') from a slash command callback {#generate-normal-from-slash}
+status: verified
+checked: 1.18.0 @ 8172dcd on 2026-09-12
+evidence: `st-context.js:142-143` — `generate: Generate` (the raw function, not a wrapper); `public/script.js:4231` — `export async function Generate(type, {…} = {}, dryRun = false)`; `:5394` — `return finishGenerating().then(onSuccess, onError);` is the function's terminal return for a completed run.
+notes: `await ctx.generate('normal')` runs the same pipeline as a user send with an empty composer — no new chat message is added, only the reply is generated (existing chat history + card + WI + persona are used as-is). It is a real `Promise`; when the run is blocked/interrupted early (e.g. by `processCommands` re-entrancy, `:4257-4267`) it resolves via `Promise.resolve()` (undefined); on a normal completed run it resolves to whatever `finishGenerating`'s `onSuccess` returns — the generated message text (see `getMessage` handling around `:5523`), so callers should not rely on the resolved value beyond "generation finished" and should instead read the new chat message from `ctx.chat` after awaiting.
+
 
 ### Alternate greetings write path {#alternate-greetings}
 status: verified
