@@ -5,6 +5,7 @@ import { installFakeContext, uninstall, makeMessage, makeAssistantMessage } from
 import { METADATA_KEY, INTERCEPTOR_GLOBAL } from '../src/constants.js';
 import { CONTINUATION_CONTROL } from '../src/prompt.js';
 import { buildHistory, applyToRequestChat, shouldReconstruct, interceptGeneration } from '../src/frontier.js';
+import { armSolo, consumeSoloFlag, resolveSoloControl } from '../src/solo.js';
 
 const NAMES = { name1: 'Mara', name2: 'Narrator' };
 const MESSAGE_FIELDS = ['name', 'is_user', 'is_system', 'mes', 'extra'];
@@ -18,6 +19,7 @@ function installWithState(state, chat = []) {
 }
 
 afterEach(() => {
+  consumeSoloFlag();
   uninstall();
   vi.restoreAllMocks();
 });
@@ -228,6 +230,74 @@ describe('the interceptor global', () => {
     const body = source.slice(source.indexOf('globalThis[INTERCEPTOR_GLOBAL]'), source.indexOf('let ready'));
     expect(body).toContain('return interceptGeneration(chat, contextSize, abort, type);');
     expect(body.split('\n').filter((line) => line.trim() !== '')).toHaveLength(3);
+  });
+});
+
+describe('the one-shot solo variant', () => {
+  const soloState = () => makeState({ frozen: [{ text: 'A', words: 1, createdAt: 1 }], frontier: 'B' });
+
+  it('uses options.control for the continuation turn and nothing else', () => {
+    const history = buildHistory(soloState(), NAMES, { control: 'X' });
+    const last = history[history.length - 1];
+    expect(last.mes).toBe('X');
+    expect(last.is_user).toBe(true);
+    for (const message of history.slice(0, -1)) {
+      expect(message.is_user).toBe(false);
+      expect(message.mes).not.toBe('X');
+    }
+    expect(history.slice(0, -1).map((m) => m.mes)).toEqual(['A', 'B']);
+  });
+
+  it('falls back to the canonical string for absent, empty and non-string controls', () => {
+    for (const options of [undefined, {}, { control: '' }, { control: 42 }]) {
+      const history = buildHistory(soloState(), NAMES, options);
+      expect(history[history.length - 1].mes).toBe(CONTINUATION_CONTROL);
+    }
+  });
+
+  it('applies the resolved solo text once and reverts on the next request', async () => {
+    const ctx = installWithState(soloState());
+    ctx.substituteParams = (s) => s.replace('{{user}}', 'Mara');
+    armSolo();
+
+    const first = [];
+    await interceptGeneration(first, 4096, vi.fn(), 'normal', ctx);
+    expect(first[first.length - 1].mes).toBe(resolveSoloControl(ctx));
+    expect(first[first.length - 1].mes).toContain('Mara is in the scene');
+
+    const second = [];
+    await interceptGeneration(second, 4096, vi.fn(), 'normal', ctx);
+    expect(second[second.length - 1].mes).toBe(CONTINUATION_CONTROL);
+  });
+
+  it('is cleared by a skipped generation type, which touches nothing', async () => {
+    const ctx = installWithState(soloState());
+    armSolo();
+
+    const skipped = [makeMessage({ mes: 'live' })];
+    const before = JSON.parse(JSON.stringify(skipped));
+    expect(await interceptGeneration(skipped, 4096, vi.fn(), 'quiet', ctx)).toBe(false);
+    expect(skipped).toEqual(before);
+
+    const next = [];
+    await interceptGeneration(next, 4096, vi.fn(), 'normal', ctx);
+    expect(next[next.length - 1].mes).toBe(CONTINUATION_CONTROL);
+  });
+
+  it('leaves canonical state deep-equal and free of the solo sentence (INV-5, INV-10)', async () => {
+    const ctx = installWithState(soloState());
+    const canonicalBefore = JSON.parse(JSON.stringify(ctx.chatMetadata[METADATA_KEY]));
+    armSolo();
+
+    const chat = [];
+    await interceptGeneration(chat, 4096, vi.fn(), 'normal', ctx);
+
+    const canonicalAfter = ctx.chatMetadata[METADATA_KEY];
+    expect(canonicalAfter).toEqual(canonicalBefore);
+    expect(JSON.stringify(ctx.chatMetadata)).not.toContain('stays out of the writing');
+    for (const span of canonicalAfter.frozen) expect(span.text).not.toContain('stays out of the writing');
+    expect(ctx.saveMetadata).not.toHaveBeenCalled();
+    expect(ctx.saveChat).not.toHaveBeenCalled();
   });
 });
 

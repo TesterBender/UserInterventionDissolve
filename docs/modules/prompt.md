@@ -66,3 +66,17 @@ The seed span is hand-prepared by the user and shipped with no data by this repo
 - unresolved continuation: threads left open, no handoff to the reader, no closure.
 
 This is also where §22 lives. Reasoning that propagates forward from causes rather than backward from a desired outcome is shown by a seed in which each block follows from what precedes it, and where nothing is steering toward an ending — the anti-conclusion habit. Neither can be instructed in the prompt text without an instruction aimed at a single act of writing, which is out of bounds.
+
+## Solo continuation {#solo-continuation}
+
+`SOLO_CONTINUATION_CONTROL` is `CONTINUATION_CONTROL`, one space, and one added sentence:
+
+> For this stretch, {{user}} is in the scene but stays out of the writing; let the others carry it.
+
+It is composed from `CONTINUATION_CONTROL` by reference, never re-typed, so the canonical prefix cannot drift from the canonical string: `SOLO_CONTINUATION_CONTROL.startsWith(CONTINUATION_CONTROL)` is true by construction. This is the one variant `docs/protocol/host-mapping.md#s13-continuation` permits a brief to justify, and it is a *live-edge* variant only — it is used for a single request and never enters frozen history, so the byte-identity that §13 and INV-5 ask of the frozen record is untouched (`docs/modules/frontier.md#solo-variant`).
+
+The sentence keeps the register of the canonical string: it is a plain request from a collaborator about who carries the page for a stretch, not an evaluation of what came before and not a statement about seams, spans or requests (see [Says nothing of mechanics](#says-nothing-of-mechanics)).
+
+The constant stores the literal `{{user}}` and is never stored resolved. Resolution is per-request and depends on the persona that is current at that moment (`src/solo.js`); a constant holding a resolved name would be wrong the moment the persona changed, and would put a real name into a module-level value that other code could copy into canonical state.
+
+This sentence is a pinned string. Rewording it — including punctuation — is a user decision that goes through the pinned-string lane (`docs/workflow/workflow.md#pinned-string-lane`) as an amendment to `docs/briefs/0019-solo-continuation-variant.md`, never an implementation choice.

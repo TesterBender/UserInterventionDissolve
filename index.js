@@ -10,6 +10,7 @@ import {
 } from './src/boundary.js';
 import { captureMessage } from './src/capture.js';
 import { interceptGeneration } from './src/frontier.js';
+import { armSolo, consumeSoloFlag } from './src/solo.js';
 import { renderSettings, refreshReservedLiteral } from './src/ui/settings.js';
 import { onMessageReceived as onRecoveryMessageReceived } from './src/recovery.js';
 
@@ -86,7 +87,34 @@ export function init() {
     console.warn(`${LOG_PREFIX} absent events: ${absent.join(', ')}`);
   }
 
+  // slash-commands: one guarded registration, warn and skip when absent → docs/modules/bootstrap.md#slash-commands
+  const { SlashCommandParser, SlashCommand } = ctx;
+  if (SlashCommandParser === undefined || SlashCommand === undefined || ctx.generate === undefined) {
+    console.warn(`${LOG_PREFIX} slash commands unavailable: /uidsolo not registered`);
+  } else {
+    SlashCommandParser.addCommandObject(
+      SlashCommand.fromProps({
+        name: 'uidsolo',
+        callback: soloCallback,
+        helpString: 'Continue once with your figure present in the scene but not written.',
+        returns: 'nothing',
+      }),
+    );
+  }
+
   renderSettings(ctx);
+}
+
+// solo-callback: arm, generate, clear the flag if the run never starts → docs/modules/bootstrap.md#slash-commands
+async function soloCallback() {
+  armSolo();
+  try {
+    await getCtx().generate('normal');
+  } catch (error) {
+    consumeSoloFlag();
+    console.error(`${LOG_PREFIX} solo continuation failed to start`, error);
+  }
+  return '';
 }
 
 export function isReady() {

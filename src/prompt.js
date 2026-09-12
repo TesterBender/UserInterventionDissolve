@@ -39,3 +39,6 @@ The story ends when it has reached its ending.`;
 // continuation-control: one frozen byte-stable string, never recomposed → docs/modules/prompt.md#continuation-control
 export const CONTINUATION_CONTROL =
   'Continue the manuscript directly from the current endpoint. Preserve established causal, stylistic, perspectival, and formatting continuity. Do not recap, restart, summarize, or force resolution.';
+
+// solo-continuation: canonical string by reference plus one pinned sentence → docs/modules/prompt.md#solo-continuation
+export const SOLO_CONTINUATION_CONTROL = `${CONTINUATION_CONTROL} For this stretch, {{user}} is in the scene but stays out of the writing; let the others carry it.`;
