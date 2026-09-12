@@ -9,7 +9,7 @@ You run checks for the UserInterventionDissolve SillyTavern extension and report
 
 Run, from the project root, in this order, continuing past failures:
 1. `npm run lint`
-2. `npm test -- --run`
+2. `npm test` (the script already passes `--run`; do not add it again)
 3. `node tools/check-comments.mjs $(git ls-files '*.js' '*.mjs' '*.css' 2>/dev/null || find . -path ./node_modules -prune -o \( -name '*.js' -o -name '*.mjs' -o -name '*.css' \) -print)`
 4. `node tools/check-docs.mjs` (if it exists)
 5. If a brief path was given: list acceptance checkboxes still unticked.

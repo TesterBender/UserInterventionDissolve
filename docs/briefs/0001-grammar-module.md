@@ -1,5 +1,9 @@
 # Brief 0001 — Manuscript grammar: block parsing, tag actors, aggregate/universal tags, block boundaries
+<<<<<<< HEAD
 Status: draft
+=======
+Status: implemented
+>>>>>>> worktree-agent-a4d056926ea8fb277
 Complexity: high
 PLAN sections: §5 (manuscript = atomic blocks separated by a blank line; a block is a tag block or a buffer block; never freeze mid-block), §7 (aggregate tags commit only currently unindividuated members; universal tags such as `Everyone:` are forbidden), §8 (the reserved external tag is the bare literal `Mara:`, not `\n\nMara:`; ordinary manuscript content may not contain that literal), §14 (rollback to the last complete block boundary when the trailing block is incomplete — reason for the boundary helpers only; recovery policy is not implemented here)
 Invariants touched: INV-1, INV-9 (and INV-6/INV-8 are served by the boundary helpers this module exposes)
@@ -48,6 +52,7 @@ Invariants touched: INV-1, INV-9 (and INV-6/INV-8 are served by the boundary hel
 - (empty)
 
 ## Acceptance
+<<<<<<< HEAD
 - [ ] `parseManuscript` splits on blank-line delimiters and round-trips: for every block, `text.slice(b.start, b.end) === b.raw`.
 - [ ] A tag block reports its actor and a body with the header removed; a block with no valid header is `kind: 'buffer'` with `actor: null`.
 - [ ] `12:30 by the clock.`, `she said: "no"`, and a block whose `Name:` appears after the first character all parse as buffers.
@@ -58,6 +63,18 @@ Invariants touched: INV-1, INV-9 (and INV-6/INV-8 are served by the boundary hel
 - [ ] `src/grammar.js` contains no reference to `SillyTavern`, `getContext`, `window`, `document`, or any character name.
 - [ ] `npm run check` passes.
 - [ ] every new pointer comment resolves (`node tools/check-comments.mjs`).
+=======
+- [x] `parseManuscript` splits on blank-line delimiters and round-trips: for every block, `text.slice(b.start, b.end) === b.raw`.
+- [x] A tag block reports its actor and a body with the header removed; a block with no valid header is `kind: 'buffer'` with `actor: null`.
+- [x] `12:30 by the clock.`, `she said: "no"`, and a block whose `Name:` appears after the first character all parse as buffers.
+- [x] `classifyActor('Everyone', [...])` is `'universal'` regardless of the supplied set; an actor in the supplied set is `'individual'`; any other is `'aggregate'`.
+- [x] `findTagLiteral('Mara: steps in.', 'Mara')` returns one occurrence with `atBlockStart === true` and `index === 0` (the §8 no-leading-newline case).
+- [x] `isTrailingBlockComplete` is false for a manuscript ending mid-sentence or with an odd number of `"`, true for one ending in terminal punctuation (with optional closing quote).
+- [x] `truncateToLastCompleteBlock` on a manuscript whose last block is incomplete returns exactly the earlier blocks with no partial block and no trailing delimiter; on a fully complete manuscript it returns the whole trimmed text.
+- [x] `src/grammar.js` contains no reference to `SillyTavern`, `getContext`, `window`, `document`, or any character name.
+- [x] `npm run check` passes.
+- [x] every new pointer comment resolves (`node tools/check-comments.mjs`).
+>>>>>>> worktree-agent-a4d056926ea8fb277
 
 ## Docs to write/update
 - `docs/modules/grammar.md#block-delimiter` — what separates blocks and why the blank line is the only delimiter (§5).
