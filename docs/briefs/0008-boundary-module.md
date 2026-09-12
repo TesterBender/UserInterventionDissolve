@@ -1,5 +1,5 @@
 # Brief 0008 — `boundary`: reserved-literal stop strings, stream fallback, receipt-side trim
-Status: draft
+Status: implemented
 Complexity: high
 PLAN sections: §8 (generation must be terminated before the model can commit the external character's block; the stop is keyed to the reserved tag syntax itself — bare `Mara:` — not `\n\nMara:`, because the name may be the first token sequence of a generation), §14 "External-character boundary" (the collaborator receives the floor) and "Empty output at the boundary" (the model tried to place the external character immediately; the floor stays with the collaborator; do not force model text merely to avoid an empty generation), §15 (the collaborator may insert the external character at any valid block boundary; the stop sequence is one trigger for external authorship, not the sole permission mechanism)
 Invariants touched: INV-2 (the model cannot generate the externally owned character's committing tag — this module is its owner), INV-8 (named only to be refused here: rolling back an incomplete trailing block belongs to `recovery`, not to this brief)
@@ -73,19 +73,19 @@ Invariants touched: INV-2 (the model cannot generate the externally owned charac
 - (empty)
 
 ## Acceptance
-- [ ] `applyStopStrings({}, 'Mara:', 'chat').stop` equals `['Mara:']`; `applyStopStrings({ stop: ['x', 'Mara:', 'y'] }, 'Mara:', 'chat').stop` equals `['Mara:', 'x', 'y']`; applying twice changes nothing.
-- [ ] `applyStopStrings({}, 'Mara:', 'text')` yields `stopping_strings[0] === 'Mara:'` and `stop[0] === 'Mara:'`.
-- [ ] `reservedLiteral` returns a different string after the context's persona changes within one test, and `''` when the persona name is empty; with an empty literal no handler writes a `stop` field, calls `stopGeneration`, or calls `saveChat`.
-- [ ] `findBoundary('He turned. Mara: left.', 'Mara:').index === -1` and `findBoundary('"Mara: stop," he said.', 'Mara:').index === -1`; `findBoundary('He waits.\n\nMara: steps in.', 'Mara:').index` is the index of `M` in the second block; `endsAtLiteral` is true for `'He waits.\n\nMara:'` and false for `'He waits.\n\nMara: steps in.'`.
-- [ ] `trimAtBoundary('He waits.\n\nMara: steps in.', 'Mara:') === 'He waits.'`.
-- [ ] `onStreamToken` calls `ctx.stopGeneration()` exactly once for a generation regardless of how many cumulative chunks contain the literal, and not at all for `quiet`/`impersonate` or for a mid-line occurrence; the counter resets after `onGenerationStarted`.
-- [ ] `onMessageReceived` on an assistant message ending `'\n\nMara:'` leaves `mes` and `swipes[swipe_id]` equal to the text before the boundary, sets `extra[METADATA_KEY].boundary === true`, and calls `updateMessageBlock` and `saveChat` once each; a user message, a message with no block-start literal, and a `first_message` are all left byte-identical with no `saveChat` and no `updateMessageBlock` call.
-- [ ] `updateMessageBlock` is called as `(index, message)` with no third argument, and the second argument is the very object that was trimmed.
-- [ ] A message whose entire content is the literal trims to `''`, stays in `chat[]` (`chat.length` unchanged), gets the marker, is re-rendered and saved — no deletion and no substituted text.
-- [ ] `index.js` registers exactly the five named subscriptions, each guarded by presence on `EVENT(ctx)`, and `init()` remains a single call at module top level with `ready` still gating.
-- [ ] `src/boundary.js` contains no occurrence of the string `SillyTavern` and no hard-coded character name.
-- [ ] `npm run check` passes.
-- [ ] every new pointer comment resolves (`node tools/check-comments.mjs`).
+- [x] `applyStopStrings({}, 'Mara:', 'chat').stop` equals `['Mara:']`; `applyStopStrings({ stop: ['x', 'Mara:', 'y'] }, 'Mara:', 'chat').stop` equals `['Mara:', 'x', 'y']`; applying twice changes nothing.
+- [x] `applyStopStrings({}, 'Mara:', 'text')` yields `stopping_strings[0] === 'Mara:'` and `stop[0] === 'Mara:'`.
+- [x] `reservedLiteral` returns a different string after the context's persona changes within one test, and `''` when the persona name is empty; with an empty literal no handler writes a `stop` field, calls `stopGeneration`, or calls `saveChat`.
+- [x] `findBoundary('He turned. Mara: left.', 'Mara:').index === -1` and `findBoundary('"Mara: stop," he said.', 'Mara:').index === -1`; `findBoundary('He waits.\n\nMara: steps in.', 'Mara:').index` is the index of `M` in the second block; `endsAtLiteral` is true for `'He waits.\n\nMara:'` and false for `'He waits.\n\nMara: steps in.'`.
+- [x] `trimAtBoundary('He waits.\n\nMara: steps in.', 'Mara:') === 'He waits.'`.
+- [x] `onStreamToken` calls `ctx.stopGeneration()` exactly once for a generation regardless of how many cumulative chunks contain the literal, and not at all for `quiet`/`impersonate` or for a mid-line occurrence; the counter resets after `onGenerationStarted`.
+- [x] `onMessageReceived` on an assistant message ending `'\n\nMara:'` leaves `mes` and `swipes[swipe_id]` equal to the text before the boundary, sets `extra[METADATA_KEY].boundary === true`, and calls `updateMessageBlock` and `saveChat` once each; a user message, a message with no block-start literal, and a `first_message` are all left byte-identical with no `saveChat` and no `updateMessageBlock` call.
+- [x] `updateMessageBlock` is called as `(index, message)` with no third argument, and the second argument is the very object that was trimmed.
+- [x] A message whose entire content is the literal trims to `''`, stays in `chat[]` (`chat.length` unchanged), gets the marker, is re-rendered and saved — no deletion and no substituted text.
+- [x] `index.js` registers exactly the five named subscriptions, each guarded by presence on `EVENT(ctx)`, and `init()` remains a single call at module top level with `ready` still gating.
+- [x] `src/boundary.js` contains no occurrence of the string `SillyTavern` and no hard-coded character name.
+- [x] `npm run check` passes.
+- [x] every new pointer comment resolves (`node tools/check-comments.mjs`).
 
 ## Docs to write/update
 - `docs/modules/boundary.md` (new; header block `Owns: INV-2`, `PLAN: §8, §14, §15`, `Depends on: host, grammar, constants`) with one heading per pointer comment:

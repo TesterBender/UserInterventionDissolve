@@ -1,6 +1,13 @@
 import { getCtx, requireKeys, EVENT } from './src/host.js';
 import { LOG_PREFIX, INTERCEPTOR_GLOBAL, REQUIRED_KEYS } from './src/constants.js';
 import { getState } from './src/state.js';
+import {
+  onGenerationStarted,
+  onChatCompletionSettings,
+  onTextCompletionSettings,
+  onStreamToken,
+  onMessageReceived,
+} from './src/boundary.js';
 
 // interceptor-placeholder: real no-op, body filled by frontier brief → docs/modules/bootstrap.md#interceptor-placeholder
 // eslint-disable-next-line no-unused-vars
@@ -42,6 +49,27 @@ export function init() {
     });
   }
   if (Array.isArray(ctx.chat) && ctx.chat.length > 0) getState();
+
+  // boundary-subscriptions: five guarded listeners, wiring only → docs/modules/bootstrap.md#boundary-subscriptions
+  const E = EVENT(ctx);
+  const boundaryHandlers = {
+    GENERATION_STARTED: onGenerationStarted,
+    CHAT_COMPLETION_SETTINGS_READY: onChatCompletionSettings,
+    TEXT_COMPLETION_SETTINGS_READY: onTextCompletionSettings,
+    STREAM_TOKEN_RECEIVED: onStreamToken,
+    MESSAGE_RECEIVED: onMessageReceived,
+  };
+  const absent = [];
+  for (const [name, handler] of Object.entries(boundaryHandlers)) {
+    if (E[name] === undefined) {
+      absent.push(name);
+      continue;
+    }
+    ctx.eventSource.on(E[name], handler);
+  }
+  if (absent.length > 0) {
+    console.warn(`${LOG_PREFIX} absent events: ${absent.join(', ')}`);
+  }
 }
 
 export function isReady() {
