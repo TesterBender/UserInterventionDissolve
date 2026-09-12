@@ -21,7 +21,7 @@ Before `ready` is set to `true`, `init()` requires: the global `SillyTavern` obj
 
 The manifest's `generate_interceptor` key is wired to `globalThis[INTERCEPTOR_GLOBAL]` here, in the entry file, so that the packaging contract (`docs/api/sillytavern.md#manifest`) and the host door stay in one place. The global's whole body is a single delegating call to `interceptGeneration` from `src/frontier.js` (`docs/modules/frontier.md#interceptor-body`): `index.js` holds no reconstruction logic, no generation-type test, no state read and no array mutation, and the global keeps the name and arity ST calls it with.
 
-The interceptor deliberately does not depend on `ready`. The capability gate protects the subscriptions and the state materialisation `init()` performs; the interceptor takes a fresh context of its own on every call and reads only what it needs, so a host that failed the gate still gets the same behaviour it would get from an unregistered global — the request array is left alone when there is nothing canonical to say (`docs/modules/frontier.md#empty-state`).
+The interceptor deliberately does not depend on `ready`. The capability gate protects the subscriptions and the state materialisation `init()` performs; the interceptor takes a fresh context of its own on every call and reads only what it needs, so on a host that passed the gate but has no canonical state the request array is left alone (on a host where `getContext` is absent the call rejects, which is the same outcome as a failed gate: no reconstruction) (`docs/modules/frontier.md#empty-state`).
 
 ## State materialisation {#state-materialisation}
 
