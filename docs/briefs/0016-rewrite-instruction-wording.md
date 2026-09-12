@@ -1,5 +1,5 @@
 # Brief 0016 — reword REWRITE_INSTRUCTION so the rewrite call reads as scene direction
-Status: draft
+Status: implemented
 Complexity: low
 PLAN sections: §19 (cold start: the first request lacks demonstrations, so a manually prepared or hand-corrected seed span — substantial prose, tag/buffer alternation, the externally owned figure appearing naturally, no artificial handoff — is recommended; the starter reformatter is how one is produced, so the instruction that produces it must actually reach the model), §20 (frozen spans and other persistent demonstrations are checked before promotion, and the check is advisory to the human — nothing here becomes a gate)
 Invariants touched: `docs/protocol/invariants.md#enforcement-model` (model-facing text is prompt-level, not code-enforced); INV-2 is untouched — the reserved-literal drop in `dropReservedBlocks`/`sanitiseRewrite` is not modified by this brief
@@ -51,16 +51,16 @@ The text contains no apostrophe and no double quote, so the JS literal uses sing
 - (empty)
 
 ## Acceptance
-- [ ] `REWRITE_INSTRUCTION` equals the replacement string byte-for-byte: one line, straight apostrophes, starts `[OOC:`, ends `]`, no `\r`/`\n`, no leading or trailing whitespace, no `{{`.
-- [ ] The existing whole-word and substring lists in `tests/starter.test.js` are unchanged and still pass.
-- [ ] New `it.each` cases fail for each of `restructure`, `rewrite`, `passage`, `return`, `keep every`, `change only`, `add nothing`, `original`, `retain` appearing in `REWRITE_INSTRUCTION` (case-insensitive), and pass against the shipped string.
-- [ ] `buildRewriteRequest('  a starter.  ', 'Nobody:').prompt` is `` `${REWRITE_INSTRUCTION}\n\na starter.` ``, and the empty-input, reserved-drop and nothing-reserved cases pass unmodified.
-- [ ] `sanitiseRewrite` still strips a leading and a trailing echo of the *new* instruction line, and its fence/reserved-block cases pass unmodified.
-- [ ] `git diff src/starter.js` touches exactly one line (the constant's value).
-- [ ] `docs/modules/starter.md` quotes the new string verbatim under `#rewrite-request` and has a `## ToS filter {#tos-filter}` heading citing `docs/decisions/0003-duplication-filter-wording.md` and `Intercede:src/prompt.js:4-9`.
-- [ ] `docs/briefs/0015-starter-reformatter.md` gains exactly one line.
-- [ ] `npm run check` passes.
-- [ ] every new pointer comment resolves (`node tools/check-comments.mjs`).
+- [x] `REWRITE_INSTRUCTION` equals the replacement string byte-for-byte: one line, straight apostrophes, starts `[OOC:`, ends `]`, no `\r`/`\n`, no leading or trailing whitespace, no `{{`.
+- [x] The existing whole-word and substring lists in `tests/starter.test.js` are unchanged and still pass.
+- [x] New `it.each` cases fail for each of `restructure`, `rewrite`, `passage`, `return`, `keep every`, `change only`, `add nothing`, `original`, `retain` appearing in `REWRITE_INSTRUCTION` (case-insensitive), and pass against the shipped string.
+- [x] `buildRewriteRequest('  a starter.  ', 'Nobody:').prompt` is `` `${REWRITE_INSTRUCTION}\n\na starter.` ``, and the empty-input, reserved-drop and nothing-reserved cases pass unmodified.
+- [x] `sanitiseRewrite` still strips a leading and a trailing echo of the *new* instruction line, and its fence/reserved-block cases pass unmodified.
+- [x] `git diff src/starter.js` touches exactly one line (the constant's value).
+- [x] `docs/modules/starter.md` quotes the new string verbatim under `#rewrite-request` and has a `## ToS filter {#tos-filter}` heading citing `docs/decisions/0003-duplication-filter-wording.md` and `Intercede:src/prompt.js:4-9`.
+- [x] `docs/briefs/0015-starter-reformatter.md` gains exactly one line.
+- [x] `npm run check` passes.
+- [x] every new pointer comment resolves (`node tools/check-comments.mjs`).
 
 ## Docs to write/update
 - `docs/modules/starter.md#rewrite-request` — the new instruction quoted in full; that the pasted text is presented to the model as notes for a scene, not as a passage to return; the rest of the heading unchanged.
