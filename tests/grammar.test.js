@@ -3,8 +3,6 @@ import {
   parseManuscript,
   parseTagHeader,
   classifyActor,
-  FORBIDDEN_UNIVERSAL_TAGS,
-  findForbiddenUniversalTags,
   findTagLiteral,
   isTrailingBlockComplete,
   lastCompleteBoundary,
@@ -90,27 +88,11 @@ describe('parseTagHeader', () => {
 });
 
 describe('classifyActor', () => {
-  it('reports universal, individual and aggregate', () => {
-    expect(classifyActor('Everyone', ['Anton', 'Everyone'])).toBe('universal');
+  it('reports individual and aggregate', () => {
     expect(classifyActor('anton', ['Anton'])).toBe('individual');
     expect(classifyActor('Anton', new Set(['Anton']))).toBe('individual');
     expect(classifyActor('The guards', ['Anton'])).toBe('aggregate');
-  });
-
-  it('exposes exactly the three forbidden universal tags, frozen', () => {
-    expect([...FORBIDDEN_UNIVERSAL_TAGS]).toEqual(['everyone', 'everybody', 'all']);
-    expect(Object.isFrozen(FORBIDDEN_UNIVERSAL_TAGS)).toBe(true);
-    for (const tag of FORBIDDEN_UNIVERSAL_TAGS) {
-      expect(classifyActor(tag.toUpperCase(), [])).toBe('universal');
-    }
-  });
-});
-
-describe('findForbiddenUniversalTags', () => {
-  it('returns only the tag blocks whose actor is universal', () => {
-    const blocks = parseManuscript('Anton: waits.\n\nEverybody: turns.\n\nThe room is quiet.\n\nAll: laugh.');
-    const found = findForbiddenUniversalTags(blocks);
-    expect(found.map((b) => b.actor)).toEqual(['Everybody', 'All']);
+    expect(classifyActor('Everyone', ['Anton'])).toBe('aggregate');
   });
 });
 

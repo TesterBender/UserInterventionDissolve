@@ -1,5 +1,5 @@
 # Brief 0002 — Remove the universal-tag detector from `grammar`
-Status: draft
+Status: implemented
 Complexity: low
 PLAN sections: §5 (manuscript is atomic blocks, each tag or buffer; no lint duty stated), §7 (aggregate tags may not bypass individual ownership; universal tags such as `Everyone:` are "discouraged or forbidden" — a convention stated in prose, with no enforcement mechanism assigned to code)
 Invariants touched: INV-9 (already restated in docs/protocol/invariants.md#inv-9 as prompt+seed convention, not code), INV-1 (unchanged; named only because it is `grammar`'s other owned invariant)
@@ -35,13 +35,13 @@ Invariants touched: INV-9 (already restated in docs/protocol/invariants.md#inv-9
 - (empty)
 
 ## Acceptance
-- [ ] `import { FORBIDDEN_UNIVERSAL_TAGS } from '../src/grammar.js'` and `import { findForbiddenUniversalTags } ...` both resolve to `undefined`; neither identifier appears anywhere in `src/`, `tests/` or `docs/modules/`.
-- [ ] `classifyActor('Everyone', ['Anton'])` returns `'aggregate'`; `classifyActor('anton', ['Anton'])` and `classifyActor('Anton', new Set(['Anton']))` return `'individual'`; no input returns `'universal'`.
-- [ ] `grep -r universal src/` returns nothing.
-- [ ] `docs/modules/grammar.md` still has a `## Actor classification` heading (anchor `#actor-classification`) and its text names only `individual` and `aggregate`.
-- [ ] All pre-existing `grammar` tests unrelated to universal tags still pass unmodified.
-- [ ] `npm run check` passes.
-- [ ] every new pointer comment resolves (`node tools/check-comments.mjs`).
+- [x] `import { FORBIDDEN_UNIVERSAL_TAGS } from '../src/grammar.js'` and `import { findForbiddenUniversalTags } ...` both resolve to `undefined`; neither identifier appears anywhere in `src/`, `tests/` or `docs/modules/`.
+- [x] `classifyActor('Everyone', ['Anton'])` returns `'aggregate'`; `classifyActor('anton', ['Anton'])` and `classifyActor('Anton', new Set(['Anton']))` return `'individual'`; no input returns `'universal'`.
+- [x] `grep -r universal src/` returns nothing.
+- [x] `docs/modules/grammar.md` still has a `## Actor classification` heading (anchor `#actor-classification`) and its text names only `individual` and `aggregate`.
+- [x] All pre-existing `grammar` tests unrelated to universal tags still pass unmodified.
+- [x] `npm run check` passes.
+- [x] every new pointer comment resolves (`node tools/check-comments.mjs`).
 
 ## Docs to write/update
 - `docs/modules/grammar.md#actor-classification` — must explain the two outcomes, why the individuated set is a caller argument and never module state (a stale set mis-classifies), and that universal tags are flavor text regulated by the system prompt and seed rather than by code (link docs/decisions/0001-prompt-level-grammar.md and docs/protocol/invariants.md#enforcement-model).

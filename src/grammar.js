@@ -7,9 +7,6 @@ const TAG_HEADER = /^([A-Z][A-Za-z0-9 \-']{0,39}):(?=\s|$)/;
 // block-completeness: terminal punctuation plus balanced double quotes → docs/modules/grammar.md#block-completeness
 const TERMINAL = /[.!?…]["”'’)\]*]*$/;
 
-// actor-classification: universal tags commit everyone and are forbidden → docs/modules/grammar.md#actor-classification
-export const FORBIDDEN_UNIVERSAL_TAGS = Object.freeze(['everyone', 'everybody', 'all']);
-
 function normalise(name) {
   return name.trim().toLowerCase();
 }
@@ -66,17 +63,13 @@ export function parseManuscript(text) {
   return blocks;
 }
 
+// actor-classification: individual vs aggregate against a caller-supplied set → docs/modules/grammar.md#actor-classification
 export function classifyActor(actor, individuatedActors) {
   const key = normalise(actor);
-  if (FORBIDDEN_UNIVERSAL_TAGS.includes(key)) return 'universal';
   for (const member of individuatedActors) {
     if (normalise(member) === key) return 'individual';
   }
   return 'aggregate';
-}
-
-export function findForbiddenUniversalTags(blocks) {
-  return blocks.filter((block) => block.kind === 'tag' && classifyActor(block.actor, []) === 'universal');
 }
 
 // tag-literal-lookup: caller names the actor; grammar knows no character → docs/modules/grammar.md#tag-literal-lookup

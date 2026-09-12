@@ -1,9 +1,9 @@
 # grammar
-Owns: INV-1, INV-9 (docs/protocol/invariants.md)
+Owns: INV-1 (docs/protocol/invariants.md)
 PLAN: §5, §7, §8, §14
 Depends on: nothing
 
-`src/grammar.js` is the only parser of manuscript text. It is pure: a string in, plain data out. No SillyTavern API, no state, no I/O, no configuration. Everything it answers is *structural* — where blocks begin and end, whether a block carries a tag header, how an actor name classifies against a caller-supplied membership set. Judgements about content (does this buffer introduce a commitment, does this tag commit someone else) belong to `lint`, not here.
+`src/grammar.js` is the only parser of manuscript text. It is pure: a string in, plain data out. No SillyTavern API, no state, no I/O, no configuration. Everything it answers is *structural* — where blocks begin and end, whether a block carries a tag header, how an actor name classifies against a caller-supplied membership set. Judgements about content (does this buffer introduce a commitment, does this tag commit someone else) belong to `lint`, not here. INV-9 (no universal tag may commit the human-authored character) is a prompt-level convention, not something this module detects or enforces (docs/decisions/0001-prompt-level-grammar.md).
 
 ## Block delimiter
 
@@ -29,13 +29,14 @@ The actor name is reported trimmed, and the body is the block text with the head
 
 ## Actor classification
 
-An actor name classifies three ways against a set of *currently individuated* actors supplied by the caller (§7):
+An actor name classifies two ways against a set of *currently individuated* actors supplied by the caller (§7):
 
-- `universal` — the name is in `FORBIDDEN_UNIVERSAL_TAGS` (`everyone`, `everybody`, `all`, compared case-insensitively). Such a tag would commit every character at once, including the human-authored one, which INV-9 forbids outright. `findForbiddenUniversalTags` is the detection surface `lint` uses; extending the list requires its own brief.
 - `individual` — the name is in the supplied set (compared case-insensitively, after trimming). It commits exactly that character.
-- `aggregate` — anything else. An aggregate tag (`The guards`, `The crowd`) commits only those members who are not currently individuated, which is why the classification depends on the caller's set rather than on the name.
+- `aggregate` — anything else. An aggregate tag (`The guards`, `The crowd`, `Everyone`) commits only those members who are not currently individuated, which is why the classification depends on the caller's set rather than on the name.
 
 Membership is an argument, never module state: who is individuated changes as the manuscript advances, and that history belongs to the modules that track it. `grammar` must not cache, infer or default it — a stale set here would silently mis-classify a tag and let a commitment through.
+
+A name like `Everyone` classifies as `aggregate` like any other unindividuated name; `grammar` has no notion of "universal" and no blocklist. Whether such a tag is discouraged or forbidden is regulated by the system prompt and the seed span, not by code (docs/decisions/0001-prompt-level-grammar.md, docs/protocol/invariants.md#enforcement-model).
 
 ## Tag literal lookup
 
