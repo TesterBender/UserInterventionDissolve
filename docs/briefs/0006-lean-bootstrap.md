@@ -1,5 +1,5 @@
 # Brief 0006 — lean bootstrap: manifest, host door, constants, fake context
-Status: implemented
+Status: done
 Complexity: low
 PLAN sections: §23 (host requirements — the host must expose continuation, boundary, capture, reconstruction, frontier and freeze operations; this brief only opens the single door through which every later module reaches them, and asserts the required operations are present before declaring the extension ready)
 Invariants touched: none directly. The bootstrap creates the registration point that INV-2 (`boundary`) and INV-4 (`frontier`) handlers will later attach to; it must not implement either.
