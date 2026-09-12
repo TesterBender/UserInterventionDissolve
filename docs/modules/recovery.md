@@ -31,9 +31,13 @@ If nothing complete remains, the text becomes `''` and the message stays in `cha
 
 ## Boundary outcomes are not rolled back {#boundary-not-rolled-back}
 
-Decision: a `'boundary'` outcome is appended verbatim even when its trailing block lacks terminal punctuation, and `updateMessageBlock` is not called for it.
+Decision: a `'boundary'` outcome is appended even when its trailing block lacks terminal punctuation, and `updateMessageBlock` is not called for it.
 
 The rollback rule exists to discard text the model did not mean to end where it ended. A boundary is the opposite case: the model handed the floor to the external character deliberately, at a block boundary, and the block before the handoff is finished prose as far as the model is concerned — it may simply end on dialogue, an em-dash or a fragment. Rolling it back would delete text the model meant to keep and would turn a correct handoff into a lost turn. The incompleteness here is a property of the prose, not an artifact of the transport, and only transport artifacts are rolled back.
+
+What the boundary branch *does* do is trim: the text it appends is `trimAtBoundary(text, literal)`, never the raw message text. INV-2 says the reserved literal never appears in model-visible history, and step 3 of [the classifier](#classification) recognises a boundary precisely when the text still *ends with* the literal — the case where `boundary`'s own trim did not run. Appending that text raw would carry the literal into the frontier and from there into the prompt. `trimAtBoundary` is idempotent for the normal path (`boundary` has already trimmed, so no block-start occurrence remains and the text is returned unchanged), which is why one unconditional call in this branch is both safe and sufficient. Recovery trims here only as a safety net for what it appends: it does not touch `message.mes`, `swipes[]` or the rendered message — the visible-message trim belongs to `boundary` alone (`docs/modules/boundary.md#receipt-trim`).
+
+If the safety-net trim leaves nothing — the whole generation was the handoff — the invocation is treated as the `'empty'` outcome and returns `'empty'`: nothing is appended, nothing is frozen, no marker is written. That is PLAN §14's "Empty output at the boundary" reached by a second route, and the action must be the same one.
 
 ## The frontier is written here and only here {#append}
 
@@ -41,7 +45,7 @@ PLAN §11's "block merged into the manuscript" happens at exactly one point in t
 
 `appendedText` is recorded as `text.trim()` because that is byte-exactly what `appendToFrontier` writes into the frontier (it trims and joins with `BLOCK_DELIMITER`, `docs/modules/state.md#mutation-is-storage`). Recording the same string the frontier received is what makes the `endsWith` test in [Swipes and regeneration](#swipes) exact rather than approximate.
 
-The `appended` marker lives in `message.extra[METADATA_KEY]` and is written with a spread over whatever is already there, so sibling flags owned by other modules in the same namespace survive (`boundary` writes `boundary`, `capture` writes `captured`). It is a **message-local idempotence flag, not canonical state**: it records that this chat entry has already been merged, so a repeated MESSAGE_RECEIVED for the same index cannot append twice. Because it lives on the message it needs `saveChat()`, while the frontier and any new frozen span live in chat metadata and need `saveMetadata()` via `save()` (`docs/modules/state.md#save`). At most one of each per invocation.
+The `appended` marker lives in `message.extra[METADATA_KEY]` and is written with a spread over whatever is already there, so sibling flags owned by other modules in the same namespace survive (`boundary` writes `boundary`, `capture` writes `captured`). It is a **message-local idempotence flag, not canonical state**: it records that this chat entry has already been merged, so a repeated MESSAGE_RECEIVED for the same index cannot append twice. Because it lives on the message it needs `saveChat()`, while the frontier and any new frozen span live in chat metadata and need `saveMetadata()` via `save()` (`docs/modules/state.md#save`). At most one of each per invocation. Note that one received message can therefore produce **two** `saveChat()` calls in total — `boundary`'s, after it trims and writes its own marker, and recovery's, after the `appended` marker — which is why the end-to-end test in `tests/boundary.test.js` asserts that `saveChat` was called rather than a call count.
 
 ## Swipes and regeneration {#swipes}
 

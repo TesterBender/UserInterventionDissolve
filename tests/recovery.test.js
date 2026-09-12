@@ -88,6 +88,35 @@ describe('onMessageReceived — rollback', () => {
     expect(ctx.chatMetadata[METADATA_KEY].frontier).toBe('Earlier text.\n\nShe left.\n\nHe turned and');
   });
 
+  it('never lets the reserved literal reach the frontier when boundary did not trim', async () => {
+    const ctx = installFakeContext({ name1: 'Mara' });
+    const state = seed(ctx, 'Earlier text.');
+    const message = makeAssistantMessage({ mes: 'He waits.\n\nMara:' });
+    ctx.chat.push(message);
+
+    const outcome = await onMessageReceived(0, 'normal');
+
+    expect(outcome).toBe('boundary');
+    expect(state.frontier).toBe('Earlier text.\n\nHe waits.');
+    expect(state.frontier).not.toContain('Mara:');
+    expect(message.mes).toBe('He waits.\n\nMara:');
+    expect(ctx.updateMessageBlock).not.toHaveBeenCalled();
+  });
+
+  it('treats a handoff-only message as the empty outcome', async () => {
+    const ctx = installFakeContext({ name1: 'Mara' });
+    const state = seed(ctx, 'Earlier text.');
+    ctx.chat.push(makeAssistantMessage({ mes: 'Mara:' }));
+
+    const outcome = await onMessageReceived(0, 'normal');
+
+    expect(outcome).toBe('empty');
+    expect(state.frontier).toBe('Earlier text.');
+    expect(maybeFreeze).not.toHaveBeenCalled();
+    expect(ctx.saveMetadata).not.toHaveBeenCalled();
+    expect(ctx.saveChat).not.toHaveBeenCalled();
+  });
+
   it('truncates to the last complete block and repaints once', async () => {
     const ctx = installFakeContext();
     seed(ctx, 'Earlier text.');

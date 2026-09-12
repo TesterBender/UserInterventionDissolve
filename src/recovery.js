@@ -2,7 +2,7 @@ import { getCtx } from './host.js';
 import { METADATA_KEY, LOG_PREFIX } from './constants.js';
 import { isTrailingBlockComplete, truncateToLastCompleteBlock } from './grammar.js';
 import { getState, appendToFrontier, setFrontier, save } from './state.js';
-import { reservedLiteral, findBoundary } from './boundary.js';
+import { reservedLiteral, findBoundary, trimAtBoundary } from './boundary.js';
 import { maybeFreeze } from './freeze.js';
 
 // duplicated-eligibility: same list as boundary, wired independently → docs/modules/recovery.md#ordering
@@ -47,7 +47,6 @@ export async function onMessageReceived(index, type, ctx = getCtx()) {
   let chatDirty = false;
 
   // rollback: incomplete trailing block is transport debris, never history → docs/modules/recovery.md#rollback
-  // boundary-kept: a deliberate handoff is appended verbatim → docs/modules/recovery.md#boundary-not-rolled-back
   if (outcome === 'incomplete') {
     text = truncateToLastCompleteBlock(message.mes);
     message.mes = text;
@@ -58,10 +57,13 @@ export async function onMessageReceived(index, type, ctx = getCtx()) {
     chatDirty = true;
   }
 
+  // boundary-kept: handed-over block appended, literal trimmed as a safety net → docs/modules/recovery.md#boundary-not-rolled-back
+  if (outcome === 'boundary') text = trimAtBoundary(text, literal);
+
   // floor-stays: nothing is appended and no text is forced → docs/modules/recovery.md#rollback
-  if (outcome === 'empty' || text.trim() === '') {
+  if (text.trim() === '') {
     if (chatDirty) await ctx.saveChat();
-    return outcome;
+    return outcome === 'incomplete' ? outcome : 'empty';
   }
 
   const state = getState(ctx);
