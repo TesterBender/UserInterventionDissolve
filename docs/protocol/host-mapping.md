@@ -63,6 +63,7 @@ Either way, INV-3 holds because the model-visible history is rebuilt from canoni
 ## §16–§17 — Freezing {#s16-freeze}
 
 - `freeze` is pure: given the frontier and a target (3,000–4,200 words with jitter, a host constant — the one place PLAN names a configurable), pick the cut per §17 salience rules, move the span into the frozen list. Persist with `saveMetadata` (`#chat-metadata`).
+- **Compiled once, remembered.** A frozen span is compiled exactly once and persisted; later requests read it back verbatim and never recompile it. The `chat[]` messages it was compiled from are no longer inputs: editing, deleting, or swiping them after the freeze changes the visible log only, not what the model sees. Authorial editing (§10) therefore acts on the uncompiled region alone, and an edit there is picked up by the next request's reconstruction without touching any frozen span. (User's framing, 2026-09-12: a compile "is something that is remembered, such that previous message structures, after being compiled, no longer need to be recompiled again".)
 - Storage size: frozen spans in `chatMetadata` travel with the chat file (exportable, simple). If chat files grow problematic, a later brief may move span bodies to localforage as Intercede did; the cut/index metadata stays in `chatMetadata` either way.
 
 ## What ST cannot do, and how the protocol absorbs it {#gaps}

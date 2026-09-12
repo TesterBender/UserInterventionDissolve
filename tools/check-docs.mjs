@@ -1,5 +1,5 @@
 #!/usr/bin/env node
-// docs-links: every docs/**.md#anchor reference in docs resolves → docs/workflow/comment-policy.md#rule
+// docs-links: docs/**.md#anchor refs resolve; briefs skipped (forward-looking) → docs/workflow/comment-policy.md#rule
 import { readFileSync, readdirSync, statSync, existsSync } from 'node:fs';
 import { resolve, join, dirname, relative } from 'node:path';
 import { fileURLToPath } from 'node:url';
@@ -30,6 +30,7 @@ const problems = [];
 for (const file of walk(DOCS)) {
   const text = readFileSync(file, 'utf8');
   const rel = relative(ROOT, file).replace(/\\/g, '/');
+  if (rel.startsWith('docs/briefs/')) continue;
   const prose = text.replace(/```[\s\S]*?```/g, '');
   const refs = prose.matchAll(/(?:^|[\s(`])(docs\/[\w\-./]+\.md)(?:#([\w-]+))?/g);
   for (const [, target, anchor] of refs) {
