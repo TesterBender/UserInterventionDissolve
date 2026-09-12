@@ -1,5 +1,5 @@
 # Brief 0020b — freezing against the derived frontier: watermark mapping and the frozen-edit notice
-Status: implemented
+Status: done
 Complexity: high
 PLAN sections: §16 (freezing promotes the mutable frontier into immutable history; append-only, old spans never re-cut, target 3,000–4,200 words with jitter, overrun allowed for a better boundary), §17 (cut selection avoids the external character and high-salience structure — unchanged heuristics, re-used verbatim), §12 (the frontier is normalized every request; freezing is the separate, occasional event that moves text out of it), §10 (editing authority is manuscript-wide within the mutable frontier — the notice tells the collaborator when an edit has fallen outside it)
 Invariants touched: INV-6 (append-only, cuts only at complete block boundaries — now also "never inside a message whose transform is not offset-preserving"), INV-7 (cut selection heuristics unchanged), INV-4 (freezing is the only thing that moves the watermark), INV-10 (the watermark records a text offset, never a turn count, index or timestamp)
