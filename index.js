@@ -8,6 +8,7 @@ import {
   onStreamToken,
   onMessageReceived,
 } from './src/boundary.js';
+import { captureMessage } from './src/capture.js';
 
 // interceptor-placeholder: real no-op, body filled by frontier brief → docs/modules/bootstrap.md#interceptor-placeholder
 // eslint-disable-next-line no-unused-vars
@@ -69,6 +70,12 @@ export function init() {
   }
   if (absent.length > 0) {
     console.warn(`${LOG_PREFIX} absent events: ${absent.join(', ')}`);
+  }
+
+  // capture-subscription: one guarded MESSAGE_SENT listener, wiring only → docs/modules/bootstrap.md#capture-subscription
+  const messageSent = E.MESSAGE_SENT;
+  if (messageSent !== undefined) {
+    ctx.eventSource.on(messageSent, (index) => captureMessage(index));
   }
 }
 
