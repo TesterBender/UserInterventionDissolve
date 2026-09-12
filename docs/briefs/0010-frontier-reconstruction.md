@@ -1,5 +1,5 @@
 # Brief 0010 — `frontier`: total reconstruction of model-visible history in the interceptor
-Status: partial
+Status: implemented
 Complexity: high
 PLAN sections: §11 (the live cycle — canonical history → continuation control → generation → boundary → collaborator block → *frontier normalised* → new continuation control; the variation in how often the collaborator intervenes must remain invisible as transport structure), §12 (the mutable frontier must not accumulate one visible continuation seam per intervention: the next request reconstructs the still-mutable manuscript as one assistant span plus exactly one continuation-control turn; "normalisation happens every request, freezing happens only when the frontier reaches its transport target"), §13 (the continuation-control turn is a neutral, non-evaluative host constant, byte-identical in frozen history for stable conditioning and prefix caching), §24 (the abstract transformation: what survives is prose, causality and who did what in the fiction; what is discarded is who typed which block, how many requests occurred, where stops fired, how often the collaborator intervened)
 Invariants touched: INV-4 (this module is its owner — reconstruction happens on every request, not at freeze time), INV-5 (exactly one continuation-control seam, at the active edge, byte-identical), INV-10 (many live histories, one model-visible manuscript — the reconstruction is a pure function of canonical state)
@@ -46,6 +46,7 @@ Invariants touched: INV-4 (this module is its owner — reconstruction happens o
 
 ## Files
 - allowed to create/modify: `src/frontier.js`, `index.js` (interceptor body + one import + its pointer comment only), `tests/frontier.test.js`, `tests/helpers/fake-context.js` (`name2` default and a state builder only, only if absent), `docs/modules/frontier.md`, `docs/modules/bootstrap.md` (the `{#interceptor-placeholder}` section body only, anchor preserved), and this brief's Status line.
+- also allowed: `tests/bootstrap.test.js` — interceptor return assertion only, authorised by orchestrator 2026-09-12.
 - must not touch: `src/state.js`, `src/prompt.js`, `src/constants.js`, `src/grammar.js`, `src/host.js`, `src/boundary.js`, `src/capture.js` (all import-only), `tests/bootstrap.test.js`, `tests/grammar.test.js`, `tests/state.test.js`, `tests/boundary.test.js`, `tests/capture.test.js`, `tests/prompt.test.js`, `tests/preset.test.js`, `manifest.json`, `style.css`, `package.json`, `eslint.config.js`, `vitest.config.js`, `tools/*`, `presets/`, `PLAN.txt`, `CLAUDE.md`, `docs/api/sillytavern.md`, `docs/protocol/*`, `docs/decisions/*`, other `docs/briefs/*`.
 
 ## ST APIs used
@@ -74,7 +75,7 @@ Invariants touched: INV-4 (this module is its owner — reconstruction happens o
 - [x] The `generate_interceptor` global is wired: after installing the fake context and importing `index.js` fresh, calling `globalThis[INTERCEPTOR_GLOBAL](chat, 4096, abort, 'normal')` produces the same array as calling `interceptGeneration` directly, and `index.js`'s global body is a single delegating call.
 - [x] `src/frontier.js` contains no occurrence of the identifier `SillyTavern`, no hard-coded character or persona name, and none of the strings `CHAT_COMPLETION_PROMPT_READY`, `GENERATE_AFTER_COMBINE_PROMPTS`, `GENERATE_BEFORE_COMBINE_PROMPTS`.
 - [x] `docs/modules/bootstrap.md` still contains a heading whose anchor is `{#interceptor-placeholder}` (the `src/constants.js` pointer still resolves).
-- [ ] `npm run check` passes.
+- [x] `npm run check` passes.
 - [x] every new pointer comment resolves (`node tools/check-comments.mjs`).
 
 ## Docs to write/update

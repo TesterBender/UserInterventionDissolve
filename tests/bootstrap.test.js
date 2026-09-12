@@ -121,7 +121,7 @@ describe('index.js bootstrap', () => {
     expect(errSpy.mock.calls[0][0]).toContain('eventTypes/event_types');
   });
 
-  it('wires a no-op generate_interceptor', async () => {
+  it('wires generate_interceptor to return false when nothing is replaced', async () => {
     installFakeContext();
     vi.spyOn(console, 'log').mockImplementation(() => {});
     await import('../index.js');
@@ -132,7 +132,7 @@ describe('index.js bootstrap', () => {
     const result = await globalThis[INTERCEPTOR_GLOBAL](chat, 4096, abort, 'normal');
     expect(chat).toEqual(before);
     expect(abort).not.toHaveBeenCalled();
-    expect(result).toBeUndefined();
+    expect(result).toBe(false);
   });
 });
 
