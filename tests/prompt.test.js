@@ -170,9 +170,13 @@ describe('the grammar commitments', () => {
 });
 
 describe('src/prompt.js', () => {
-  it('exports exactly two constants and declares no function', async () => {
+  it('exports exactly three constants and declares no function', async () => {
     const module = await import('../src/prompt.js');
-    expect(Object.keys(module).sort()).toEqual(['CONTINUATION_CONTROL', 'MANUSCRIPT_SYSTEM_PROMPT']);
+    expect(Object.keys(module).sort()).toEqual([
+      'CONTINUATION_CONTROL',
+      'MANUSCRIPT_SYSTEM_PROMPT',
+      'SOLO_CONTINUATION_CONTROL',
+    ]);
     for (const value of Object.values(module)) expect(typeof value).toBe('string');
     expect(SOURCE).not.toMatch(/\bfunction\b|=>/);
   });

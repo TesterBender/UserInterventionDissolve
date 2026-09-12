@@ -55,6 +55,10 @@ function defaultContext() {
     extensionSettings: {},
     substituteParams: vi.fn((s) => s),
     generateRaw: vi.fn(async () => ''),
+    generate: vi.fn(async () => ''),
+    // slash-commands: parser and command class come off the context → docs/modules/bootstrap.md#slash-commands
+    SlashCommandParser: { addCommandObject: vi.fn() },
+    SlashCommand: { fromProps: vi.fn((props) => ({ ...props })) },
     stopGeneration: vi.fn(),
     updateMessageBlock: vi.fn(),
   };

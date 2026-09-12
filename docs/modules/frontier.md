@@ -57,3 +57,21 @@ INV-10 — many live histories, one model-visible manuscript. The test is a byte
 ## dryRun parity is elsewhere {#dryrun-parity}
 
 `generate_interceptor` is skipped during dryRun, the token-count preview (`docs/api/sillytavern.md#generate-interceptor`). The prompt manager therefore shows token numbers for the *live* history, not for the reconstruction, until brief 0012 applies the same transformation on the prompt-ready events. This affects the displayed count only: the request that is actually sent always goes through this module, because the real generation is never a dryRun.
+
+## One-shot solo variant {#solo-variant}
+
+`buildHistory(state, names, options)` takes an optional third argument. When `options.control` is a non-empty string it becomes the `mes` of the single continuation user turn instead of `CONTINUATION_CONTROL`; anything else — absent, `undefined`, `''`, a non-string — yields the canonical string. `buildHistory` stays pure: it does not read the solo flag, the context, or `substituteParams`, so the same `(state, names)` pair still produces the same array.
+
+`src/solo.js` holds the whole mechanism: a module-level boolean, `armSolo()` (idempotent — arming twice leaves exactly one pending request), `consumeSoloFlag()` (returns and clears, so an arm is true at most once), and `resolveSoloControl(ctx)`, which resolves `{{user}}` at request time by trying `ctx.substituteParams(SOLO_CONTINUATION_CONTROL)` and falling back to `ctx.name1` when that throws, returns a non-string, or leaves the placeholder standing — the same resolution discipline as `reservedLiteral` (`docs/modules/boundary.md#reserved-literal`). Nothing is cached and nothing is persisted. The text itself is `docs/modules/prompt.md#solo-continuation`.
+
+`interceptGeneration` applies three clearing rules, which are the whole rule set — there are no GENERATION_ENDED/STOPPED subscriptions:
+
+1. A skipped type (`quiet`, `impersonate`) consumes and discards the flag before returning `false`, so an out-of-band generation cannot leave a solo armed for the next real request.
+2. A reconstructing request consumes the flag once and, when it was armed, passes `{ control: resolveSoloControl(ctx) }`.
+3. `/uidsolo` clears the flag itself if `ctx.generate` throws or rejects (`docs/modules/bootstrap.md#slash-commands`).
+
+### Why INV-5 and INV-10 hold {#solo-variant-invariants}
+
+INV-5 says one current continuation-control seam remains at the active edge, and that in frozen history the control text is byte-identical for cache stability. The solo variant replaces the text of that one seam for one request; it does not add a second seam, and it never reaches frozen history — `freeze` compiles frontier manuscript text, never the control turn, so a frozen span cannot contain it. Prefix caching is unaffected for frozen spans, which are byte-identical regardless; only the final live turn differs, and only once.
+
+INV-10 holds because the variant is a function of a transient in-memory flag, not of canonical state: two chats with identical canonical state still produce identical persisted history, and the next request from either produces the identical canonical array. The variant exists only inside the per-request `chat` array handed to the interceptor (`docs/api/sillytavern.md#generate-interceptor`) — canonical state, frozen spans and the persisted frontier never contain it, and nothing about it is stored, configurable, or repeatable without another explicit `/uidsolo`.

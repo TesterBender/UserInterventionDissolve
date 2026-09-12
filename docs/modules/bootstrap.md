@@ -85,3 +85,22 @@ The handler passes on only the event payload — `(index, type)` — and lets `o
 Each handler ignores its argument. The three payloads differ — `MESSAGE_SWIPED (mesId)`, `MESSAGE_EDITED (id)`, `MESSAGE_DELETED (chat.length)`, the last being the new length rather than the deleted index (`docs/api/sillytavern.md#message-lifecycle-events`) — and none is needed: the handler re-reads `ctx.chat`, which already holds the swiped-to, edited or remaining text by the time the event fires. Ignoring the payload also keeps the three entries identical, so there is no per-event branch to get wrong.
 
 `MESSAGE_SWIPED` here is unrelated to `recovery`'s swipe handling. `recovery` classifies a *model resample* arriving on MESSAGE_RECEIVED with `type` `'swipe'`/`'regenerate'` (`docs/modules/recovery.md#ordering`); this entry is a different event on a different path, runs only while canonical state is pristine, and never touches recovery's bookkeeping.
+
+## Slash commands {#slash-commands}
+
+`init()` registers exactly one slash command, `/uidsolo`, after the event wiring and before `renderSettings(ctx)`:
+
+```js
+const { SlashCommandParser, SlashCommand } = ctx;
+SlashCommandParser.addCommandObject(SlashCommand.fromProps({ name: 'uidsolo', callback, helpString, returns }));
+```
+
+Both classes are read off `getContext()`, never imported from ST's own modules (`docs/api/sillytavern.md#slash-command-registration`). The command takes no arguments and has no alias, so `aliases`, `namedArgumentList` and `unnamedArgumentList` are omitted; every field is simply assigned onto the instance and never schema-checked. No duplicate-name defence is written: re-registering a name only `console.trace`-warns and overwrites, it never throws, and `init()` is already idempotent through the `ready` flag.
+
+The callback arms a one-shot solo continuation (`docs/modules/frontier.md#solo-variant`) and then calls `await ctx.generate('normal')` — the real `Generate`, which runs the same pipeline as pressing Send on an empty composer: no user message is pushed and the reply continues from the existing history (`docs/api/sillytavern.md#generate-normal-from-slash`). Pushing a message instead would put a visible user turn into the live chat, which is exactly the transport evidence the protocol removes. The resolved value is ignored and not inspected: `Generate` resolves to the reply text on a completed run but to `undefined` when it is blocked early, so nothing may be inferred from it. The callback returns `''` because a slash-command callback's return value is what the parser substitutes into the command's output.
+
+If `ctx.generate` throws or rejects, the callback consumes and discards the flag, logs one error and still returns `''` — a failed start must never leave a solo armed for whatever the collaborator does next.
+
+Registration is guarded like the event wiring, not gated like a required key: if `ctx.SlashCommandParser`, `ctx.SlashCommand` or `ctx.generate` is absent, `init()` logs one `console.warn` and skips registration. Their absence costs the collaborator one convenience command; it does not stop the extension from reconstructing history, so they are deliberately not in `REQUIRED_KEYS` (see [Capability gate](#capability-gate)). There is no retry and no throw.
+
+The command is discoverable through ST's own slash-command autocomplete, which `helpString` feeds; the settings drawer says nothing about it.

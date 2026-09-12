@@ -2,6 +2,7 @@ import { getCtx } from './host.js';
 import { METADATA_KEY } from './constants.js';
 import { CONTINUATION_CONTROL } from './prompt.js';
 import { getState } from './state.js';
+import { consumeSoloFlag, resolveSoloControl } from './solo.js';
 
 // five-fields: name/is_user/is_system/mes/extra, nothing time-varying → docs/modules/frontier.md#shape
 function reconstructed(name, isUser, mes) {
@@ -10,7 +11,8 @@ function reconstructed(name, isUser, mes) {
 
 // total-reconstruction: built from canonical state, never from chat[] → docs/modules/frontier.md#total-reconstruction
 // empty-state: blank state yields no array, not a lone continuation turn → docs/modules/frontier.md#empty-state
-export function buildHistory(state, { name1, name2 }) {
+// solo-variant: options.control replaces the live control text for one request → docs/modules/frontier.md#solo-variant
+export function buildHistory(state, { name1, name2 }, options = {}) {
   if (typeof state !== 'object' || state === null) return [];
 
   const assistantName = String(name2 ?? '');
@@ -30,7 +32,8 @@ export function buildHistory(state, { name1, name2 }) {
 
   if (history.length === 0) return [];
 
-  history.push(reconstructed(String(name1 ?? ''), true, CONTINUATION_CONTROL));
+  const control = typeof options?.control === 'string' && options.control !== '' ? options.control : CONTINUATION_CONTROL;
+  history.push(reconstructed(String(name1 ?? ''), true, control));
   return history;
 }
 
@@ -50,8 +53,14 @@ export function shouldReconstruct(type) {
 // interceptor-body: four steps, contextSize ignored, abort never called → docs/modules/frontier.md#interceptor-body
 // dryrun-parity: token-count preview stays stale until the parity brief → docs/modules/frontier.md#dryrun-parity
 export async function interceptGeneration(chat, contextSize, abort, type, ctx = getCtx()) {
-  if (!shouldReconstruct(type)) return false;
+  // solo-variant: skipped types clear the flag, armed ones resolve it once → docs/modules/frontier.md#solo-variant
+  if (!shouldReconstruct(type)) {
+    consumeSoloFlag();
+    return false;
+  }
 
-  const history = buildHistory(getState(ctx), { name1: ctx.name1, name2: ctx.name2 });
+  const solo = consumeSoloFlag();
+  const options = solo ? { control: resolveSoloControl(ctx) } : undefined;
+  const history = buildHistory(getState(ctx), { name1: ctx.name1, name2: ctx.name2 }, options);
   return applyToRequestChat(chat, history);
 }

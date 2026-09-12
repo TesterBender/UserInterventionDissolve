@@ -1,5 +1,5 @@
 # Brief 0019 — One-shot solo continuation variant
-Status: draft
+Status: implemented
 Complexity: high
 PLAN sections: §13 (continuation control must be semantically boring and non-evaluative; frozen history preferably uses one byte-identical canonical string — the live edge is not required to be that same string, and `docs/protocol/host-mapping.md#s13-continuation` states the live edge "may use a variant only if a brief justifies it"); §12 via `docs/protocol/host-mapping.md#s12-frontier` (the model-visible history is rebuilt from canonical state on every request, so a per-request variant lives only in the request array).
 Invariants touched: INV-5, INV-10 (and INV-4 by construction: the variant cannot outlive one request).
@@ -67,17 +67,17 @@ INV-5 says only one current continuation-control seam remains at the active edge
 - (empty — `#slash-command-registration` and `#generate-normal-from-slash` landed verified; this brief is unblocked in full.)
 
 ## Acceptance
-- [ ] `SOLO_CONTINUATION_CONTROL.startsWith(CONTINUATION_CONTROL)` is true, the remainder is exactly `' '` plus the pinned sentence, and the constant contains the literal `{{user}}`.
-- [ ] `resolveSoloControl(ctx)` with `substituteParams: (s) => s.replace('{{user}}', 'Mara')` returns the sentence containing `Mara` and no `{{user}}`.
-- [ ] `resolveSoloControl(ctx)` with a `substituteParams` that throws, and with one that returns the string unchanged, both fall back to `ctx.name1`; with `name1` empty the placeholder is replaced by the empty string and the result still contains no `{{user}}`.
-- [ ] `buildHistory(state, names, { control: 'X' })` returns a final user turn whose `mes` is `'X'` while every assistant turn is unchanged; `buildHistory(state, names)`, `{ control: '' }` and `{ control: 42 }` all produce `CONTINUATION_CONTROL`.
-- [ ] `armSolo(); armSolo(); consumeSoloFlag()` is `true` and the immediately following `consumeSoloFlag()` is `false`.
-- [ ] With state present and the flag armed, `interceptGeneration(chat, …, 'normal', ctx)` produces a last message whose `mes` equals the resolved solo text; a second identical call with no re-arm produces `CONTINUATION_CONTROL` byte-identically.
-- [ ] `armSolo()` followed by `interceptGeneration(chat, …, 'quiet', ctx)` returns `false`, leaves `chat` untouched, and the next `'normal'` interception uses `CONTINUATION_CONTROL` (flag cleared by the skipped type).
-- [ ] INV-10/INV-5 test: after an armed solo request, the canonical state object (frozen spans, frontier) is deep-equal to what it was before, and no frozen span's `text` and no persisted value contains the solo sentence.
-- [ ] Bootstrap test: `init()` with a fake `SlashCommandParser`/`SlashCommand` calls `SlashCommand.fromProps` once with an object whose `name` is `'uidsolo'` and whose `callback` is a function, and passes that instance to `addCommandObject` exactly once; awaiting the registered callback with `({}, '')` calls `ctx.generate` with `'normal'`, pushes nothing onto `ctx.chat`, and resolves to `''`; when `ctx.generate` rejects, the callback still resolves to `''` and the flag is not left armed (a following `'normal'` interception uses `CONTINUATION_CONTROL`); with `SlashCommandParser` omitted from the context, `init()` still completes and `isReady()` is true.
-- [ ] `npm run check` passes
-- [ ] every new pointer comment resolves (`node tools/check-comments.mjs`)
+- [x] `SOLO_CONTINUATION_CONTROL.startsWith(CONTINUATION_CONTROL)` is true, the remainder is exactly `' '` plus the pinned sentence, and the constant contains the literal `{{user}}`.
+- [x] `resolveSoloControl(ctx)` with `substituteParams: (s) => s.replace('{{user}}', 'Mara')` returns the sentence containing `Mara` and no `{{user}}`.
+- [x] `resolveSoloControl(ctx)` with a `substituteParams` that throws, and with one that returns the string unchanged, both fall back to `ctx.name1`; with `name1` empty the placeholder is replaced by the empty string and the result still contains no `{{user}}`.
+- [x] `buildHistory(state, names, { control: 'X' })` returns a final user turn whose `mes` is `'X'` while every assistant turn is unchanged; `buildHistory(state, names)`, `{ control: '' }` and `{ control: 42 }` all produce `CONTINUATION_CONTROL`.
+- [x] `armSolo(); armSolo(); consumeSoloFlag()` is `true` and the immediately following `consumeSoloFlag()` is `false`.
+- [x] With state present and the flag armed, `interceptGeneration(chat, …, 'normal', ctx)` produces a last message whose `mes` equals the resolved solo text; a second identical call with no re-arm produces `CONTINUATION_CONTROL` byte-identically.
+- [x] `armSolo()` followed by `interceptGeneration(chat, …, 'quiet', ctx)` returns `false`, leaves `chat` untouched, and the next `'normal'` interception uses `CONTINUATION_CONTROL` (flag cleared by the skipped type).
+- [x] INV-10/INV-5 test: after an armed solo request, the canonical state object (frozen spans, frontier) is deep-equal to what it was before, and no frozen span's `text` and no persisted value contains the solo sentence.
+- [x] Bootstrap test: `init()` with a fake `SlashCommandParser`/`SlashCommand` calls `SlashCommand.fromProps` once with an object whose `name` is `'uidsolo'` and whose `callback` is a function, and passes that instance to `addCommandObject` exactly once; awaiting the registered callback with `({}, '')` calls `ctx.generate` with `'normal'`, pushes nothing onto `ctx.chat`, and resolves to `''`; when `ctx.generate` rejects, the callback still resolves to `''` and the flag is not left armed (a following `'normal'` interception uses `CONTINUATION_CONTROL`); with `SlashCommandParser` omitted from the context, `init()` still completes and `isReady()` is true.
+- [x] `npm run check` passes
+- [x] every new pointer comment resolves (`node tools/check-comments.mjs`)
 
 ## Docs to write/update
 - `docs/modules/prompt.md#solo-continuation` — what `SOLO_CONTINUATION_CONTROL` is, that it is the canonical string plus one pinned sentence, why the placeholder stays unresolved in the constant, and that rewording goes through the pinned-string lane.

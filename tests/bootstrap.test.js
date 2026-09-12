@@ -2,7 +2,7 @@ import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
 import fs from 'node:fs';
 import path from 'node:path';
 import { installFakeContext, uninstall } from './helpers/fake-context.js';
-import { REQUIRED_KEYS, LOG_PREFIX, INTERCEPTOR_GLOBAL } from '../src/constants.js';
+import { REQUIRED_KEYS, LOG_PREFIX, INTERCEPTOR_GLOBAL, METADATA_KEY } from '../src/constants.js';
 
 function listSrcFiles(dir = 'src') {
   return fs.readdirSync(path.resolve(dir), { withFileTypes: true }).flatMap((entry) => {
@@ -136,6 +136,78 @@ describe('index.js bootstrap', () => {
     expect(chat).toEqual(before);
     expect(abort).not.toHaveBeenCalled();
     expect(result).toBe(false);
+  });
+});
+
+describe('the /uidsolo slash command', () => {
+  beforeEach(() => {
+    vi.resetModules();
+  });
+
+  afterEach(async () => {
+    const { consumeSoloFlag } = await import('../src/solo.js');
+    consumeSoloFlag();
+    uninstall();
+    vi.restoreAllMocks();
+    delete globalThis[INTERCEPTOR_GLOBAL];
+  });
+
+  function registered(ctx) {
+    expect(ctx.SlashCommand.fromProps).toHaveBeenCalledTimes(1);
+    const props = ctx.SlashCommand.fromProps.mock.calls[0][0];
+    expect(props.name).toBe('uidsolo');
+    expect(typeof props.callback).toBe('function');
+    expect(ctx.SlashCommandParser.addCommandObject).toHaveBeenCalledTimes(1);
+    expect(ctx.SlashCommandParser.addCommandObject).toHaveBeenCalledWith(
+      ctx.SlashCommand.fromProps.mock.results[0].value,
+    );
+    return props.callback;
+  }
+
+  it('registers one command whose callback generates without pushing a message', async () => {
+    const ctx = installFakeContext();
+    vi.spyOn(console, 'log').mockImplementation(() => {});
+    await import('../index.js');
+
+    const callback = registered(ctx);
+    await expect(callback({}, '')).resolves.toBe('');
+    expect(ctx.generate).toHaveBeenCalledTimes(1);
+    expect(ctx.generate).toHaveBeenCalledWith('normal');
+    expect(ctx.chat).toHaveLength(0);
+  });
+
+  it('clears the flag and still resolves to the empty string when generate rejects', async () => {
+    const ctx = installFakeContext({
+      chatMetadata: { [METADATA_KEY]: { version: 1, frozen: [], frontier: 'A' } },
+      generate: vi.fn(async () => {
+        throw new Error('blocked');
+      }),
+    });
+    vi.spyOn(console, 'log').mockImplementation(() => {});
+    const errSpy = vi.spyOn(console, 'error').mockImplementation(() => {});
+    await import('../index.js');
+    const { interceptGeneration } = await import('../src/frontier.js');
+    const { CONTINUATION_CONTROL } = await import('../src/prompt.js');
+
+    const callback = registered(ctx);
+    await expect(callback({}, '')).resolves.toBe('');
+    expect(errSpy).toHaveBeenCalledTimes(1);
+
+    const chat = [];
+    await interceptGeneration(chat, 4096, vi.fn(), 'normal', ctx);
+    expect(chat[chat.length - 1].mes).toBe(CONTINUATION_CONTROL);
+  });
+
+  it('warns and stays ready when the parser is absent', async () => {
+    installFakeContext({ SlashCommandParser: undefined });
+    vi.spyOn(console, 'log').mockImplementation(() => {});
+    const warnSpy = vi.spyOn(console, 'warn').mockImplementation(() => {});
+    const errSpy = vi.spyOn(console, 'error').mockImplementation(() => {});
+    const mod = await import('../index.js');
+
+    expect(mod.isReady()).toBe(true);
+    expect(errSpy).not.toHaveBeenCalled();
+    expect(warnSpy.mock.calls.filter((call) => String(call[0]).includes('uidsolo'))).toHaveLength(1);
   });
 });
 
