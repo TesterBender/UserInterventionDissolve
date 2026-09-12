@@ -1,6 +1,6 @@
 # preset
 Owns: INV-5, INV-9 (docs/protocol/invariants.md)
-PLAN: §13, §19, §20
+PLAN: §13
 Depends on: prompt
 
 `tools/build-preset.mjs` turns `MANUSCRIPT_SYSTEM_PROMPT` (`src/prompt.js`) into the checked-in files under `presets/`: a chat-completion preset for SillyTavern's openai path and a system-prompt template for the text-completion path. It is a build tool, not a module of the extension — nothing in it runs inside SillyTavern, it makes no API call, and the extension does not read `presets/` at runtime.
