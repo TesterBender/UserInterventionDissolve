@@ -14,6 +14,50 @@ notes: signature, payload shape, mutability, backend quirks, limits
 
 Paths are relative to the checkout at `%TEMP%\st-src`. Current baseline: **ST 1.18.0 @ 8172dcd (release), checked 2026-09-12.**
 
+## Presets and prompt delivery {#presets}
+
+### Preset storage and payload shape {#preset-storage}
+status: verified
+checked: 1.18.0 @ 8172dcd on 2026-09-12
+evidence: `src/endpoints/presets.js:14-36` — `getPresetSettingsByAPI` maps `apiId` → `{folder, extension}` for `kobold|novel|textgenerationwebui|openai|instruct|context|sysprompt|reasoning`; user files land in `data/<user>/OpenAI Settings/*.json` (openai), `data/<user>/context/*.json`, `data/<user>/instruct/*.json`, etc.
+notes: OpenAI/chat-completion preset JSON is a flat object; the prompt-manager fields are `prompts` and `prompt_order` (confirmed live in `default/content/presets/openai/Default.json` — `prompt_order` is an array of `{character_id, order:[{identifier, enabled}]}`; `prompts` holds the actual prompt text objects incl. `main`/jailbreak/system-prompt-equivalent entries). Context template JSON carries `story_string` (Handlebars-style template) + formatting flags (`default/content/presets/context/Default.json`). Instruct template JSON carries `input_sequence`/`output_sequence`/`system_sequence`/etc. (`default/content/presets/instruct/Alpaca.json`).
+
+### Default preset registration is core-only, not extension-usable {#preset-default-registration}
+status: verified-negative
+checked: 1.18.0 @ 8172dcd on 2026-09-12
+evidence: `src/endpoints/content-manager.js:86-101` — `getDefaultPresets` reads `getContentIndex(CONTENT_SCOPE.USER)` (driven by `default/content/index.json`) and filters `type.endsWith('_preset')` or `type in [instruct, context, sysprompt, reasoning]`; files live under `default/content/presets/<kind>/*.json`.
+notes: This is ST's own bundled-content seeding mechanism (first-run copy into user data dirs), gated by `default/content/index.json` inside the ST install itself. A third-party extension cannot add entries here — it ships in `public/scripts/extensions/third-party/<name>/`, not `default/content/`, so there is no programmatic "register as a default preset" hook for extensions.
+
+### PresetManager exposed via getContext() {#preset-manager-context}
+status: verified
+checked: 1.18.0 @ 8172dcd on 2026-09-12
+evidence: `public/scripts/st-context.js:92,286` — `import { getPresetManager } from './preset-manager.js';` … context object includes `getPresetManager`.
+notes: `getPresetManager(apiId)` (`public/scripts/preset-manager.js:83-95`) returns a `PresetManager` keyed by `apiId` ∈ `instruct|context|sysprompt|textgenerationwebui|reasoning|openai|kobold|novel` (only if a `<select data-preset-manager-for="...">` for that apiId exists in the DOM — it is populated by `registerPresetManagers()` at startup, so all standard apiIds are present once ST has booted).
+
+### Extension can programmatically save a preset {#preset-programmatic-save}
+status: verified
+checked: 1.18.0 @ 8172dcd on 2026-09-12
+evidence: `public/scripts/preset-manager.js:466-486` — `async savePreset(name, settings, {skipUpdate}) { … const preset = settings ?? this.getPresetSettings(name); const response = await fetch('/api/presets/save', { method: 'POST', headers: getRequestHeaders(), body: JSON.stringify({ preset, name, apiId: this.apiId }) }); … this.updateList(name, preset); }`
+notes: Server side `src/endpoints/presets.js:41-55` (`POST /api/presets/save`) sanitizes `name`, resolves folder/extension by `apiId`, and `writeFileAtomicSync`s the JSON — no schema validation, so any object is accepted. `getRequestHeaders()` (`public/scripts/utils.js:10` importer; defined `public/script.js`) attaches the CSRF token fetched from `/csrf-token` (`public/script.js:694`) as header `X-CSRF-Token` — required on all POSTs. An extension calling `getContext().getPresetManager('openai').savePreset('MyExtPreset', presetObject)` (or `('context')`/`('instruct')`) programmatically creates/overwrites a named preset file on disk and updates the `<select>` dropdown (`skipUpdate:false` path calls `updateList`), making it selectable like any user-saved preset. This is real preset creation, not just an injected system prompt.
+
+### Master import / auto-detection of preset type {#preset-master-import}
+status: verified
+checked: 1.18.0 @ 8172dcd on 2026-09-12
+evidence: `public/scripts/preset-manager.js:249-279` — `PresetManager.performMasterImport(data, fileName)` checks `isPossiblyInstructData` (`name`,`input_sequence`,`output_sequence`), `isPossiblyContextData` (`name`,`story_string`), `isPossiblySystemPromptData` (`name`,`content`), `isPossiblyTextCompletionData` (`temp`,`top_k`,`top_p`,`rep_pen`), `isPossiblyReasoningData`, and routes to the matching `getPresetManager(<kind>).savePreset(data.name, data)`.
+notes: This is the code path behind ST's generic drag-and-drop/file-picker preset import (single "import" button auto-detects preset kind from JSON shape). An extension shipping a bundled preset JSON that matches one of these shapes will import correctly through the normal UI without any extra glue code — this is the lowest-friction "ship a JSON, user imports it" path.
+
+### Slash commands for preset/template switching {#preset-slash-commands}
+status: verified
+checked: 1.18.0 @ 8172dcd on 2026-09-12
+evidence: `/preset` — `public/scripts/preset-manager.js:988`; `/instruct` — `public/scripts/slash-commands.js:519`; `/context` — `public/scripts/slash-commands.js:610`; `/sysprompt` — `public/scripts/sysprompt.js:197`.
+notes: All four exist and select-by-name (fuzzy match, `preset-manager.js:912-965`) among already-saved presets/templates — they do not import new ones. An extension can call these via `SlashCommandParser`/`executeSlashCommandsWithOptions` (exposed on context) to switch to a preset it just saved programmatically (see `#preset-programmatic-save`).
+
+### Third-party extension prior art for prompt delivery {#preset-third-party-prior-art}
+status: verified
+checked: 2026-09-12 (GitHub, current default branches)
+evidence: Samueras/Guided-Generations README (raw.githubusercontent.com) — `"Open SillyTavern, go to AI Response Configuartion … and import the GGSytemPrompt.json files."`; kaldigo/SillyTavern-Tracker `src/generation.js` — `generateRaw(requestPrompt, null, false, false, systemPrompt, responseLength)`; cierru/st-stepped-thinking README — per-character "Prompts for thinking" textarea list, no preset file.
+notes: Guided-Generations (github.com/Samueras/Guided-Generations) ships a bundled `GGSytemPrompt.json` the user manually imports via the preset-import UI — the "ship a JSON, user imports it" path. SillyTavern-Tracker (github.com/kaldigo/SillyTavern-Tracker) does not touch presets at all — it builds a system prompt from its own settings/template and calls `generateRaw()` directly (extension-owned generation call, bypassing the main preset/prompt-manager pipeline entirely). st-stepped-thinking (github.com/cierru/st-stepped-thinking) uses a per-character settings textarea for user-authored "thinking" prompts, no preset JSON. None of the three examples found programmatically calls `/api/presets/save` — bundled-JSON-for-manual-import is the observed convention, even though the code path in `#preset-programmatic-save` would support programmatic creation.
+
 ## Access {#access}
 
 ### SillyTavern.getContext() {#getcontext}
