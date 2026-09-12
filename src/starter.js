@@ -1,5 +1,5 @@
 // starter-reformatter: prose starter → manuscript form, output only → docs/modules/starter.md#why
-import { reservedLiteral } from './boundary.js';
+import { reservedLiteral, suspendBoundary } from './boundary.js';
 import { LOG_PREFIX } from './constants.js';
 import { findTagLiteral, parseManuscript } from './grammar.js';
 import { getCtx } from './host.js';
@@ -17,7 +17,7 @@ const FENCE_LINE = /^[ \t]*`{3,}[^\s`]*[ \t]*$/;
 const CONTENT_OPEN_LINE = /^<content>$/;
 const CONTENT_CLOSE_LINE = /^<\/content>$/;
 
-// reserved-drop: block-initial literal only, never a mid-block mention → docs/modules/starter.md#sanitise
+// reserved-drop: request side only, block-initial literal, never a mid-block mention → docs/modules/starter.md#sanitise
 function dropReservedBlocks(text, literal) {
   if (typeof literal !== 'string' || literal === '') return text;
   const actor = literal.replace(/:$/, '');
@@ -37,8 +37,8 @@ export function buildRewriteRequest(starterText, literal) {
   };
 }
 
-// sanitise: OOC echo, content echo, fences, reserved blocks → docs/modules/starter.md#sanitise
-export function sanitiseRewrite(text, literal) {
+// sanitise: OOC echo, content echo, fences; reserved blocks survive → docs/modules/starter.md#sanitise
+export function sanitiseRewrite(text) {
   let lines = String(text ?? '').split(/\r?\n/);
   const disposable = (line) => {
     const trimmed = line.trim();
@@ -48,11 +48,12 @@ export function sanitiseRewrite(text, literal) {
   while (lines.length > 0 && disposable(lines[0])) lines.shift();
   while (lines.length > 0 && disposable(lines[lines.length - 1])) lines.pop();
   lines = lines.filter((line) => !FENCE_LINE.test(line));
-  return dropReservedBlocks(lines.join('\n'), literal).trim();
+  return lines.join('\n').trim();
 }
 
 // generate-raw: one options object, context replaced wholesale → docs/modules/starter.md#generate-raw
 // off-path: no interceptor, no chat[] write, no canonical state → docs/modules/starter.md#off-path
+// boundary-suspended: released in finally, request side only → docs/modules/starter.md#boundary-suspended
 export async function restructureStarter(text, ctx = getCtx()) {
   if (typeof ctx.generateRaw !== 'function') {
     console.error(`${LOG_PREFIX} this host exposes no generateRaw, so no starter was restructured`);
@@ -60,11 +61,14 @@ export async function restructureStarter(text, ctx = getCtx()) {
   }
   const literal = reservedLiteral(ctx);
   const { prompt, systemPrompt } = buildRewriteRequest(text, literal);
+  const resume = suspendBoundary();
   try {
     const result = await ctx.generateRaw({ prompt, systemPrompt });
-    return sanitiseRewrite(String(result ?? ''), literal);
+    return sanitiseRewrite(String(result ?? ''));
   } catch (error) {
     console.error(`${LOG_PREFIX} the starter rewrite failed`, error);
     return '';
+  } finally {
+    resume();
   }
 }

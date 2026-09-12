@@ -2,7 +2,8 @@ import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
 import { readFileSync } from 'node:fs';
 import { REWRITE_INSTRUCTION, buildRewriteRequest, sanitiseRewrite, restructureStarter } from '../src/starter.js';
 import { MANUSCRIPT_SYSTEM_PROMPT } from '../src/prompt.js';
-import { reservedLiteral } from '../src/boundary.js';
+import { reservedLiteral, resetBoundaryState, onChatCompletionSettings } from '../src/boundary.js';
+import { installFakeContext, uninstall } from './helpers/fake-context.js';
 
 const STARTER = 'Mara: She set the lamp down.\n\nAnton: "You came." He did not move from the door.\n\nThe rain went on.';
 
@@ -109,17 +110,17 @@ describe('sanitiseRewrite', () => {
     expect(sanitiseRewrite('````md\nAnton: "Here."\n````', 'Mara:')).toBe('Anton: "Here."');
   });
 
-  it('drops reserved blocks and rejoins the rest byte-identically with one blank line', () => {
-    const text = 'Mara: She set the lamp down.\n\n\nAnton: "You came."\n\nThe rain went on.';
-    expect(sanitiseRewrite(text, 'Mara:')).toBe('Anton: "You came."\n\nThe rain went on.');
+  it('keeps a block headed by the reserved literal', () => {
+    const text = 'Mara: She set the lamp down.\n\nAnton: "You came."';
+    expect(sanitiseRewrite(text, 'Mara:')).toBe(text);
   });
 
   it('keeps a mid-block occurrence of the literal', () => {
     expect(sanitiseRewrite('Anton: He said Mara: was late.', 'Mara:')).toBe('Anton: He said Mara: was late.');
   });
 
-  it('returns an empty string for an all-reserved answer and never undefined', () => {
-    expect(sanitiseRewrite('Mara: One.\n\nMara: Two.', 'Mara:')).toBe('');
+  it('keeps an all-reserved answer and never returns undefined', () => {
+    expect(sanitiseRewrite('Mara: One.\n\nMara: Two.', 'Mara:')).toBe('Mara: One.\n\nMara: Two.');
     expect(sanitiseRewrite('', 'Mara:')).toBe('');
     expect(sanitiseRewrite(undefined, 'Mara:')).toBe('');
   });
@@ -146,12 +147,13 @@ describe('restructureStarter', () => {
     const expected = buildRewriteRequest(STARTER, reservedLiteral(ctx));
     expect(options.prompt).toBe(expected.prompt);
     expect(Object.is(options.systemPrompt, MANUSCRIPT_SYSTEM_PROMPT)).toBe(true);
-    expect(result).toBe(sanitiseRewrite('Anton: "Here."', reservedLiteral(ctx)));
+    expect(result).toBe(sanitiseRewrite('Anton: "Here."'));
   });
 
-  it('sanitises the raw result against the reserved literal', async () => {
-    const generateRaw = vi.fn(async () => '```\nMara: no.\n\nAnton: "Here."\n```');
-    await expect(restructureStarter(STARTER, ctxWith({ generateRaw }))).resolves.toBe('Anton: "Here."');
+  it('strips the fence from the raw result and keeps the reserved blocks', async () => {
+    const generateRaw = vi.fn(async () => '```\nMara: She set the lamp down.\n\nAnton: "Here."\n```');
+    await expect(restructureStarter(STARTER, ctxWith({ generateRaw }))).resolves
+      .toBe('Mara: She set the lamp down.\n\nAnton: "Here."');
   });
 
   it('resolves empty with one console.error when generateRaw rejects', async () => {
@@ -182,12 +184,67 @@ describe('restructureStarter', () => {
   });
 });
 
+describe('the boundary suspension is released either way', () => {
+  beforeEach(() => {
+    vi.spyOn(console, 'error').mockImplementation(() => {});
+    resetBoundaryState();
+    installFakeContext({ name1: 'Mara', substituteParams: vi.fn((t) => (t === '{{user}}' ? 'Mara' : t)) });
+  });
+
+  afterEach(() => {
+    uninstall();
+    resetBoundaryState();
+    vi.restoreAllMocks();
+  });
+
+  it('suspends the request-side stop string for the duration of the call', async () => {
+    let duringCall;
+    const generateRaw = vi.fn(async () => {
+      duringCall = {};
+      onChatCompletionSettings(duringCall);
+      return 'Anton: "Here."';
+    });
+    await restructureStarter(STARTER, ctxWith({ generateRaw }));
+    expect(duringCall).toEqual({});
+  });
+
+  it('releases when generateRaw resolves', async () => {
+    await restructureStarter(STARTER, ctxWith({ generateRaw: vi.fn(async () => 'Anton: "Here."') }));
+    const body = {};
+    onChatCompletionSettings(body);
+    expect(body.stop).toEqual(['Mara:']);
+  });
+
+  it('releases when generateRaw rejects', async () => {
+    const generateRaw = vi.fn(async () => {
+      throw new Error('nope');
+    });
+    await restructureStarter(STARTER, ctxWith({ generateRaw }));
+    const body = {};
+    onChatCompletionSettings(body);
+    expect(body.stop).toEqual(['Mara:']);
+  });
+
+  it('takes no suspension when the host exposes no generateRaw', async () => {
+    await restructureStarter(STARTER, ctxWith({ generateRaw: null }));
+    const body = {};
+    onChatCompletionSettings(body);
+    expect(body.stop).toEqual(['Mara:']);
+  });
+});
+
 describe('module hygiene', () => {
   const source = readFileSync('src/starter.js', 'utf8');
 
   it('names no host global and reaches nothing over the wire', () => {
     for (const forbidden of ['SillyTavern', 'innerHTML', 'jQuery', '$(', 'fetch', 'merge-attributes', 'generateQuietPrompt', 'eventSource']) {
       expect(source).not.toContain(forbidden);
+    }
+  });
+
+  it('hard-codes no character name', () => {
+    for (const name of ['Mara', 'Anton']) {
+      expect(source).not.toContain(name);
     }
   });
 

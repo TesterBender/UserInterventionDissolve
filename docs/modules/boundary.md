@@ -3,7 +3,7 @@ Owns: INV-2 (docs/protocol/invariants.md)
 PLAN: §8, §14, §15
 Depends on: host, grammar, constants
 
-`src/boundary.js` is the owner of INV-2: the model must never commit the externally owned character's tag. It enforces that at three points of one generation — the outgoing request body (stop strings), the incoming token stream (a stop from `STREAM_TOKEN_RECEIVED` for backends that ignore stop strings), and the received message (a trim back to the character before the reserved literal). The four helpers at the top of the file are pure; the five handlers below them read the host only through `getCtx` (`docs/modules/host.md#single-door`) and hold three fields of per-generation state.
+`src/boundary.js` is the owner of INV-2: the model must never commit the externally owned character's tag. It enforces that at three points of one generation — the outgoing request body (stop strings), the incoming token stream (a stop from `STREAM_TOKEN_RECEIVED` for backends that ignore stop strings), and the received message (a trim back to the character before the reserved literal). The first two are the request side and can be suspended for the length of one off-path call ([Suspension](#suspension)); the third, the receipt-side trim, never can. The four helpers at the top of the file are pure; the five handlers below them read the host only through `getCtx` (`docs/modules/host.md#single-door`) and hold three fields of per-generation state plus the suspension counter.
 
 ## Reserved literal {#reserved-literal}
 
@@ -79,3 +79,15 @@ It is a **message-local flag, not canonical state**. It lives on the message obj
 ## Barge-in is not gated here {#barge-in}
 
 PLAN §15 lets the collaborator insert the external character at any valid block boundary. The stop sequence is *one* trigger for external authorship, not the permission mechanism. This module makes no claim that a stop must have happened before the collaborator may write: it blocks nothing, requires nothing, and offers no button, prompt or affordance. §15 is satisfied here precisely by the absence of a gate.
+
+## Suspension {#suspension}
+
+`suspendBoundary()` increments a module-level counter and returns a `resume()` function; the request-side handlers do nothing while the counter is above zero. It is a counter rather than a boolean so two overlapping suspensions cannot release each other early, and each returned `resume()` is idempotent for its own handle: it decrements at most once however often it is called, and the counter is never taken below zero. `resetBoundaryState()` clears it, for tests.
+
+Exactly three handlers are gated, all on the request side: `onChatCompletionSettings`, `onTextCompletionSettings` and `onStreamToken`. While suspended they return before anything else happens — no stop field is created, no reserved literal is computed, no `stopGeneration()` is called and `stoppedThisGeneration` is left as it was. `onGenerationStarted` and `onMessageReceived` are deliberately not suspendable: `generateRaw` writes nothing to `chat[]`, so the receipt handler cannot see a suspended call anyway, and making it suspendable would only create a way for a leaked suspension to disarm the last line of defence on a real message.
+
+`resume()` must be called from a `finally`, never from the happy path alone: a rejected call that left the counter raised would silently disarm the stop strings of every subsequent live generation. The one caller is `restructureStarter` (`docs/modules/starter.md#boundary-suspended`).
+
+INV-2 is not weakened. The invariant is about the manuscript — PLAN §8 constrains what the model may *commit* in it. The suspended window covers one side-channel `generateRaw` call that creates no chat message, runs no `generate_interceptor`, reads no chat history and writes no canonical state, freeze span or frontier (`docs/api/sillytavern.md#generateraw`); its output lands in a drawer output box that the collaborator reads, edits and pastes into the character card by hand. That paste is PLAN §10 editorial authority — the human deciding the externally owned figure's blocks — not the model committing her tag in a live manuscript. Every `Generate()` path still runs with the counter at zero, and the receipt-side trim is never suspended at all.
+
+Known limitation, accepted: the counter is global to the module, so a normal chat generation running *concurrently* with a restructure shares the window and loses its stop strings for the overlap. The receipt-side trim still catches the result. The mitigation — disabling the Restructure button while a generation is in flight — is deliberately deferred to a separate task and is not implemented here.

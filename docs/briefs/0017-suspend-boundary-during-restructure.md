@@ -1,5 +1,5 @@
 # Brief 0017 — suspend the boundary during the starter restructure call
-Status: draft
+Status: implemented
 Complexity: high
 PLAN sections: §8 "Hard boundary" (generation must be terminated before the model can commit the externally owned character's block; the stop is keyed to the reserved tag literal itself — this brief scopes *when* that stop is armed, never weakens the rule for manuscript generation), §10 (editorial authority: the collaborator or editor may modify any material in the mutable frontier, including the externally owned character's blocks — the rewrite output is material the collaborator edits and installs by hand, not a committed model turn)
 Invariants touched: INV-2 (owner: `boundary`; this brief adds a suspension window scoped to one off-path call and must not widen it), INV-3 / INV-10 (named only because the sanitiser is their guarantee for this module; unchanged in kind here)
@@ -59,19 +59,19 @@ INV-2 is "the model cannot generate the externally owned character's committing 
 - `docs/api/sillytavern.md#generateraw` must carry the corrected note (settings-ready events fire for `generateRaw`) with file:line evidence before implementation starts. The `st-api-verifier` is landing it concurrently; the implementer must read the corrected entry, not this brief's paraphrase, and must not edit that file.
 
 ## Acceptance
-- [ ] `suspendBoundary()` returns a function; with one suspension outstanding, `onChatCompletionSettings({})` and `onTextCompletionSettings({})` leave the body deep-equal to `{}` (no `stop`, no `stopping_strings` key created).
-- [ ] Nested/overlapping: two `suspendBoundary()` handles, releasing the first, still suppresses injection; releasing the second restores it. Calling one handle's `resume()` twice does not release the other suspension, and the counter never goes negative (a stray extra `resume()` followed by a fresh `suspendBoundary()` still suspends).
-- [ ] After `resume()`, `onChatCompletionSettings(body)` again puts the reserved literal at `body.stop[0]`, and `onTextCompletionSettings` at `stopping_strings[0]` and `stop[0]`.
-- [ ] While suspended, `onStreamToken('He waits.\n\nMara: steps in.')` does not call `ctx.stopGeneration()`; after `resume()` the same text does call it exactly once.
-- [ ] `onMessageReceived` still trims, marks and saves while a suspension is outstanding (the receipt path is not suspendable).
-- [ ] `resetBoundaryState()` clears an outstanding suspension.
-- [ ] `restructureStarter` releases the suspension when `generateRaw` resolves **and** when it rejects: after either, `onChatCompletionSettings({})` injects the literal again. (Assert through the exported handlers, not by reading module internals.)
-- [ ] `sanitiseRewrite('Mara: She set the lamp down.\n\nAnton: "You came."', 'Mara:')` returns both blocks unchanged; the fence/OOC/`<content>` strips all still pass; `sanitiseRewrite('', 'Mara:')` and `sanitiseRewrite(undefined, 'Mara:')` are still `''`.
-- [ ] `buildRewriteRequest` still drops a block beginning with the reserved literal and still keeps a mid-block mention (existing tests unchanged).
-- [ ] Only the `tests/starter.test.js` cases that asserted the sanitiser's reserved-block drop are rewritten; no other existing assertion in either test file is deleted or weakened.
-- [ ] `src/boundary.js` and `src/starter.js` still contain no occurrence of `SillyTavern` and no hard-coded character name; `tests/starter.test.js`'s module-hygiene lists still pass unchanged.
-- [ ] `npm run check` passes.
-- [ ] every new pointer comment resolves (`node tools/check-comments.mjs`).
+- [x] `suspendBoundary()` returns a function; with one suspension outstanding, `onChatCompletionSettings({})` and `onTextCompletionSettings({})` leave the body deep-equal to `{}` (no `stop`, no `stopping_strings` key created).
+- [x] Nested/overlapping: two `suspendBoundary()` handles, releasing the first, still suppresses injection; releasing the second restores it. Calling one handle's `resume()` twice does not release the other suspension, and the counter never goes negative (a stray extra `resume()` followed by a fresh `suspendBoundary()` still suspends).
+- [x] After `resume()`, `onChatCompletionSettings(body)` again puts the reserved literal at `body.stop[0]`, and `onTextCompletionSettings` at `stopping_strings[0]` and `stop[0]`.
+- [x] While suspended, `onStreamToken('He waits.\n\nMara: steps in.')` does not call `ctx.stopGeneration()`; after `resume()` the same text does call it exactly once.
+- [x] `onMessageReceived` still trims, marks and saves while a suspension is outstanding (the receipt path is not suspendable).
+- [x] `resetBoundaryState()` clears an outstanding suspension.
+- [x] `restructureStarter` releases the suspension when `generateRaw` resolves **and** when it rejects: after either, `onChatCompletionSettings({})` injects the literal again. (Assert through the exported handlers, not by reading module internals.)
+- [x] `sanitiseRewrite('Mara: She set the lamp down.\n\nAnton: "You came."', 'Mara:')` returns both blocks unchanged; the fence/OOC/`<content>` strips all still pass; `sanitiseRewrite('', 'Mara:')` and `sanitiseRewrite(undefined, 'Mara:')` are still `''`.
+- [x] `buildRewriteRequest` still drops a block beginning with the reserved literal and still keeps a mid-block mention (existing tests unchanged).
+- [x] Only the `tests/starter.test.js` cases that asserted the sanitiser's reserved-block drop are rewritten; no other existing assertion in either test file is deleted or weakened.
+- [x] `src/boundary.js` and `src/starter.js` still contain no occurrence of `SillyTavern` and no hard-coded character name; `tests/starter.test.js`'s module-hygiene lists still pass unchanged.
+- [x] `npm run check` passes.
+- [x] every new pointer comment resolves (`node tools/check-comments.mjs`).
 
 ## Docs to write/update
 - `docs/modules/boundary.md` — new `## Suspension {#suspension}`: what `suspendBoundary()` returns and why it is a counter with a per-handle-idempotent `resume()`; that exactly the three request-side handlers are gated and the receipt-side trim and `onGenerationStarted` are not; why `resume()` must be called from a `finally`; the one caller (`docs/modules/starter.md#boundary-suspended`) and the INV-2 argument in one paragraph (side channel, no chat message, no canonical state, §10 editorial authority at the paste step); and the accepted residual risk that a concurrent live generation shares the window, with the deferred mitigation named. Update the module's opening paragraph so "three points of one generation" reads correctly alongside the suspension.

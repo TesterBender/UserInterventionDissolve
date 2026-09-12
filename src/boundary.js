@@ -57,11 +57,24 @@ export function trimAtBoundary(text, literal) {
 let currentType;
 let currentDryRun = false;
 let stoppedThisGeneration = false;
+let suspendDepth = 0;
 
 export function resetBoundaryState() {
   currentType = undefined;
   currentDryRun = false;
   stoppedThisGeneration = false;
+  suspendDepth = 0;
+}
+
+// suspension: counted, per-handle idempotent resume, request side only → docs/modules/boundary.md#suspension
+export function suspendBoundary() {
+  suspendDepth += 1;
+  let released = false;
+  return function resume() {
+    if (released) return;
+    released = true;
+    if (suspendDepth > 0) suspendDepth -= 1;
+  };
 }
 
 export function onGenerationStarted(type, _options, dryRun) {
@@ -71,11 +84,13 @@ export function onGenerationStarted(type, _options, dryRun) {
 }
 
 export function onChatCompletionSettings(body) {
+  if (suspendDepth > 0) return;
   if (SKIPPED_TYPES.includes(currentType) || currentDryRun) return;
   applyStopStrings(body, reservedLiteral(getCtx()), 'chat');
 }
 
 export function onTextCompletionSettings(body) {
+  if (suspendDepth > 0) return;
   if (SKIPPED_TYPES.includes(currentType) || currentDryRun) return;
   applyStopStrings(body, reservedLiteral(getCtx()), 'text');
 }
@@ -83,6 +98,7 @@ export function onTextCompletionSettings(body) {
 // stream-fallback: for backends that ignore stop strings, once per generation → docs/modules/boundary.md#stream-fallback
 // barge-in: the stop is a trigger for external authorship, never a gate → docs/modules/boundary.md#barge-in
 export function onStreamToken(text) {
+  if (suspendDepth > 0) return;
   if (SKIPPED_TYPES.includes(currentType) || stoppedThisGeneration) return;
   const ctx = getCtx();
   const literal = reservedLiteral(ctx);

@@ -9,6 +9,7 @@ import {
   findBoundary,
   trimAtBoundary,
   resetBoundaryState,
+  suspendBoundary,
   onGenerationStarted,
   onChatCompletionSettings,
   onTextCompletionSettings,
@@ -257,6 +258,104 @@ describe('onStreamToken', () => {
       onStreamToken('He waits.\n\nMara: steps in.');
     }
     expect(ctx.stopGeneration).not.toHaveBeenCalled();
+  });
+});
+
+describe('suspendBoundary', () => {
+  it('suppresses both settings handlers while outstanding and restores them on resume', () => {
+    installMara();
+    onGenerationStarted('normal', {}, false);
+
+    const resume = suspendBoundary();
+    const chatBody = {};
+    const textBody = {};
+    onChatCompletionSettings(chatBody);
+    onTextCompletionSettings(textBody);
+    expect(chatBody).toEqual({});
+    expect(textBody).toEqual({});
+
+    resume();
+    const afterChat = {};
+    const afterText = {};
+    onChatCompletionSettings(afterChat);
+    onTextCompletionSettings(afterText);
+    expect(afterChat.stop[0]).toBe(LITERAL);
+    expect(afterText.stopping_strings[0]).toBe(LITERAL);
+    expect(afterText.stop[0]).toBe(LITERAL);
+  });
+
+  it('counts overlapping suspensions and ignores a repeated resume of one handle', () => {
+    installMara();
+    onGenerationStarted('normal', {}, false);
+
+    const first = suspendBoundary();
+    const second = suspendBoundary();
+
+    first();
+    first();
+    first();
+    const stillSuspended = {};
+    onChatCompletionSettings(stillSuspended);
+    expect(stillSuspended).toEqual({});
+
+    second();
+    const released = {};
+    onChatCompletionSettings(released);
+    expect(released.stop).toEqual([LITERAL]);
+  });
+
+  it('never lets the counter go negative', () => {
+    installMara();
+    onGenerationStarted('normal', {}, false);
+
+    suspendBoundary()();
+    suspendBoundary()();
+
+    const resume = suspendBoundary();
+    const body = {};
+    onChatCompletionSettings(body);
+    expect(body).toEqual({});
+
+    resume();
+    const after = {};
+    onChatCompletionSettings(after);
+    expect(after.stop).toEqual([LITERAL]);
+  });
+
+  it('suppresses the stream-side stop and restores it on resume', () => {
+    const ctx = installMara();
+    onGenerationStarted('normal', {}, false);
+
+    const resume = suspendBoundary();
+    onStreamToken('He waits.\n\nMara: steps in.');
+    expect(ctx.stopGeneration).not.toHaveBeenCalled();
+
+    resume();
+    onStreamToken('He waits.\n\nMara: steps in.');
+    expect(ctx.stopGeneration).toHaveBeenCalledTimes(1);
+  });
+
+  it('does not suspend the receipt-side trim', async () => {
+    const message = makeAssistantMessage({ mes: 'He waits.\n\nMara: steps in.' });
+    const ctx = installMara({ chat: [message] });
+
+    suspendBoundary();
+    await onMessageReceived(0, 'normal');
+
+    expect(message.mes).toBe('He waits.');
+    expect(message.extra[METADATA_KEY].boundary).toBe(true);
+    expect(ctx.updateMessageBlock).toHaveBeenCalledTimes(1);
+    expect(ctx.saveChat).toHaveBeenCalledTimes(1);
+  });
+
+  it('is cleared by resetBoundaryState', () => {
+    installMara();
+    suspendBoundary();
+    resetBoundaryState();
+
+    const body = {};
+    onChatCompletionSettings(body);
+    expect(body.stop).toEqual([LITERAL]);
   });
 });
 
