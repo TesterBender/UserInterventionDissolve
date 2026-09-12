@@ -59,3 +59,21 @@ The handler passes only the event payload — the message index — and lets `ca
 The status line is refreshed by one added statement, not by a new subscription: the existing `CHAT_CHANGED` handler (see [State materialisation](#state-materialisation)) calls `refreshReservedLiteral(getCtx())` as its **first** statement, ahead of the nullish-`chatId` early return. The order matters. The persona can change together with the chat, and closing a chat (payload `null`) is exactly the case where the displayed literal is most likely to be stale; state materialisation must still skip that case, but the status line must stay honest when no chat is open. Refreshing is a `textContent` write against an element that may not exist, so it costs nothing when the drawer was never rendered (`docs/modules/ui-settings.md#status-line`).
 
 `index.js` holds no drawer logic: one import, one render call, one refresh call. What the drawer contains, where it attaches, what the button does and how failures are reported all live in `src/ui/settings.js`.
+## Recovery subscription {#recovery-subscription}
+
+Recovery does not get its own subscription. `src/recovery.js`'s MESSAGE_RECEIVED handler **must** run after `boundary`'s for the same event — it reads text `boundary` has trimmed and a marker `boundary` has written (`docs/modules/recovery.md#ordering`) — so the two are composed into the single `MESSAGE_RECEIVED` entry of the guarded handler map:
+
+```js
+MESSAGE_RECEIVED: async (...args) => {
+  await onMessageReceived(...args);
+  await onRecoveryMessageReceived(...args);
+},
+```
+
+Composition rather than a second `eventSource.on` call for the same event is not just tidier — it behaves differently, and the difference is the point. The emitter awaits listeners sequentially in registration order but **isolates their errors**: a listener that throws is caught and logged, and the next listener runs anyway (`docs/api/sillytavern.md#events`). Two subscriptions would therefore still run recovery after `boundary` threw — appending text that had not been trimmed at the reserved literal, on the one path where the trim is known to have failed. In the composed handler the second `await` is downstream of the first, so a throw in `boundary` propagates out of the composed handler into the emitter's catch and recovery never runs. That is the intended **fail-closed** behaviour: if the trim step fails, nothing is appended to canonical state, and the generation is simply lost rather than merged untrimmed.
+
+Composition also makes the ordering local. As two subscriptions it would be an invisible property of two distant lines in `init()` that any later reordering of the map or of the blocks could silently break; inside one entry the dependency is one `await` in front of another. And it keeps the absent-event guard honest: if the host build lacks `MESSAGE_RECEIVED`, both handlers are skipped together and the name is reported once in the existing `console.warn`.
+
+The handler passes on only the event payload — `(index, type)` — and lets `onMessageReceived` take a fresh context by default (`docs/api/sillytavern.md#getcontext`); it captures no `ctx`. There is no try/catch: the emitter's own catch is what handles a throw, and adding one here would defeat the fail-closed chain above.
+
+`index.js` still holds wiring only. It contains no outcome classification, no rollback, no append and no save — every decision lives in `src/recovery.js`. Recovery's whole cost in the entry file is one import line and one map entry.
