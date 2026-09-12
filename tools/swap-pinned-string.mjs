@@ -19,6 +19,6 @@ function swap(file, marker) {
 swap('src/prompt.js', 'export const MANUSCRIPT_SYSTEM_PROMPT = ');
 swap('tests/prompt.test.js', 'const EXPECTED_PROMPT = ');
 let t = readFileSync('tests/prompt.test.js', 'utf8');
-t = t.replace('toHaveLength(350)', 'toHaveLength(' + words + ')');
+t = t.replace(/toHaveLength\(\d+\)/, 'toHaveLength(' + words + ')');
 writeFileSync('tests/prompt.test.js', t);
 console.log('words:', words);
