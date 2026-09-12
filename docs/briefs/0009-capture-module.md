@@ -1,5 +1,5 @@
 # Brief 0009 — `capture`: composer input → manuscript block on the frontier
-Status: implemented
+Status: done
 Complexity: high
 PLAN sections: §9 (the collaborator's real input must not survive as a model-visible user turn containing the external character's action: capture it, transform it into manuscript text, merge it into the current manuscript immediately after the model-generated material), §10 (capture is character-specific — ordinary composer input after a stop produces the external character's tag block and nothing else; manuscript-wide editing of the frontier is a *separate* authority that does not go through the composer, and is not built here), §15 (barge-in: the collaborator may insert the external character at any valid block boundary without waiting for the model; once inserted the block is normalised exactly as if the stop had been reached, and after reconstruction the two cases must be indistinguishable)
 Invariants touched: INV-3 (this module is its owner), INV-4 (it writes to the frontier through `state`'s API only; it does not reconstruct anything)
