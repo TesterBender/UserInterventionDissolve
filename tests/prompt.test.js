@@ -2,32 +2,48 @@ import { describe, it, expect } from 'vitest';
 import { readFileSync } from 'node:fs';
 import { MANUSCRIPT_SYSTEM_PROMPT, CONTINUATION_CONTROL } from '../src/prompt.js';
 
-const EXPECTED_PROMPT = `This is a piece of creative writing, shaped entirely by what already stands on the page — the voices, the unfinished gestures. Write into it as prose: particular, sensory, willing to be strange.
+const EXPECTED_PROMPT = `This is a piece of creative writing shaped by what is already on the page: the voices, the unfinished gestures, the things characters have begun but not yet completed. Write it as prose that feels particular and sensory, and let it be strange when the story wants to be strange.
 
-A few formatting rules govern the narrative.
+The narrative follows a simple format.
 
-Text is set in blocks separated by a blank line. Each block is tagged or it is narration.
+The text is written in blocks, with a blank line between each one. A block is either tagged to a figure or left as narration.
 
-A tagged block opens with a tag and a colon. What follows belongs to that figure alone — speech, action, choice, intent, attention, private interpretation. A tag need not be a person's name; it marks one discrete figure, or one group moving as a single body. A figure not yet named is tagged by how the page knows them, and takes a name once the story grants one:
+A tagged block begins with a tag followed by a colon. Everything inside that block belongs to that figure: what they say, what they do, what they choose, what they notice, what they intend, and how they understand what is happening.
 
-    Idris: sets the cup down. "No."
-    The tall one: laughs before she has decided to.
-    Guards: lower their spears together.
-    The dog: refuses the doorway.
+The tag does not have to be a person's name. It can simply be whatever the story currently knows them as. If the story later gives them a name, the tag can change with it.
 
-Narration between tags carries the world rather than the will: light, distance, elapsed time, the settling of what was already chosen. It integrates; it does not decide for anyone.
+\`\`\`
+Idris: sets the cup down. "No."
 
-An intention, once tagged, holds until something ends it; later narration may carry it forward.
+The tall one: laughs before she has decided to.
 
-A group tag stands for those still anonymous within it; once someone is drawn out and tagged alone, their choices are their own. Tags keep who did what legible.
+Guards: lower their spears together.
 
-The story closes when the story does.`;
+The dog: refuses the doorway.
+\`\`\`
+
+Narration sits between these tagged blocks and carries the parts of the scene that do not belong to anyone's individual choice: light, weather, distance, passing time, sound, atmosphere, or the physical consequences of something already set in motion.
+
+It can carry an action forward, but it should not quietly make a new decision on someone's behalf.
+
+If a tagged figure begins something or holds an intention, that can continue across later narration until the story gives it a reason to stop, change, or be interrupted.
+
+A group tag can stand for several figures while they are still moving together or remain individually indistinct. Once one of them becomes distinct enough to receive their own tag, their actions and choices belong to them separately.
+
+The purpose of the tags is simply to keep the page clear about who is speaking, acting, noticing, or choosing, without forcing the prose into a conventional script.
+
+Beyond that, follow the story where it leads.
+
+The story ends when it has reached its ending.`;
 
 const EXPECTED_CONTROL = 'Continue the manuscript directly from the current endpoint. Preserve established causal, stylistic, perspectival, and formatting continuity. Do not recap, restart, summarize, or force resolution.';
 
 const SOURCE = readFileSync('src/prompt.js', 'utf8');
 
-const LADDER = MANUSCRIPT_SYSTEM_PROMPT.split('\n').filter((line) => /^\s+\S/.test(line));
+const FENCE_LINES = MANUSCRIPT_SYSTEM_PROMPT.split('\n');
+const FENCE_START = FENCE_LINES.indexOf('```');
+const FENCE_END = FENCE_LINES.indexOf('```', FENCE_START + 1);
+const LADDER = FENCE_LINES.slice(FENCE_START + 1, FENCE_END).filter((line) => line.length > 0);
 
 describe('approved texts', () => {
   it('ships MANUSCRIPT_SYSTEM_PROMPT byte-for-byte', () => {
@@ -62,8 +78,18 @@ describe('MANUSCRIPT_SYSTEM_PROMPT says nothing of mechanics', () => {
     'privileged',
   ];
 
-  it.each(WHOLE_WORDS)('contains no whole word %s', (word) => {
-    expect(MANUSCRIPT_SYSTEM_PROMPT).not.toMatch(new RegExp(`\\b${word}\\b`, 'i'));
+  // continue-exemption: fictional persistence phrase, not transport → docs/modules/prompt.md#says-nothing-of-mechanics
+  const CONTINUE_EXEMPT_PHRASE = 'that can continue across later narration';
+
+  it.each(WHOLE_WORDS)('contains no whole word %s outside the documented exemption', (word) => {
+    const withoutExemption = MANUSCRIPT_SYSTEM_PROMPT.replace(CONTINUE_EXEMPT_PHRASE, '');
+    expect(withoutExemption).not.toMatch(new RegExp(`\\b${word}\\b`, 'i'));
+  });
+
+  it('confines the sole "continue" occurrence to the documented exemption', () => {
+    const matches = MANUSCRIPT_SYSTEM_PROMPT.match(/\bcontinue\b/gi) ?? [];
+    expect(matches).toHaveLength(1);
+    expect(MANUSCRIPT_SYSTEM_PROMPT).toContain(CONTINUE_EXEMPT_PHRASE);
   });
 
   const SUBSTRINGS = [
@@ -90,20 +116,17 @@ describe('MANUSCRIPT_SYSTEM_PROMPT says nothing of mechanics', () => {
     expect(MANUSCRIPT_SYSTEM_PROMPT).not.toContain('{{');
     expect(MANUSCRIPT_SYSTEM_PROMPT).not.toContain('Mara');
     const capitalised = new Set(MANUSCRIPT_SYSTEM_PROMPT.match(/[A-Z][A-Za-z'’]*/g));
-    const notPersonalNames = ['This', 'Write', 'A', 'Text', 'Each', 'What', 'No', 'The', 'Narration', 'It', 'An', 'Tags', 'Guards'];
+    const notPersonalNames = ['This', 'Write', 'The', 'A', 'Everything', 'It', 'If', 'No', 'Guards', 'Narration', 'Once', 'Beyond'];
     for (const word of notPersonalNames) capitalised.delete(word);
     expect([...capitalised]).toEqual(['Idris']);
   });
 });
 
 describe('the tag ladder', () => {
-  it('is exactly four consecutive indented example lines', () => {
+  it('is exactly four fenced example lines', () => {
     expect(LADDER).toHaveLength(4);
-    const lines = MANUSCRIPT_SYSTEM_PROMPT.split('\n');
-    const first = lines.indexOf(LADDER[0]);
-    expect(lines.slice(first, first + 4)).toEqual(LADDER);
     for (const line of LADDER) {
-      expect(line).toMatch(/^\s+[^\n:]{1,40}: .+$/);
+      expect(line).toMatch(/^[^\n:]{1,40}: .+$/);
     }
   });
 
@@ -122,27 +145,27 @@ describe('the tag ladder', () => {
 
 describe('the grammar commitments', () => {
   it('gives a tagged block every kind of interiority', () => {
-    const sentence = MANUSCRIPT_SYSTEM_PROMPT.split('\n').find((line) => line.includes('belongs to that figure alone'));
-    for (const item of ['speech', 'action', 'choice', 'intent', 'attention', 'private interpretation']) {
+    const sentence = MANUSCRIPT_SYSTEM_PROMPT.split('\n').find((line) => line.includes('belongs to that figure:'));
+    for (const item of ['what they say', 'what they do', 'what they choose', 'what they notice', 'what they intend', 'how they understand what is happening']) {
       expect(sentence).toContain(item);
     }
   });
 
-  it('names an unnamed figure by how the page knows them', () => {
-    expect(MANUSCRIPT_SYSTEM_PROMPT).toContain('A figure not yet named is tagged by how the page knows them');
-    expect(MANUSCRIPT_SYSTEM_PROMPT).toContain('takes a name once the story grants one');
+  it('names an unnamed figure by how the page currently knows them', () => {
+    expect(MANUSCRIPT_SYSTEM_PROMPT).toContain('It can simply be whatever the story currently knows them as.');
+    expect(MANUSCRIPT_SYSTEM_PROMPT).toContain('If the story later gives them a name, the tag can change with it.');
   });
 
   it('states blank-line separation, single ownership, integrating narration and anonymous-only groups', () => {
-    expect(MANUSCRIPT_SYSTEM_PROMPT).toContain('Text is set in blocks separated by a blank line.');
-    expect(MANUSCRIPT_SYSTEM_PROMPT).toContain('What follows belongs to that figure alone');
-    expect(MANUSCRIPT_SYSTEM_PROMPT).toContain('It integrates; it does not decide for anyone.');
-    expect(MANUSCRIPT_SYSTEM_PROMPT).toContain('A group tag stands for those still anonymous within it');
-    expect(MANUSCRIPT_SYSTEM_PROMPT).toContain('their choices are their own');
+    expect(MANUSCRIPT_SYSTEM_PROMPT).toContain('The text is written in blocks, with a blank line between each one.');
+    expect(MANUSCRIPT_SYSTEM_PROMPT).toContain('Everything inside that block belongs to that figure');
+    expect(MANUSCRIPT_SYSTEM_PROMPT).toContain('it should not quietly make a new decision on someone\'s behalf.');
+    expect(MANUSCRIPT_SYSTEM_PROMPT).toContain('A group tag can stand for several figures while they are still moving together');
+    expect(MANUSCRIPT_SYSTEM_PROMPT).toContain('their actions and choices belong to them separately');
   });
 
   it('stays short', () => {
-    expect(MANUSCRIPT_SYSTEM_PROMPT.match(/[A-Za-z'’]+/g)).toHaveLength(229);
+    expect(MANUSCRIPT_SYSTEM_PROMPT.match(/[A-Za-z'’]+/g)).toHaveLength(350);
   });
 });
 

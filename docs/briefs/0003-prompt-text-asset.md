@@ -150,8 +150,8 @@ The story ends when it has reached its ending.
 src/prompt.js (the constant only); tests/prompt.test.js (verbatim assertion; word-count freeze updated to the new count; the ladder assertion updated to the fenced form; the whole-word ban on `continue` gets one documented exemption for the phrase "can continue across later narration" — every other forbidden/banned case stays); docs/modules/prompt.md (`#grammar-text` and `#tag-ladder` requoted; one sentence under `#says-nothing-of-mechanics` recording the `continue` exemption and why it is fictional persistence, not transport); presets/*.json regenerated via `npm run build:preset` (no hand edits).
 
 ### Acceptance
-- [ ] `MANUSCRIPT_SYSTEM_PROMPT` equals the fenced text verbatim.
-- [ ] `CONTINUATION_CONTROL` unchanged.
-- [ ] Forbidden-word tests pass with the single documented exemption.
-- [ ] `presets/Manuscript Protocol.json` and the sysprompt JSON regenerated; `npm run build:preset` run twice leaves the tree unchanged.
-- [ ] `npm run check` passes.
+- [x] `MANUSCRIPT_SYSTEM_PROMPT` equals the fenced text verbatim.
+- [x] `CONTINUATION_CONTROL` unchanged.
+- [x] Forbidden-word tests pass with the single documented exemption.
+- [x] `presets/Manuscript Protocol.json` and the sysprompt JSON regenerated; `npm run build:preset` run twice leaves the tree unchanged.
+- [x] `npm run check` passes.
