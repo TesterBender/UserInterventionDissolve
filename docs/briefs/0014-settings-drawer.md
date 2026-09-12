@@ -1,5 +1,5 @@
 # Brief 0014 — minimal settings drawer: description, preset-import hint, one-click install, reserved-literal status
-Status: implemented
+Status: done
 Complexity: high
 PLAN sections: §8 (the hard boundary is keyed to the bare reserved tag literal `Mara:`, derived from the externally authored character — the drawer displays that literal so the collaborator can see which tag is protected, and nothing else about it), §23 (host requirements: "enforce a hard external-character boundary" and "merge external text into manuscript-bearing context" are behaviours, not settings — the host list contains no configuration surface, which is why this drawer configures nothing)
 Invariants touched: INV-2 (the drawer *reports* the reserved literal; it must never let anyone set, override or store it), INV-9 / `docs/protocol/invariants.md#enforcement-model` (the semantic grammar is carried by the prompt text, which is why the only action in the drawer is installing the preset that carries it)
