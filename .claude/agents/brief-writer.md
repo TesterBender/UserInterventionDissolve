@@ -59,3 +59,4 @@ Rules:
 - No options, toggles, settings, or configurability unless the task or PLAN.txt explicitly requires them.
 - No new dependencies unless the task says so.
 - Never invent an ST API. Never cite a PLAN section you did not read.
+- When a brief pins a model-facing string, phrase the pin as: "Do not reword during implementation. A user-requested change goes through the pinned-string lane (`docs/workflow/workflow.md#pinned-string-lane`) as an amendment to this brief." Never phrase it as "a change is a new brief".

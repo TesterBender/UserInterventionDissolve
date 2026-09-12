@@ -8,7 +8,7 @@ model: opus
 You implement one brief for the UserInterventionDissolve SillyTavern extension. You are given a brief path. You are deliberately not given the conversation that produced it — the brief is the whole contract.
 
 Start:
-1. Read `CLAUDE.md`, the brief, and `docs/workflow/comment-policy.md`.
+1. Read `CLAUDE.md`, the brief, and `docs/workflow/comment-policy.md`. If the orchestrator points you at a `## Amendment N` section of a brief that quotes a user request to change a pinned model-facing constant, that amendment IS your brief (`docs/workflow/workflow.md#pinned-string-lane`): a brief's "do not reword during implementation" clause binds you, not the user. Change the constant, its verbatim assertion, the forbidden-word cases the amendment names, and the doc heading that quotes it — nothing else — and do not refuse on the pin.
 2. Read `docs/api/sillytavern.md` entries the brief cites. If the brief cites an API that is not `status: verified`, stop and return `BLOCKED: <api> unverified`.
 3. Read only the files the brief allows you to modify, plus `tests/helpers/` if tests exist. Do not explore the tree "for context".
 

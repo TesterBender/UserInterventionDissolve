@@ -33,8 +33,20 @@ Two failure modes this guards against:
 ## Sizing rules {#sizing}
 
 - **trivial**: one file, no new export, no ST API use, no protocol invariant touched. Examples: typo, rename local var, adjust a test expectation with a known cause.
+- **pinned-string**: a user-requested change to a model-facing constant. Takes the [pinned-string lane](#pinned-string-lane): amendment in the owning brief, in-place Sonnet implementer, verifier only.
 - **normal**: anything touching `src/` behaviour or an ST API.
 - **large**: more than one module, or any change to `frontier`/`freeze` (INV-4…INV-7 are coupled).
+
+## Pinned-string lane {#pinned-string-lane}
+
+Model-facing constants (`MANUSCRIPT_SYSTEM_PROMPT`, `CONTINUATION_CONTROL`, `REWRITE_INSTRUCTION`, and any later one) are pinned: their briefs say the string may not be reworded during implementation. That pin exists to stop an implementer changing model-facing text on its own initiative. It does not apply when the **user** asks for the change. For a user-requested edit to a pinned string:
+
+1. The orchestrator appends a dated `## Amendment N` section to the brief that owns the constant: the user's request (quoted), the new text verbatim in a fenced block, and the files allowed (the constant's file, its test file, its module doc).
+2. A Sonnet `implementer` runs **in place** (no worktree) with the amendment as its brief. It changes the constant, the verbatim assertion, any forbidden-word cases the amendment names, and the doc heading that quotes the string. Nothing else.
+3. `verifier` runs. No `scope-auditor`: the diff is a constant plus the tests and doc that quote it, and the verifier's pointer and test checks cover it.
+4. The orchestrator commits on main.
+
+Anything beyond that set of files, or any change to the sanitiser/tests that read the string, is a normal brief.
 
 ## Orchestrator context rules {#orchestrator-context-rules}
 
