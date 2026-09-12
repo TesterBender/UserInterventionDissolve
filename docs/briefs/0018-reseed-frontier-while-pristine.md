@@ -1,5 +1,5 @@
 # Brief 0018 — re-seed the frontier from the visible chat while canonical state is pristine
-Status: draft
+Status: implemented
 Complexity: high
 PLAN sections: §4 (canonical history is the persistent conditioning surface actually shown to the model; §12-style reconstruction reads it and nothing else, so an initial frontier that no longer matches the chat the collaborator is looking at is simply wrong input), §10 (editorial authority is manuscript-wide *within the mutable frontier*: before anything is frozen the whole frontier is the collaborator's to change, and choosing a different greeting is the earliest such change), §19 (cold start: the opening exemplar is the collaborator's chosen greeting; an alternate greeting is that choice being made)
 Invariants touched: INV-4 (the frontier is the single mutable surface the reconstruction reads; this brief keeps its *initial seed* honest and changes nothing about per-request reconstruction), INV-10 (nothing about the live interaction — which swipe, how many edits — is recorded; only the resulting visible text is re-read)
@@ -49,19 +49,19 @@ When the collaborator swipes the greeting to an alternate one, edits it, or dele
 - (empty — every entry above is `status: verified`.)
 
 ## Acceptance
-- [ ] `isPristine({ frozen: [], frontier: 'x' }, [])` is `true`; with `frozen: [{…}]` it is `false`; with a missing or non-array `frozen` it is `false`.
-- [ ] `isPristine` is `false` when any chat entry has `extra[METADATA_KEY].captured === true` or `extra[METADATA_KEY].appended === true`, and `true` when entries carry other `extra` content, an unrelated key, or `captured: false`.
-- [ ] `isPristine(state, undefined)` and `isPristine(state, null)` decide on `frozen` alone and do not throw.
-- [ ] On a pristine context whose `chat[0].mes` has changed since state was materialised, `await reseedIfPristine(ctx)` resolves `true`, leaves `ctx.chatMetadata[METADATA_KEY]` the **same object reference**, sets its `frontier` to `initialiseFromChat(ctx.chat).frontier`, leaves `frozen` `[]`, and calls `ctx.saveMetadata` exactly once and `ctx.saveChat` zero times.
-- [ ] A multi-message pristine chat re-seeds to every non-system non-blank `mes` in order, identical to `initialiseFromChat(ctx.chat).frontier` — including after a message is removed from `chat` (the delete case) and after a `mes` is rewritten (the edit case).
-- [ ] On a non-pristine context (non-empty `frozen`, or a `captured` marker, or an `appended` marker), `await reseedIfPristine(ctx)` resolves `false`, leaves `frontier` byte-identical, and calls `ctx.saveMetadata` zero times.
-- [ ] `reseedIfPristine` on a context with no stored state materialises it through `getState` and then re-seeds, without throwing.
-- [ ] Emitting MESSAGE_SWIPED, MESSAGE_EDITED and MESSAGE_DELETED after importing `index.js` each re-seeds a pristine chat's frontier; each handler ignores its argument (emitting with `0`, with `undefined`, and with a chat length all behave identically).
-- [ ] The same three emissions on a non-pristine chat leave `chatMetadata[METADATA_KEY].frontier` byte-identical and call `saveMetadata` zero times.
-- [ ] With those three names deleted from `eventTypes`, `init()` still succeeds and the existing `absent events:` warning names them; no throw.
-- [ ] `src/state.js` still contains no occurrence of the identifier `SillyTavern`, and the module's export list gains exactly `isPristine` and `reseedIfPristine`.
-- [ ] `npm run check` passes.
-- [ ] every new pointer comment resolves (`node tools/check-comments.mjs`).
+- [x] `isPristine({ frozen: [], frontier: 'x' }, [])` is `true`; with `frozen: [{…}]` it is `false`; with a missing or non-array `frozen` it is `false`.
+- [x] `isPristine` is `false` when any chat entry has `extra[METADATA_KEY].captured === true` or `extra[METADATA_KEY].appended === true`, and `true` when entries carry other `extra` content, an unrelated key, or `captured: false`.
+- [x] `isPristine(state, undefined)` and `isPristine(state, null)` decide on `frozen` alone and do not throw.
+- [x] On a pristine context whose `chat[0].mes` has changed since state was materialised, `await reseedIfPristine(ctx)` resolves `true`, leaves `ctx.chatMetadata[METADATA_KEY]` the **same object reference**, sets its `frontier` to `initialiseFromChat(ctx.chat).frontier`, leaves `frozen` `[]`, and calls `ctx.saveMetadata` exactly once and `ctx.saveChat` zero times.
+- [x] A multi-message pristine chat re-seeds to every non-system non-blank `mes` in order, identical to `initialiseFromChat(ctx.chat).frontier` — including after a message is removed from `chat` (the delete case) and after a `mes` is rewritten (the edit case).
+- [x] On a non-pristine context (non-empty `frozen`, or a `captured` marker, or an `appended` marker), `await reseedIfPristine(ctx)` resolves `false`, leaves `frontier` byte-identical, and calls `ctx.saveMetadata` zero times.
+- [x] `reseedIfPristine` on a context with no stored state materialises it through `getState` and then re-seeds, without throwing.
+- [x] Emitting MESSAGE_SWIPED, MESSAGE_EDITED and MESSAGE_DELETED after importing `index.js` each re-seeds a pristine chat's frontier; each handler ignores its argument (emitting with `0`, with `undefined`, and with a chat length all behave identically).
+- [x] The same three emissions on a non-pristine chat leave `chatMetadata[METADATA_KEY].frontier` byte-identical and call `saveMetadata` zero times.
+- [x] With those three names deleted from `eventTypes`, `init()` still succeeds and the existing `absent events:` warning names them; no throw.
+- [x] `src/state.js` still contains no occurrence of the identifier `SillyTavern`, and the module's export list gains exactly `isPristine` and `reseedIfPristine`.
+- [x] `npm run check` passes.
+- [x] every new pointer comment resolves (`node tools/check-comments.mjs`).
 
 ## Docs to write/update
 - `docs/modules/state.md` — new heading `## Reseed while pristine {#reseed-while-pristine}`: what pristine means (`frozen` empty **and** no `captured`/`appended` marker in `chat[]`, i.e. the manuscript has not started), that the two markers are the ones `capture` and `recovery` already write so no new bookkeeping exists, why a pristine re-seed is not a re-compile (`docs/protocol/host-mapping.md#s16-freeze`: nothing has been compiled yet; the seed is derived from the visible chat and must follow the collaborator's greeting choice — PLAN §10, §19), why it becomes inert by construction after the first capture or append, why the save is unconditional rather than dirty-checked, and that which swipe was chosen is never recorded (INV-10). Update the file's `PLAN:` header line to include §10 and §19.

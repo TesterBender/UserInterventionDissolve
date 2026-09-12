@@ -70,3 +70,24 @@ export function pushFrozen(state, span) {
 export async function save(ctx = getCtx()) {
   await ctx.saveMetadata();
 }
+
+// reseed-while-pristine: frozen empty and no capture/append marker → docs/modules/state.md#reseed-while-pristine
+export function isPristine(state, chat) {
+  if (!Array.isArray(state?.frozen) || state.frozen.length > 0) return false;
+  if (!Array.isArray(chat)) return true;
+
+  for (const message of chat) {
+    const marks = message?.extra?.[METADATA_KEY];
+    if (marks?.captured === true || marks?.appended === true) return false;
+  }
+  return true;
+}
+
+export async function reseedIfPristine(ctx = getCtx()) {
+  const state = getState(ctx);
+  if (!isPristine(state, ctx.chat)) return false;
+
+  setFrontier(state, initialiseFromChat(ctx.chat).frontier);
+  await save(ctx);
+  return true;
+}
