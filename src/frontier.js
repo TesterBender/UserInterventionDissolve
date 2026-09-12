@@ -48,6 +48,11 @@ export function applyToRequestChat(chat, history) {
   return true;
 }
 
+// regeneration-scope: only swipe still holds its old message in chat[] → docs/modules/frontier.md#interceptor-body
+export function regeneratesLastMessage(type) {
+  return type === 'swipe';
+}
+
 // skipped-generation-types: quiet and impersonate only; unknown types reconstruct → docs/modules/frontier.md#skipped-generation-types
 export function shouldReconstruct(type) {
   return type !== 'quiet' && type !== 'impersonate';
@@ -65,7 +70,9 @@ export async function interceptGeneration(chat, contextSize, abort, type, ctx = 
   const solo = consumeSoloFlag();
   const state = getState(ctx);
   // derived-frontier: rebuilt from chat[] per request, never persisted → docs/modules/derive.md#derivation-rule
-  const { text } = deriveFrontier(ctx.chat, state, reservedLiteral(ctx));
+  const { text } = deriveFrontier(ctx.chat, state, reservedLiteral(ctx), {
+    excludeLastAssistant: regeneratesLastMessage(type),
+  });
   const options = { frontier: text };
   if (solo) options.control = resolveSoloControl(ctx);
 

@@ -287,6 +287,75 @@ describe('deriveFrontier', () => {
   });
 });
 
+describe('deriveFrontier with excludeLastAssistant', () => {
+  const OPT = { excludeLastAssistant: true };
+
+  it('omits a trailing assistant message, byte-identically to removing it', () => {
+    const chat = [
+      makeMessage({ name: 'Mara', mes: 'she opens the door.' }),
+      withId(makeAssistantMessage({ mes: 'The hall is cold.' }), 'a'),
+      withId(makeAssistantMessage({ mes: 'A draft moves the curtain.' }), 'b'),
+    ];
+    const excluded = deriveFrontier(chat, emptyState(), LITERAL, OPT);
+
+    expect(excluded.text).not.toContain('A draft moves the curtain.');
+    expect(excluded.segments.map((s) => s.id)).toEqual([null, 'a']);
+    expect(excluded).toEqual(deriveFrontier(chat.slice(0, 2), emptyState(), LITERAL));
+  });
+
+  it('excludes nothing when the last considered message is a user message', () => {
+    const chat = [
+      withId(makeAssistantMessage({ mes: 'The hall is cold.' }), 'a'),
+      makeMessage({ name: 'Mara', mes: 'she steps through.' }),
+    ];
+    expect(deriveFrontier(chat, emptyState(), LITERAL, OPT))
+      .toEqual(deriveFrontier(chat, emptyState(), LITERAL));
+  });
+
+  it('excludes the last considered message, not a trailing system one', () => {
+    const chat = [
+      withId(makeAssistantMessage({ mes: 'The hall is cold.' }), 'a'),
+      withId(makeAssistantMessage({ mes: 'A draft moves the curtain.' }), 'b'),
+      makeMessage({ mes: 'system notice', is_system: true }),
+      makeMessage({ name: 'Anton', is_user: false, mes: 'another notice', is_system: true }),
+    ];
+    const excluded = deriveFrontier(chat, emptyState(), LITERAL, OPT);
+
+    expect(excluded.text).toBe('The hall is cold.');
+    expect(excluded.segments.map((s) => s.id)).toEqual(['a']);
+  });
+
+  it('leaves the derivation untouched for no options, {} and false', () => {
+    const chat = [
+      makeMessage({ name: 'Mara', mes: 'she opens the door.' }),
+      withId(makeAssistantMessage({ mes: 'The hall is cold.' }), 'a'),
+    ];
+    const base = deriveFrontier(chat, emptyState(), LITERAL);
+
+    expect(deriveFrontier(chat, emptyState(), LITERAL, {})).toEqual(base);
+    expect(deriveFrontier(chat, emptyState(), LITERAL, { excludeLastAssistant: false })).toEqual(base);
+    expect(base.text).toContain('The hall is cold.');
+  });
+
+  it('stays pure with the option set: no mutation, no id assigned', () => {
+    const chat = [
+      makeMessage({ name: 'Mara', mes: 'she opens the door.' }),
+      makeAssistantMessage({ mes: 'The hall is cold.' }),
+    ];
+    const state = emptyState({ frozenIds: ['old'], watermark: { messageId: 'k', offset: 3 } });
+    const chatBefore = JSON.parse(JSON.stringify(chat));
+    const stateBefore = JSON.parse(JSON.stringify(state));
+
+    const first = deriveFrontier(chat, state, LITERAL, OPT);
+    const second = deriveFrontier(chat, state, LITERAL, OPT);
+
+    expect(JSON.parse(JSON.stringify(chat))).toEqual(chatBefore);
+    expect(JSON.parse(JSON.stringify(state))).toEqual(stateBefore);
+    expect(chat[1].extra[METADATA_KEY]).toBeUndefined();
+    expect(first).toEqual(second);
+  });
+});
+
 describe('src/derive.js source', () => {
   const source = fs.readFileSync(path.join(process.cwd(), 'src/derive.js'), 'utf8');
 

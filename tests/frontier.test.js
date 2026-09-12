@@ -4,7 +4,7 @@ import path from 'node:path';
 import { installFakeContext, uninstall, makeMessage, makeAssistantMessage } from './helpers/fake-context.js';
 import { METADATA_KEY, INTERCEPTOR_GLOBAL } from '../src/constants.js';
 import { CONTINUATION_CONTROL } from '../src/prompt.js';
-import { buildHistory, applyToRequestChat, shouldReconstruct, interceptGeneration } from '../src/frontier.js';
+import { buildHistory, applyToRequestChat, shouldReconstruct, regeneratesLastMessage, interceptGeneration } from '../src/frontier.js';
 import { armSolo, consumeSoloFlag, resolveSoloControl } from '../src/solo.js';
 
 const NAMES = { name1: 'Mara', name2: 'Narrator' };
@@ -132,11 +132,15 @@ describe('interceptGeneration', () => {
 
   it('reconstructs for every other type, including undefined and unknown strings', async () => {
     const ctx = installWithState(makeState({ frozen: [{ text: 'A' }] }), [makeAssistantMessage({ mes: 'C' })]);
-    for (const type of ['normal', 'continue', 'regenerate', 'swipe', undefined, 'something_new']) {
+    for (const type of ['normal', 'continue', 'regenerate', undefined, 'something_new']) {
       const chat = [makeMessage({ mes: 'live' })];
       expect(await interceptGeneration(chat, 4096, vi.fn(), type, ctx)).toBe(true);
       expect(chat.map((m) => m.mes)).toEqual(['A', 'C', CONTINUATION_CONTROL]);
     }
+
+    const swiped = [makeMessage({ mes: 'live' })];
+    expect(await interceptGeneration(swiped, 4096, vi.fn(), 'swipe', ctx)).toBe(true);
+    expect(swiped.map((m) => m.mes)).toEqual(['A', CONTINUATION_CONTROL]);
   });
 
   it('derives the mutable turn from the visible chat, tagging the collaborator', async () => {
@@ -284,6 +288,71 @@ describe('interceptGeneration', () => {
     expect(first[first.length - 1].is_user).toBe(true);
     expect(first[first.length - 1].mes).toBe(CONTINUATION_CONTROL);
     expect(JSON.stringify(first)).toBe(JSON.stringify(second));
+  });
+});
+
+describe('regeneratesLastMessage', () => {
+  it('is true for swipe only', () => {
+    expect(regeneratesLastMessage('swipe')).toBe(true);
+    for (const type of ['regenerate', 'normal', 'continue', 'quiet', 'impersonate', undefined, 'something_new']) {
+      expect(regeneratesLastMessage(type)).toBe(false);
+    }
+  });
+});
+
+describe('derivation scope per generation type', () => {
+  const visible = () => [
+    makeMessage({ name: 'Mara', mes: 'she opens the door.' }),
+    makeAssistantMessage({ mes: 'The hall is cold.' }),
+    makeAssistantMessage({ mes: 'A draft moves the curtain.' }),
+  ];
+
+  async function frontierFor(type) {
+    const ctx = installWithState(makeState(), visible());
+    ctx.substituteParams = (s) => (s === '{{user}}' ? 'Mara' : s);
+    const chat = [makeMessage({ mes: 'request' })];
+    await interceptGeneration(chat, 4096, vi.fn(), type, ctx);
+    const turn = chat[chat.length - 2];
+    uninstall();
+    return turn.mes;
+  }
+
+  it('omits the last assistant message on swipe', async () => {
+    const text = await frontierFor('swipe');
+    expect(text).toContain('The hall is cold.');
+    expect(text).not.toContain('A draft moves the curtain.');
+  });
+
+  it('keeps it for regenerate, continue, normal and an absent type', async () => {
+    for (const type of ['regenerate', 'continue', 'normal', undefined]) {
+      expect(await frontierFor(type)).toContain('A draft moves the curtain.');
+    }
+  });
+
+  // inv-10: same visible chat, same reconstruction, swipe scope → docs/modules/frontier.md#inv-10
+  it('collapses two live histories to the same reconstruction under swipe', async () => {
+    const state = () => makeState({ frozen: [{ text: 'A', words: 1, createdAt: 1 }] });
+
+    const calm = visible();
+    const stormy = visible();
+    stormy[0].extra = { [METADATA_KEY]: { id: 'm1' } };
+    stormy[1].swipes = ['A discarded attempt.', 'The hall is cold.'];
+    stormy[1].swipe_id = 1;
+    stormy[2].send_date = 99999;
+
+    const ctxA = installWithState(state(), calm);
+    ctxA.substituteParams = (s) => (s === '{{user}}' ? 'Mara' : s);
+    const chatA = [makeMessage({ mes: 'request a' })];
+    await interceptGeneration(chatA, 4096, vi.fn(), 'swipe', ctxA);
+    uninstall();
+
+    const ctxB = installWithState(state(), stormy);
+    ctxB.substituteParams = (s) => (s === '{{user}}' ? 'Mara' : s);
+    const chatB = [makeMessage({ mes: 'request b' })];
+    await interceptGeneration(chatB, 128, vi.fn(), 'swipe', ctxB);
+
+    expect(JSON.stringify(chatA)).toBe(JSON.stringify(chatB));
+    expect(JSON.stringify(chatA)).not.toContain('A draft moves the curtain.');
   });
 });
 

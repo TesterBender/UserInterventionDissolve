@@ -1,5 +1,5 @@
 # Brief 0022 — Swipe/regenerate-aware derivation
-Status: draft
+Status: implemented
 Complexity: high
 PLAN sections: §12 (normalisation happens every request; the frontier is reconstructed so only the single continuation seam currently needed at the edge remains), §11 (the live cycle is manuscript → continuation control → generation; a regeneration replaces the last model output rather than following it)
 Invariants touched: INV-4, INV-10
@@ -8,7 +8,7 @@ Invariants touched: INV-4, INV-10
 When the collaborator swipes or regenerates, the reconstruction sent to the model must not contain the message being regenerated. Today `interceptGeneration` derives the frontier from the live `getCtx().chat`, which on a swipe/regenerate still holds the previous attempt, so the model receives its own last output as manuscript and writes a *continuation* of it instead of an *alternative* to it. After this brief, derivation takes an explicit scope option, `interceptGeneration` sets that option from the generation type, and a swipe or regenerate sees exactly the manuscript that preceded the message under regeneration — the same text a `normal` request would have seen one step earlier. Nothing else about derivation, freezing, or recovery changes.
 
 ## Chosen rule, and why
-**Type rule, not coreChat inspection.** `deriveFrontier` gains a fourth argument `options` with one field, `excludeLastAssistant`. `interceptGeneration` sets it to `type === 'swipe' || type === 'regenerate'` (`docs/api/sillytavern.md#generation-types`, verified) and derivation drops the **last** message that would otherwise be considered, but only when that message is not a user message.
+**Type rule, not coreChat inspection.** `deriveFrontier` gains a fourth argument `options` with one field, `excludeLastAssistant`. `interceptGeneration` sets it to `type === 'swipe'` (amended per `#swipe-scope`, orchestrator 2026-09-13: on `swipe` the message stays in live `chat[]` and ST pops it from `coreChat` only, so derivation must drop it; on `regenerate` ST has already deleted it from `chat[]`, so excluding a last assistant message there would wrongly drop the *previous* one, which empty-send continuations produce routinely — `docs/api/sillytavern.md#swipe-scope`, verified) and derivation drops the **last** message that would otherwise be considered, but only when that message is not a user message.
 
 The alternative — deriving from the per-request `chat` copy the interceptor receives, on the theory that ST already excluded the regenerated message from `coreChat` — is rejected for this brief. `coreChat` is built as new objects from `chat.filter(...)` (`docs/api/sillytavern.md#generate-interceptor`, verified), and whether those objects carry `extra` (and therefore the ids `frozenIds` and `watermark` are expressed in) is not verified; ST's prompt-manager entries are already known to drop `extra` (`#prompt-ready-extra-survival`). Without ids the copy cannot be mapped onto canonical state at all, so derivation must keep reading `ctx.chat`. The type rule needs no such mapping and is a pure function of `(chat, state, literal, options)`, which is what keeps INV-10 testable.
 
@@ -19,7 +19,7 @@ The rule is safe under either answer to the open `#swipe-scope` questions: if ST
 ## In scope
 - `src/derive.js`: `deriveFrontier(chat, state, literal, options = {})`. When `options.excludeLastAssistant === true`, identify the last element of `chat` that passes the existing considered-message gate (object, non-null, `typeof mes === 'string'`, `is_system !== true`) and, if that message's `is_user` is not `true`, skip it entirely — no text, no delimiter, no segment. If the last considered message *is* a user message, exclude nothing. Any other `options` value, or none, behaves exactly as today.
 - The exclusion is decided before the `frozenIds` / watermark logic and is independent of it: a last message that is already frozen is skipped by the existing rule regardless, and the excluded message contributes no segment, so `segments` offsets stay consistent with `text` (PLAN §12 / `docs/modules/freeze.md#watermark-mapping` consumers see no difference).
-- `src/frontier.js`: one exported predicate, `regeneratesLastMessage(type)`, returning `type === 'swipe' || type === 'regenerate'`; `interceptGeneration` passes `{ excludeLastAssistant: regeneratesLastMessage(type) }` as the fourth argument to `deriveFrontier`. `'continue'`, `'normal'`, `undefined` and every other reconstructed type pass `false`.
+- `src/frontier.js`: one exported predicate, `regeneratesLastMessage(type)`, returning `type === 'swipe'` (amended per `#swipe-scope`, orchestrator 2026-09-13); `interceptGeneration` passes `{ excludeLastAssistant: regeneratesLastMessage(type) }` as the fourth argument to `deriveFrontier`. `'regenerate'`, `'continue'`, `'normal'`, `undefined` and every other reconstructed type pass `false`.
 - Pointer comments for both new behaviours, resolving to the new doc headings below.
 - Tests per **Acceptance**.
 
@@ -42,21 +42,22 @@ The rule is safe under either answer to the open `#swipe-scope` questions: if ST
 - Generation type strings `'normal' | 'continue' | 'regenerate' | 'swipe' | 'quiet' | 'impersonate'` — docs/api/sillytavern.md#generation-types (status: verified)
 - `MESSAGE_RECEIVED (index, type)` — docs/api/sillytavern.md#message-received (status: verified) — cited only to state that the post-receipt freeze derivation stays type-less
 - Message shape (`mes`, `is_user`, `is_system`, `extra`) — docs/api/sillytavern.md#message-shape (status: verified)
+- Prompt scope for swipe, regenerate, continue — docs/api/sillytavern.md#swipe-scope (status: verified) — the amendment's basis
 
 ## Verification needed
-- `#swipe-scope` (being verified concurrently; **not blocking** — the chosen rule is correct under either answer, and the implementer must not wait for it): (a) does ST's `coreChat` exclude the message being regenerated on `type === 'swipe'` / `'regenerate'`? (b) is that message's `mes` already empty in the live `chat[]` at interceptor time? If the answer to (b) is yes, add one sentence to `docs/modules/derive.md#regeneration-scope` saying the option is then a no-op and is kept as the explicit guarantee; do not remove the option.
+- `#swipe-scope` — **landed** (verified 2026-09-13). (a) `coreChat.pop()` excludes the swiped message from the request copy only, on `type === 'swipe'`; on `'regenerate'` ST deletes the message from `chat[]` before `Generate` runs. (b) the swiped message's `mes` is **not** blanked in live `chat[]`. Rule and acceptance amended accordingly (orchestrator 2026-09-13): `excludeLastAssistant` is true for `'swipe'` only.
 
 ## Acceptance
-- [ ] `deriveFrontier(chat, state, literal, { excludeLastAssistant: true })` on a chat ending in an assistant message omits that message's text from `text` and its entry from `segments`, and is byte-identical to `deriveFrontier` over the same chat with that message removed.
-- [ ] The same call on a chat ending in a **user** message excludes nothing (output identical to the no-options call).
-- [ ] The same call on a chat whose last considered message is preceded by trailing `is_system` messages still excludes the last *considered* (non-system) message, not a system one.
-- [ ] `deriveFrontier` with no fourth argument, with `{}`, and with `{ excludeLastAssistant: false }` produces output identical to the current implementation for every existing derive test.
-- [ ] `interceptGeneration` with `type === 'swipe'` and with `type === 'regenerate'` builds a history whose frontier turn omits the last assistant message; with `'continue'`, `'normal'` and `undefined` it includes it.
-- [ ] `regeneratesLastMessage` returns `true` only for `'swipe'` and `'regenerate'`.
-- [ ] INV-10 test extended: two different live histories that end in the same visible chat still yield the same reconstruction under `type === 'swipe'`.
-- [ ] `deriveFrontier` remains pure with the option set: neither `chat` nor `state` is mutated, no id assigned.
-- [ ] `npm run check` passes
-- [ ] every new pointer comment resolves (`node tools/check-comments.mjs`)
+- [x] `deriveFrontier(chat, state, literal, { excludeLastAssistant: true })` on a chat ending in an assistant message omits that message's text from `text` and its entry from `segments`, and is byte-identical to `deriveFrontier` over the same chat with that message removed.
+- [x] The same call on a chat ending in a **user** message excludes nothing (output identical to the no-options call).
+- [x] The same call on a chat whose last considered message is preceded by trailing `is_system` messages still excludes the last *considered* (non-system) message, not a system one.
+- [x] `deriveFrontier` with no fourth argument, with `{}`, and with `{ excludeLastAssistant: false }` produces output identical to the current implementation for every existing derive test.
+- [x] `interceptGeneration` with `type === 'swipe'` builds a history whose frontier turn omits the last assistant message; with `'regenerate'`, `'continue'`, `'normal'` and `undefined` it includes it (amended per `#swipe-scope`, orchestrator 2026-09-13).
+- [x] `regeneratesLastMessage` returns `true` only for `'swipe'` (amended per `#swipe-scope`, orchestrator 2026-09-13).
+- [x] INV-10 test extended: two different live histories that end in the same visible chat still yield the same reconstruction under `type === 'swipe'`.
+- [x] `deriveFrontier` remains pure with the option set: neither `chat` nor `state` is mutated, no id assigned.
+- [x] `npm run check` passes
+- [x] every new pointer comment resolves (`node tools/check-comments.mjs`)
 
 ## Docs to write/update
 - `docs/modules/derive.md#regeneration-scope` (new heading) — what `options.excludeLastAssistant` means, the exact "last considered message, only if not a user message" rule, why the exclusion carries no segment, and why the option exists rather than derivation inspecting the chat copy.

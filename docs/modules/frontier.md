@@ -32,9 +32,13 @@ Deliberately absent: `send_date`, `gen_started`, `gen_finished`, `swipes`, `swip
 `interceptGeneration(chat, contextSize, abort, type, ctx = getCtx())` is the whole body of the global; `index.js` holds one delegating line and no logic (`docs/modules/bootstrap.md#interceptor-placeholder`). Four steps:
 
 1. Return `false` when `shouldReconstruct(type)` is false.
-2. Read canonical state with `getState(ctx)` and derive the frontier from `ctx.chat` with `deriveFrontier(ctx.chat, state, reservedLiteral(ctx))`.
+2. Read canonical state with `getState(ctx)` and derive the frontier from `ctx.chat` with `deriveFrontier(ctx.chat, state, reservedLiteral(ctx), { excludeLastAssistant: regeneratesLastMessage(type) })` — `true` for `'swipe'` only.
 3. Build the history from that state plus `ctx.name1` / `ctx.name2`, passing the derived text as `options.frontier`.
 4. Return `applyToRequestChat(chat, history)` — `true` when it replaced anything.
+
+The generation type selects the **derivation scope** as well as whether to reconstruct at all. `regeneratesLastMessage(type)` is `true` for exactly `'swipe'`, and for nothing else. A swipe replaces the last model output, and ST leaves that message in the live `chat[]` — it removes it from the request copy alone, with `coreChat.pop()` (`docs/api/sillytavern.md#swipe-scope`) — so derivation, which reads `ctx.chat`, has to drop it itself (`docs/modules/derive.md#regeneration-scope`); otherwise the model is shown its own last attempt as manuscript and writes a continuation of it instead of an alternative to it.
+
+`'regenerate'` passes `false` even though it also replaces the last output: ST has already deleted that message from `chat[]` before `Generate` runs, so the frontier derived from the live chat excludes it with no help from us. Dropping "the last assistant message" there would drop the *previous* one, which this protocol produces in pairs routinely — empty-send continuations leave consecutive assistant messages. `'continue'` passes `false` because ST appends the model's output to the last message, so the manuscript it continues must still contain it. `'normal'`, `undefined` and every other reconstructed type pass `false` too. The post-receipt freeze derivation in `recovery` takes no options by design (`docs/modules/recovery.md#freeze-hookup`): by receipt time the message holds the *new* text, which belongs in the frontier that freezing measures.
 
 The derivation is repeated in full on every request, with no cache, no dirty flag and no debounce (`docs/modules/derive.md#purity`); the reserved literal is resolved fresh per request from `boundary` (`docs/modules/boundary.md#reserved-literal`), the same source the stop string uses.
 

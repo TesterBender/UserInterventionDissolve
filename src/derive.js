@@ -42,21 +42,39 @@ export function assignIds(chat) {
   return assigned;
 }
 
+// considered: the gate every derivation rule is expressed over → docs/modules/derive.md#derivation-rule
+function isConsidered(message) {
+  if (typeof message !== 'object' || message === null) return false;
+  return typeof message.mes === 'string' && message.is_system !== true;
+}
+
+// regeneration-scope: swipe/regenerate drop the message under regeneration → docs/modules/derive.md#regeneration-scope
+function excludedIndex(chat, options) {
+  if (options?.excludeLastAssistant !== true) return -1;
+  for (let i = chat.length - 1; i >= 0; i -= 1) {
+    if (!isConsidered(chat[i])) continue;
+    return chat[i].is_user === true ? -1 : i;
+  }
+  return -1;
+}
+
 // derivation-rule: per-message inclusion, watermark slice, user transform → docs/modules/derive.md#derivation-rule
 // purity: reads chat and state, mutates neither, assigns no id → docs/modules/derive.md#purity
-export function deriveFrontier(chat, state, literal) {
+export function deriveFrontier(chat, state, literal, options = {}) {
   if (!Array.isArray(chat)) return { text: '', segments: [] };
 
   const frozenIds = new Set(state?.frozenIds ?? []);
   const watermark = state?.watermark ?? { messageId: null, offset: 0 };
+  const excluded = excludedIndex(chat, options);
 
   const blocks = [];
   const segments = [];
   let end = 0;
 
-  for (const message of chat) {
-    if (typeof message !== 'object' || message === null) continue;
-    if (typeof message.mes !== 'string' || message.is_system === true) continue;
+  for (let index = 0; index < chat.length; index += 1) {
+    const message = chat[index];
+    if (!isConsidered(message)) continue;
+    if (index === excluded) continue;
 
     // per-message: an absent or unknown id is mutable, never frozen → docs/modules/derive.md#per-message
     const id = message.extra?.[METADATA_KEY]?.id ?? null;
