@@ -1,5 +1,5 @@
 # Brief 0004 — Tag header: recognise any `name:` at block start, case-insensitively
-Status: implemented
+Status: done
 Complexity: low
 PLAN sections: §5 (a manuscript is atomic blocks separated by a blank line; a block is a tag block or a buffer block; the tag block's shape is `Anton: sets the cup down. "No."` — a name, a colon, then the block body), §8 (the reserved external literal is the bare tag `Mara:`, not `\n\nMara:`; the stop is keyed to the reserved tag syntax itself)
 Invariants touched: INV-1 (tag/buffer split is what makes commitment legible), INV-2 (the boundary stop literal is the persona name verbatim, so the actor text this module returns must not be case-normalised)
@@ -64,3 +64,7 @@ name:` is a tag"; periods and spaces stay admitted so `Dr. Vance:` works. Docume
 
 ## Docs to write/update
 - `docs/modules/grammar.md#tag-header` — rewritten per the In-scope bullet: the user's confident-match rule, the exact pattern and what each part admits, the two exclusions and why they are the only ones, why the header stays anchored at block start, the accepted cost of lowercase attributions parsing as tags, and that the actor is returned verbatim because `boundary`'s stop literal is the persona name verbatim (§8).
+
+## Carry-forward (from scope audit)
+- The broadened header means a same-line shape like `She rose. Mara:` yields actor `She rose. Mara`. Any consumer that avoids the external character (freeze cut selection, INV-7; boundary, INV-2) must key on `findTagLiteral` (block-start literal match), never on the actor string or `classifyActor`. See docs/modules/grammar.md#tag-literal-lookup.
+- In-scope bullet still says `[buffer, tag, buffer]` for the rejected-shapes test; the acceptance line (amended) is authoritative: `[buffer, tag, tag]`.
