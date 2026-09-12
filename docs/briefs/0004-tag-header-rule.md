@@ -53,9 +53,9 @@ Invariants touched: INV-1 (tag/buffer split is what makes commitment legible), I
 - [x] `parseTagHeader('she said: "no"')` returns `{ actor: 'she said', body: '"no"' }`.
 - [x] `parseTagHeader('anton: waits.').actor === 'anton'` — the actor is returned with its original case, never lowercased.
 - [x] `The tall woman in the doorway:`, `Guard 2:`, `Dr. Weiss:`, `Élodie:`, `Jean-Luc:`, `D'Vora:`, `The Innkeeper:` all parse as tags with the actor text verbatim.
-- [x] `"No," she said.`, `: nothing.`, `12:30 by the clock.`, `  Anton: sets the cup down.` parse as buffers. `He turned. Anton: sets the cup down.` parses as a tag with actor `He turned. Anton` — accepted by the orchestrator on 2026-09-12 under the user rule "assume confidently whatever begins with 
+- [x] `"No," she said.`, `: nothing.`, `12:30 by the clock.`, `  Anton: sets the cup down.` parse as buffers. `He turned. Anton: sets the cup down.` parses as a tag with actor `He turned. Anton` — accepted by the orchestrator on 2026-09-12 under the user rule "assume confidently whatever begins with `
 
-name: is a tag"; periods and spaces stay admitted so `Dr. Vance:` works. Documented in docs/modules/grammar.md#tag-header.
+name:` is a tag"; periods and spaces stay admitted so `Dr. Vance:` works. Documented in docs/modules/grammar.md#tag-header.
 - [x] A tag part of 41+ characters parses as a buffer; a colon that appears only on the block's second line does not produce a header.
 - [x] `src/grammar.js` applies no case transformation to any value returned from `parseTagHeader` or `parseManuscript`.
 - [x] `docs/modules/grammar.md#tag-header` states the rule, the pattern, the two exclusions and the accepted `she said:` cost, and no longer claims an uppercase initial is required.
