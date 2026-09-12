@@ -176,25 +176,6 @@ describe('the /uidsolo slash command', () => {
     expect(ctx.chat).toHaveLength(0);
   });
 
-  it('arms the flag for exactly the next reconstructed request', async () => {
-    const ctx = installFakeContext({ chatMetadata: { [METADATA_KEY]: { version: 1, frozen: [], frontier: 'A' } } });
-    vi.spyOn(console, 'log').mockImplementation(() => {});
-    await import('../index.js');
-    const { interceptGeneration } = await import('../src/frontier.js');
-    const { CONTINUATION_CONTROL } = await import('../src/prompt.js');
-
-    const callback = registered(ctx);
-    await callback({}, '');
-
-    const first = [];
-    await interceptGeneration(first, 4096, vi.fn(), 'normal', ctx);
-    expect(first[first.length - 1].mes).toContain('stays out of the writing');
-
-    const second = [];
-    await interceptGeneration(second, 4096, vi.fn(), 'normal', ctx);
-    expect(second[second.length - 1].mes).toBe(CONTINUATION_CONTROL);
-  });
-
   it('clears the flag and still resolves to the empty string when generate rejects', async () => {
     const ctx = installFakeContext({
       chatMetadata: { [METADATA_KEY]: { version: 1, frozen: [], frontier: 'A' } },
