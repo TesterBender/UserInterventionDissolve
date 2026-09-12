@@ -10,8 +10,8 @@ import { armSolo, consumeSoloFlag, resolveSoloControl } from '../src/solo.js';
 const NAMES = { name1: 'Mara', name2: 'Narrator' };
 const MESSAGE_FIELDS = ['name', 'is_user', 'is_system', 'mes', 'extra'];
 
-function makeState({ frozen = [], frontier = '' } = {}) {
-  return { version: 1, frozen, frontier };
+function makeState({ frozen = [], frozenIds = [], watermark = { messageId: null, offset: 0 } } = {}) {
+  return { version: 2, frozen, frozenIds, watermark };
 }
 
 function installWithState(state, chat = []) {
@@ -28,9 +28,8 @@ describe('buildHistory', () => {
   it('returns frozen spans, the frontier and one continuation turn, in order', () => {
     const state = makeState({
       frozen: [{ text: 'A', words: 1, createdAt: 1 }, { text: 'B', words: 1, createdAt: 2 }],
-      frontier: 'C',
     });
-    const history = buildHistory(state, NAMES);
+    const history = buildHistory(state, NAMES, { frontier: 'C' });
 
     expect(history.map((m) => m.mes)).toEqual(['A', 'B', 'C', CONTINUATION_CONTROL]);
     for (const message of history.slice(0, 3)) {
@@ -46,9 +45,9 @@ describe('buildHistory', () => {
     }
   });
 
-  it('omits the frontier message when the frontier is blank, keeping the control turn last', () => {
-    for (const frontier of ['', '   \n  ']) {
-      const history = buildHistory(makeState({ frozen: [{ text: 'A' }], frontier }), NAMES);
+  it('omits the frontier message when it is blank, absent or not a string', () => {
+    for (const options of [{ frontier: '' }, { frontier: '   \n  ' }, {}, undefined, { frontier: 42 }]) {
+      const history = buildHistory(makeState({ frozen: [{ text: 'A' }] }), NAMES, options);
       expect(history.map((m) => m.mes)).toEqual(['A', CONTINUATION_CONTROL]);
       expect(history[history.length - 1].is_user).toBe(true);
     }
@@ -56,8 +55,15 @@ describe('buildHistory', () => {
 
   it('passes the frontier through verbatim, without trimming or re-joining', () => {
     const frontier = 'Mara: one.\n\nNarration.\n';
-    const history = buildHistory(makeState({ frontier }), NAMES);
+    const history = buildHistory(makeState(), NAMES, { frontier });
     expect(history[0].mes).toBe(frontier);
+  });
+
+  it('never reads the state for the mutable turn', () => {
+    const state = makeState();
+    state.frontier = 'a stale v1 field';
+    const history = buildHistory(state, NAMES, { frontier: 'C' });
+    expect(history.map((m) => m.mes)).toEqual(['C', CONTINUATION_CONTROL]);
   });
 
   it('never reads words or createdAt off a frozen span', () => {
@@ -67,13 +73,13 @@ describe('buildHistory', () => {
   });
 
   it('accepts an empty persona name without substituting a placeholder', () => {
-    const history = buildHistory(makeState({ frontier: 'C' }), { name1: '', name2: '' });
+    const history = buildHistory(makeState(), { name1: '', name2: '' }, { frontier: 'C' });
     expect(history[0].name).toBe('');
     expect(history[1].name).toBe('');
   });
 
   it('returns [] for a blank state, a non-object state and a state without usable spans', () => {
-    expect(buildHistory(makeState({ frozen: [], frontier: '   ' }), NAMES)).toEqual([]);
+    expect(buildHistory(makeState(), NAMES, { frontier: '   ' })).toEqual([]);
     expect(buildHistory(undefined, NAMES)).toEqual([]);
     expect(buildHistory('nonsense', NAMES)).toEqual([]);
     expect(buildHistory(makeState({ frozen: [{ text: '' }, {}] }), NAMES)).toEqual([]);
@@ -83,7 +89,7 @@ describe('buildHistory', () => {
 describe('applyToRequestChat', () => {
   it('keeps array identity and pushes the very objects from the history', () => {
     const chat = [makeMessage({ mes: 'live' })];
-    const history = buildHistory(makeState({ frontier: 'C' }), NAMES);
+    const history = buildHistory(makeState(), NAMES, { frontier: 'C' });
     const result = applyToRequestChat(chat, history);
 
     expect(result).toBe(true);
@@ -113,7 +119,7 @@ describe('shouldReconstruct', () => {
 
 describe('interceptGeneration', () => {
   it('leaves the request array alone for quiet and impersonate', async () => {
-    const ctx = installWithState(makeState({ frontier: 'C' }));
+    const ctx = installWithState(makeState(), [makeAssistantMessage({ mes: 'C' })]);
     for (const type of ['quiet', 'impersonate']) {
       const chat = [makeMessage({ mes: 'live' })];
       const before = JSON.stringify(chat);
@@ -125,7 +131,7 @@ describe('interceptGeneration', () => {
   });
 
   it('reconstructs for every other type, including undefined and unknown strings', async () => {
-    const ctx = installWithState(makeState({ frozen: [{ text: 'A' }], frontier: 'C' }));
+    const ctx = installWithState(makeState({ frozen: [{ text: 'A' }] }), [makeAssistantMessage({ mes: 'C' })]);
     for (const type of ['normal', 'continue', 'regenerate', 'swipe', undefined, 'something_new']) {
       const chat = [makeMessage({ mes: 'live' })];
       expect(await interceptGeneration(chat, 4096, vi.fn(), type, ctx)).toBe(true);
@@ -133,9 +139,72 @@ describe('interceptGeneration', () => {
     }
   });
 
+  it('derives the mutable turn from the visible chat, tagging the collaborator', async () => {
+    const ctx = installWithState(makeState(), [
+      makeMessage({ name: 'Mara', mes: 'she opens the door.' }),
+      makeAssistantMessage({ mes: 'The hall is cold.' }),
+      makeMessage({ mes: 'SYSTEM', is_system: true }),
+    ]);
+    ctx.substituteParams = (s) => (s === '{{user}}' ? 'Mara' : s);
+
+    const chat = [];
+    await interceptGeneration(chat, 4096, vi.fn(), 'normal', ctx);
+
+    expect(chat.map((m) => m.mes)).toEqual([
+      'Mara: she opens the door.\n\nThe hall is cold.',
+      CONTINUATION_CONTROL,
+    ]);
+  });
+
+  it('skips messages a frozen span has consumed', async () => {
+    const consumed = makeAssistantMessage({ mes: 'Already frozen.', extra: { [METADATA_KEY]: { id: 'a' } } });
+    const ctx = installWithState(
+      makeState({ frozen: [{ text: 'Already frozen.' }], frozenIds: ['a'] }),
+      [consumed, makeAssistantMessage({ mes: 'Still mutable.' })],
+    );
+
+    const chat = [];
+    await interceptGeneration(chat, 4096, vi.fn(), 'normal', ctx);
+    expect(chat.map((m) => m.mes)).toEqual(['Already frozen.', 'Still mutable.', CONTINUATION_CONTROL]);
+  });
+
+  // derived-frontier: an edit, a swipe or a delete lands on the next request → docs/modules/derive.md#derivation-rule
+  it('follows an edit, a swipe and a delete with no listener and no state write', async () => {
+    const ctx = installWithState(makeState(), [
+      makeAssistantMessage({ mes: 'First.' }),
+      makeAssistantMessage({ mes: 'Second.' }),
+    ]);
+    const canonicalBefore = JSON.stringify(ctx.chatMetadata[METADATA_KEY]);
+
+    const edited = [];
+    ctx.chat[0].mes = 'First, rewritten.';
+    await interceptGeneration(edited, 4096, vi.fn(), 'normal', ctx);
+    expect(edited[0].mes).toBe('First, rewritten.\n\nSecond.');
+
+    const swiped = [];
+    ctx.chat[1].mes = 'An alternate second.';
+    await interceptGeneration(swiped, 4096, vi.fn(), 'normal', ctx);
+    expect(swiped[0].mes).toBe('First, rewritten.\n\nAn alternate second.');
+
+    const deleted = [];
+    ctx.chat.splice(0, 1);
+    await interceptGeneration(deleted, 4096, vi.fn(), 'normal', ctx);
+    expect(deleted[0].mes).toBe('An alternate second.');
+
+    expect(JSON.stringify(ctx.chatMetadata[METADATA_KEY])).toBe(canonicalBefore);
+    expect(ctx.saveMetadata).not.toHaveBeenCalled();
+    expect(ctx.saveChat).not.toHaveBeenCalled();
+  });
+
+  it('assigns no message id', async () => {
+    const ctx = installWithState(makeState(), [makeAssistantMessage({ mes: 'C' })]);
+    await interceptGeneration([], 4096, vi.fn(), 'normal', ctx);
+    expect(ctx.chat[0].extra[METADATA_KEY]).toBeUndefined();
+  });
+
   it('never calls abort and never persists, including for empty and malformed state', async () => {
     vi.spyOn(console, 'warn').mockImplementation(() => {});
-    for (const stored of [makeState(), { version: 1, frozen: 'nope' }, { version: 7, frozen: [], frontier: '' }]) {
+    for (const stored of [makeState(), { version: 2, frozen: 'nope' }, { version: 7, frozen: [] }]) {
       const ctx = installWithState(stored);
       const abort = vi.fn();
       const chat = [makeMessage({ mes: 'live' })];
@@ -150,8 +219,8 @@ describe('interceptGeneration', () => {
   });
 
   it('leaves the visible chat log untouched, captured marks included', async () => {
-    const visible = makeMessage({ name: 'Mara', mes: 'typed', extra: { [METADATA_KEY]: { captured: true } } });
-    const ctx = installWithState(makeState({ frontier: 'C' }), [visible, makeAssistantMessage({ mes: 'reply' })]);
+    const visible = makeMessage({ name: 'Mara', mes: 'typed', extra: { [METADATA_KEY]: { captured: true, id: 'x' } } });
+    const ctx = installWithState(makeState(), [visible, makeAssistantMessage({ mes: 'reply' })]);
     const before = JSON.stringify(ctx.chat);
 
     await interceptGeneration([makeMessage({ mes: 'request' })], 4096, vi.fn(), 'normal', ctx);
@@ -161,21 +230,36 @@ describe('interceptGeneration', () => {
   });
 
   // inv-10: many live histories, one output; byte comparison → docs/modules/frontier.md#inv-10
-  it('produces byte-identical arrays from identical state over completely different live histories', async () => {
-    const state = () => makeState({ frozen: [{ text: 'A', words: 1, createdAt: 1 }], frontier: 'C' });
+  it('produces byte-identical arrays from live histories that end in the same visible chat', async () => {
+    const state = () => makeState({ frozen: [{ text: 'A', words: 1, createdAt: 1 }] });
 
-    const longLog = [];
-    for (let i = 0; i < 6; i += 1) {
-      longLog.push(makeMessage({ name: 'Mara', mes: `typed ${i}`, extra: { [METADATA_KEY]: { captured: true } } }));
-      longLog.push(makeAssistantMessage({ mes: `continued ${i}`, swipes: ['x'], swipe_id: 0 }));
-    }
+    const calm = [
+      makeMessage({ name: 'Mara', mes: 'she opens the door.' }),
+      makeAssistantMessage({ mes: 'The hall is cold.' }),
+    ];
+    const stormy = [
+      makeMessage({
+        name: 'Mara',
+        mes: 'she opens the door.',
+        extra: { [METADATA_KEY]: { captured: true, id: 'm1' } },
+      }),
+      makeAssistantMessage({
+        mes: 'The hall is cold.',
+        swipes: ['A discarded attempt.', 'The hall is cold.'],
+        swipe_id: 1,
+        extra: { [METADATA_KEY]: { received: true, boundary: true, id: 'm2' } },
+      }),
+    ];
+    stormy[1].send_date = 99999;
 
-    const ctxA = installWithState(state(), longLog);
+    const ctxA = installWithState(state(), calm);
+    ctxA.substituteParams = (s) => (s === '{{user}}' ? 'Mara' : s);
     const chatA = [makeMessage({ mes: 'request a' })];
     await interceptGeneration(chatA, 4096, vi.fn(), 'normal', ctxA);
     uninstall();
 
-    const ctxB = installWithState(state(), [makeAssistantMessage({ mes: 'only one' })]);
+    const ctxB = installWithState(state(), stormy);
+    ctxB.substituteParams = (s) => (s === '{{user}}' ? 'Mara' : s);
     const chatB = [makeMessage({ mes: 'request b' })];
     await interceptGeneration(chatB, 128, vi.fn(), 'continue', ctxB);
 
@@ -186,7 +270,10 @@ describe('interceptGeneration', () => {
   });
 
   it('emits exactly one user turn, last, whose mes is the continuation constant', async () => {
-    const ctx = installWithState(makeState({ frozen: [{ text: 'A' }, { text: 'B' }], frontier: 'C' }));
+    const ctx = installWithState(
+      makeState({ frozen: [{ text: 'A' }, { text: 'B' }] }),
+      [makeAssistantMessage({ mes: 'C' })],
+    );
     const first = [];
     const second = [];
     await interceptGeneration(first, 4096, vi.fn(), 'normal', ctx);
@@ -210,7 +297,7 @@ describe('the interceptor global', () => {
   });
 
   it('delegates to interceptGeneration', async () => {
-    const ctx = installWithState(makeState({ frozen: [{ text: 'A' }], frontier: 'C' }));
+    const ctx = installWithState(makeState({ frozen: [{ text: 'A' }] }), [makeAssistantMessage({ mes: 'C' })]);
     vi.spyOn(console, 'log').mockImplementation(() => {});
     await import('../index.js');
 
@@ -234,10 +321,10 @@ describe('the interceptor global', () => {
 });
 
 describe('the one-shot solo variant', () => {
-  const soloState = () => makeState({ frozen: [{ text: 'A', words: 1, createdAt: 1 }], frontier: 'B' });
+  const soloState = () => makeState({ frozen: [{ text: 'A', words: 1, createdAt: 1 }] });
 
   it('uses options.control for the continuation turn and nothing else', () => {
-    const history = buildHistory(soloState(), NAMES, { control: 'X' });
+    const history = buildHistory(soloState(), NAMES, { frontier: 'B', control: 'X' });
     const last = history[history.length - 1];
     expect(last.mes).toBe('X');
     expect(last.is_user).toBe(true);
@@ -249,14 +336,14 @@ describe('the one-shot solo variant', () => {
   });
 
   it('falls back to the canonical string for absent, empty and non-string controls', () => {
-    for (const options of [undefined, {}, { control: '' }, { control: 42 }]) {
-      const history = buildHistory(soloState(), NAMES, options);
+    for (const options of [{}, { control: '' }, { control: 42 }]) {
+      const history = buildHistory(soloState(), NAMES, { frontier: 'B', ...options });
       expect(history[history.length - 1].mes).toBe(CONTINUATION_CONTROL);
     }
   });
 
   it('applies the resolved solo text once and reverts on the next request', async () => {
-    const ctx = installWithState(soloState());
+    const ctx = installWithState(soloState(), [makeAssistantMessage({ mes: 'B' })]);
     ctx.substituteParams = (s) => s.replace('{{user}}', 'Mara');
     armSolo();
 
@@ -271,7 +358,7 @@ describe('the one-shot solo variant', () => {
   });
 
   it('is cleared by a skipped generation type, which touches nothing', async () => {
-    const ctx = installWithState(soloState());
+    const ctx = installWithState(soloState(), [makeAssistantMessage({ mes: 'B' })]);
     armSolo();
 
     const skipped = [makeMessage({ mes: 'live' })];
@@ -285,7 +372,8 @@ describe('the one-shot solo variant', () => {
   });
 
   it('leaves canonical state deep-equal and free of the solo sentence (INV-5, INV-10)', async () => {
-    const ctx = installWithState(soloState());
+    const ctx = installWithState(soloState(), [makeAssistantMessage({ mes: 'B' })]);
+    ctx.substituteParams = (s) => s.replace('{{user}}', 'Mara');
     const canonicalBefore = JSON.parse(JSON.stringify(ctx.chatMetadata[METADATA_KEY]));
     armSolo();
 
@@ -314,7 +402,7 @@ describe('src/frontier.js source', () => {
     expect(doc).toMatch(/^#+ .*\{#interceptor-placeholder\}\s*$/m);
   });
 
-  it('subscribes to no prompt-assembly event', () => {
+  it('subscribes to no prompt-assembly event and writes nothing', () => {
     for (const name of [
       'CHAT_COMPLETION_PROMPT_READY',
       'GENERATE_AFTER_COMBINE_PROMPTS',
@@ -322,5 +410,8 @@ describe('src/frontier.js source', () => {
     ]) {
       expect(source).not.toContain(name);
     }
+    expect(source).not.toContain('saveChat');
+    expect(source).not.toContain('saveMetadata');
+    expect(source).not.toContain('assignIds');
   });
 });

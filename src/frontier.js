@@ -2,6 +2,8 @@ import { getCtx } from './host.js';
 import { METADATA_KEY } from './constants.js';
 import { CONTINUATION_CONTROL } from './prompt.js';
 import { getState } from './state.js';
+import { deriveFrontier } from './derive.js';
+import { reservedLiteral } from './boundary.js';
 import { consumeSoloFlag, resolveSoloControl } from './solo.js';
 
 // five-fields: name/is_user/is_system/mes/extra, nothing time-varying → docs/modules/frontier.md#shape
@@ -9,7 +11,7 @@ function reconstructed(name, isUser, mes) {
   return { name, is_user: isUser, is_system: false, mes, extra: { [METADATA_KEY]: { reconstructed: true } } };
 }
 
-// total-reconstruction: built from canonical state, never from chat[] → docs/modules/frontier.md#total-reconstruction
+// total-reconstruction: frozen spans from state, mutable turn from options → docs/modules/frontier.md#total-reconstruction
 // empty-state: blank state yields no array, not a lone continuation turn → docs/modules/frontier.md#empty-state
 // solo-variant: options.control replaces the live control text for one request → docs/modules/frontier.md#solo-variant
 export function buildHistory(state, { name1, name2 }, options = {}) {
@@ -26,8 +28,9 @@ export function buildHistory(state, { name1, name2 }, options = {}) {
     }
   }
 
-  if (String(state.frontier ?? '').trim() !== '') {
-    history.push(reconstructed(assistantName, false, state.frontier));
+  const frontier = typeof options?.frontier === 'string' ? options.frontier : '';
+  if (frontier.trim() !== '') {
+    history.push(reconstructed(assistantName, false, frontier));
   }
 
   if (history.length === 0) return [];
@@ -60,7 +63,12 @@ export async function interceptGeneration(chat, contextSize, abort, type, ctx = 
   }
 
   const solo = consumeSoloFlag();
-  const options = solo ? { control: resolveSoloControl(ctx) } : undefined;
-  const history = buildHistory(getState(ctx), { name1: ctx.name1, name2: ctx.name2 }, options);
+  const state = getState(ctx);
+  // derived-frontier: rebuilt from chat[] per request, never persisted → docs/modules/derive.md#derivation-rule
+  const { text } = deriveFrontier(ctx.chat, state, reservedLiteral(ctx));
+  const options = { frontier: text };
+  if (solo) options.control = resolveSoloControl(ctx);
+
+  const history = buildHistory(state, { name1: ctx.name1, name2: ctx.name2 }, options);
   return applyToRequestChat(chat, history);
 }

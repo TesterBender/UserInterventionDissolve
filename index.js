@@ -1,6 +1,6 @@
 import { getCtx, requireKeys, EVENT } from './src/host.js';
 import { LOG_PREFIX, INTERCEPTOR_GLOBAL, REQUIRED_KEYS } from './src/constants.js';
-import { getState, reseedIfPristine } from './src/state.js';
+import { getState } from './src/state.js';
 import {
   onGenerationStarted,
   onChatCompletionSettings,
@@ -70,10 +70,6 @@ export function init() {
     },
     // capture-subscription: MESSAGE_SENT joins the same guarded loop → docs/modules/bootstrap.md#capture-subscription
     MESSAGE_SENT: (index) => captureMessage(index),
-    // pristine-reseed-subscriptions: three plain entries, payloads ignored → docs/modules/bootstrap.md#pristine-reseed-subscriptions
-    MESSAGE_SWIPED: () => reseedIfPristine(),
-    MESSAGE_EDITED: () => reseedIfPristine(),
-    MESSAGE_DELETED: () => reseedIfPristine(),
   };
   const absent = [];
   for (const [name, handler] of Object.entries(boundaryHandlers)) {

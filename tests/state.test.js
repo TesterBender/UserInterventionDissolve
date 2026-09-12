@@ -1,63 +1,45 @@
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
 import fs from 'node:fs';
 import path from 'node:path';
-import { installFakeContext, uninstall, makeMessage } from './helpers/fake-context.js';
+import { installFakeContext, uninstall, makeMessage, makeAssistantMessage } from './helpers/fake-context.js';
 import { METADATA_KEY, STATE_VERSION, INTERCEPTOR_GLOBAL } from '../src/constants.js';
-import {
-  createState,
-  initialiseFromChat,
-  getState,
-  setFrontier,
-  appendToFrontier,
-  pushFrozen,
-  save,
-  isPristine,
-  reseedIfPristine,
-} from '../src/state.js';
+import { createState, migrateV1, getState, pushFrozen, save } from '../src/state.js';
+import { deriveFrontier } from '../src/derive.js';
 import * as stateModule from '../src/state.js';
 
 const COMPLETE = 'Anton: he reaches for the lamp.';
 const INCOMPLETE = 'Anton: he reaches for the';
+const EMPTY_STATE = { version: 2, frozen: [], frozenIds: [], watermark: { messageId: null, offset: 0 } };
 
 describe('createState', () => {
-  it('returns the documented shape and survives a JSON round trip', () => {
+  it('returns the documented v2 shape and survives a JSON round trip', () => {
     const state = createState();
-    expect(state).toEqual({ version: STATE_VERSION, frozen: [], frontier: '' });
-    expect(STATE_VERSION).toBe(1);
+    expect(state).toEqual(EMPTY_STATE);
+    expect(STATE_VERSION).toBe(2);
     expect(JSON.parse(JSON.stringify(state))).toEqual(state);
   });
 
   it('returns a fresh object every call', () => {
     expect(createState()).not.toBe(createState());
   });
-});
 
-describe('initialiseFromChat', () => {
-  it('yields createState() for empty, missing and non-array input', () => {
-    expect(initialiseFromChat([])).toEqual(createState());
-    expect(initialiseFromChat(undefined)).toEqual(createState());
-    expect(initialiseFromChat(null)).toEqual(createState());
-  });
+  it('has no frontier key, and no src/ file writes one', () => {
+    expect('frontier' in createState()).toBe(false);
 
-  it('joins every non-system non-blank message verbatim with one blank line', () => {
-    const chat = [
-      makeMessage({ mes: 'Mara: she opens the door.' }),
-      makeMessage({ is_user: false, name: 'Anton', mes: '  Anton: he looks up.  ' }),
-      makeMessage({ is_system: true, mes: 'SYSTEM: character loaded' }),
-      makeMessage({ mes: '   ' }),
-      makeMessage({ mes: '' }),
-      makeMessage({ is_user: false, name: 'Anton', mes: 'The lamp is still burning.' }),
-    ];
-    const state = initialiseFromChat(chat);
-
-    expect(state.frozen).toEqual([]);
-    expect(state.version).toBe(STATE_VERSION);
-    expect(state.frontier).toBe(
-      'Mara: she opens the door.\n\nAnton: he looks up.\n\nThe lamp is still burning.',
-    );
-    expect(state.frontier).not.toContain('SYSTEM');
-    expect(state.frontier).toBe(state.frontier.trim());
-    expect(state.frontier).not.toMatch(/\n{3}/);
+    const files = fs.readdirSync(path.resolve('src'), { withFileTypes: true, recursive: true })
+      .filter((entry) => entry.isFile() && entry.name.endsWith('.js'))
+      .map((entry) => path.join(entry.parentPath ?? entry.path, entry.name));
+    const hits = [];
+    for (const file of files) {
+      for (const line of fs.readFileSync(file, 'utf8').split('\n')) {
+        if (/\.frontier\b/.test(line)) hits.push(`${path.basename(file)}: ${line.trim()}`);
+      }
+    }
+    expect(hits.sort()).toEqual([
+      'frontier.js: const frontier = typeof options?.frontier === \'string\' ? options.frontier : \'\';',
+      'state.js: const tail = truncateToLastCompleteBlock(String(state.frontier ?? \'\'));',
+      'state.js: delete state.frontier;',
+    ]);
   });
 });
 
@@ -67,37 +49,36 @@ describe('getState', () => {
     vi.restoreAllMocks();
   });
 
-  it('materialises the initialised state without saving', () => {
+  it('materialises an empty state without reading the chat and without saving', () => {
     const ctx = installFakeContext({ chat: [makeMessage({ mes: 'Mara: she waits.' })] });
     const state = getState(ctx);
 
     expect(ctx.chatMetadata[METADATA_KEY]).toBe(state);
-    expect(state.frontier).toBe('Mara: she waits.');
+    expect(state).toEqual(EMPTY_STATE);
     expect(ctx.saveMetadata).not.toHaveBeenCalled();
   });
 
-  it('is idempotent: same reference, no recompute from chat', () => {
+  it('is idempotent: same reference, no recompute', () => {
     const ctx = installFakeContext({ chat: [makeMessage({ mes: 'Mara: she waits.' })] });
     const first = getState(ctx);
-    setFrontier(first, 'edited frontier');
+    pushFrozen(first, { text: COMPLETE });
     ctx.chat.push(makeMessage({ mes: 'Mara: she leaves.' }));
 
     const second = getState(ctx);
     expect(second).toBe(first);
-    expect(second.frontier).toBe('edited frontier');
+    expect(second.frozen).toHaveLength(1);
   });
 
   it('returns the stored object, so mutations are storage', () => {
     const ctx = installFakeContext();
     const state = getState(ctx);
 
-    setFrontier(state, 'one');
-    appendToFrontier(state, 'two');
     pushFrozen(state, { text: COMPLETE });
+    state.frozenIds.push('abc');
 
     const stored = ctx.chatMetadata[METADATA_KEY];
-    expect(stored.frontier).toBe('one\n\ntwo');
     expect(stored.frozen).toHaveLength(1);
+    expect(stored.frozenIds).toEqual(['abc']);
   });
 
   it('defaults ctx to the live host context', () => {
@@ -106,60 +87,117 @@ describe('getState', () => {
   });
 
   it('leaves an unknown version untouched and warns exactly once', () => {
-    const foreign = { version: 99, spans: ['keep me'] };
+    const foreign = { version: 7, spans: ['keep me'] };
     const ctx = installFakeContext({ chatMetadata: { [METADATA_KEY]: foreign } });
     const warnSpy = vi.spyOn(console, 'warn').mockImplementation(() => {});
 
     const state = getState(ctx);
     expect(state).toBe(foreign);
-    expect(state).toEqual({ version: 99, spans: ['keep me'] });
+    expect(state).toEqual({ version: 7, spans: ['keep me'] });
     expect(warnSpy).toHaveBeenCalledTimes(1);
-    expect(warnSpy.mock.calls[0][0]).toContain('99');
+    expect(warnSpy.mock.calls[0][0]).toContain('7');
 
     expect(getState(ctx)).toBe(foreign);
     expect(warnSpy).toHaveBeenCalledTimes(1);
   });
 
   it('warns for a missing version too, and never repairs it', () => {
-    const foreign = { frontier: 'kept' };
+    const foreign = { frozen: [] };
     const ctx = installFakeContext({ chatMetadata: { [METADATA_KEY]: foreign } });
     const warnSpy = vi.spyOn(console, 'warn').mockImplementation(() => {});
 
     expect(getState(ctx)).toBe(foreign);
-    expect(foreign).toEqual({ frontier: 'kept' });
+    expect(foreign).toEqual({ frozen: [] });
     expect(warnSpy).toHaveBeenCalledTimes(1);
   });
 });
 
-describe('setFrontier / appendToFrontier', () => {
-  it('setFrontier replaces the frontier as a string', () => {
-    const state = createState();
-    setFrontier(state, 'Mara: she waits.');
-    expect(state.frontier).toBe('Mara: she waits.');
-    setFrontier(state, '');
-    expect(state.frontier).toBe('');
+describe('migrateV1', () => {
+  afterEach(() => {
+    uninstall();
+    vi.restoreAllMocks();
   });
 
-  it('appends with exactly one blank line, and nothing on an empty frontier', () => {
-    const state = createState();
-    appendToFrontier(state, 'Mara: she waits.');
-    expect(state.frontier).toBe('Mara: she waits.');
+  it('drops a seeded frontier and derives from the chat instead', () => {
+    const stored = { version: 1, frozen: [], frontier: 'Mara: the first greeting.' };
+    const ctx = installFakeContext({
+      chat: [makeMessage({ name: 'Mara', mes: 'Mara: the second greeting.' })],
+      chatMetadata: { [METADATA_KEY]: stored },
+    });
 
-    appendToFrontier(state, '  Anton: he answers.  ');
-    expect(state.frontier).toBe('Mara: she waits.\n\nAnton: he answers.');
+    const state = getState(ctx);
 
-    setFrontier(state, 'Mara: she waits.\n\n\n  ');
-    appendToFrontier(state, 'Anton: he answers.');
-    expect(state.frontier).toBe('Mara: she waits.\n\nAnton: he answers.');
+    expect(state).toBe(stored);
+    expect(state).toEqual(EMPTY_STATE);
+    expect('frontier' in state).toBe(false);
+    expect(deriveFrontier(ctx.chat, state, 'Mara:').text).toBe('Mara: the second greeting.');
+    expect(ctx.saveMetadata).not.toHaveBeenCalled();
+    expect(ctx.saveChat).not.toHaveBeenCalled();
   });
 
-  it('is a byte-identical no-op for blank, whitespace-only and nullish blocks', () => {
-    const state = createState();
-    setFrontier(state, 'Mara: she waits.');
-    for (const block of ['', '   \n\t ', null, undefined]) {
-      appendToFrontier(state, block);
-      expect(state.frontier).toBe('Mara: she waits.');
-    }
+  it('preserves a frontier as history when spans exist, and consumes the whole chat', () => {
+    const original = { text: 'A frozen span.', words: 3, createdAt: 1 };
+    const stored = {
+      version: 1,
+      frozen: [original],
+      frontier: 'Mara: one complete block.\n\nAnd a second one.',
+    };
+    const ctx = installFakeContext({
+      chat: [
+        makeMessage({ name: 'Mara', mes: 'Mara: one complete block.' }),
+        makeAssistantMessage({ mes: 'And a second one.' }),
+        makeMessage({ mes: 'SYSTEM', is_system: true }),
+      ],
+      chatMetadata: { [METADATA_KEY]: stored },
+    });
+
+    const state = getState(ctx);
+
+    expect(state.version).toBe(2);
+    expect(state.frozen).toHaveLength(2);
+    expect(state.frozen[0]).toEqual(original);
+    expect(state.frozen[1].text).toBe('Mara: one complete block.\n\nAnd a second one.');
+    expect('frontier' in state).toBe(false);
+    expect(state.watermark).toEqual({ messageId: null, offset: 0 });
+
+    const ids = ctx.chat.slice(0, 2).map((message) => message.extra[METADATA_KEY].id);
+    expect(state.frozenIds.sort()).toEqual([...ids].sort());
+    expect(ctx.chat[2].extra[METADATA_KEY]).toBeUndefined();
+    expect(deriveFrontier(ctx.chat, state, 'Mara:').text).toBe('');
+  });
+
+  it('leaves the frozen list unchanged when the frontier has no complete block', () => {
+    const original = { text: 'A frozen span.', words: 3, createdAt: 1 };
+    const stored = { version: 1, frozen: [original], frontier: 'He turned and' };
+    const ctx = installFakeContext({ chatMetadata: { [METADATA_KEY]: stored } });
+
+    const state = getState(ctx);
+
+    expect(state.frozen).toEqual([original]);
+    expect('frontier' in state).toBe(false);
+    expect(state.frozenIds).toEqual([]);
+  });
+
+  it('refuses a v1 whose frozen is not an array, warning once', () => {
+    const stored = { version: 1, frozen: 'nope', frontier: 'kept' };
+    const ctx = installFakeContext({ chatMetadata: { [METADATA_KEY]: stored } });
+    const warnSpy = vi.spyOn(console, 'warn').mockImplementation(() => {});
+
+    expect(migrateV1(stored, ctx.chat)).toBe(false);
+    expect(stored).toEqual({ version: 1, frozen: 'nope', frontier: 'kept' });
+    expect(warnSpy).toHaveBeenCalledTimes(1);
+
+    expect(getState(ctx)).toBe(stored);
+    expect(warnSpy).toHaveBeenCalledTimes(1);
+  });
+
+  it('migrates in place, keeping the object identity in chatMetadata', () => {
+    const stored = { version: 1, frozen: [], frontier: 'text' };
+    const ctx = installFakeContext({ chatMetadata: { [METADATA_KEY]: stored } });
+
+    expect(getState(ctx)).toBe(stored);
+    expect(ctx.chatMetadata[METADATA_KEY]).toBe(stored);
+    expect(getState(ctx)).toBe(stored);
   });
 });
 
@@ -211,17 +249,13 @@ describe('pushFrozen', () => {
     expect(state.frozen.map((span) => span.text)).toEqual(['one.', 'two.', 'three.']);
   });
 
-  it('exports no removal or replacement path', () => {
+  it('exports no removal, replacement or frontier path', () => {
     expect(Object.keys(stateModule).sort()).toEqual([
-      'appendToFrontier',
       'createState',
       'getState',
-      'initialiseFromChat',
-      'isPristine',
+      'migrateV1',
       'pushFrozen',
-      'reseedIfPristine',
       'save',
-      'setFrontier',
     ]);
   });
 });
@@ -260,9 +294,7 @@ describe('index.js state materialisation', () => {
     vi.spyOn(console, 'log').mockImplementation(() => {});
     await import('../index.js');
 
-    const stored = ctx.chatMetadata[METADATA_KEY];
-    expect(stored).toBeDefined();
-    expect(stored.frontier).toBe('Mara: she waits.');
+    expect(ctx.chatMetadata[METADATA_KEY]).toEqual(EMPTY_STATE);
     expect(ctx.saveMetadata).not.toHaveBeenCalled();
   });
 
@@ -285,114 +317,23 @@ describe('index.js state materialisation', () => {
 
     ctx.chat.push(makeMessage({ mes: 'Mara: she waits.' }));
     await ctx.eventSource.emit(ctx.eventTypes.CHAT_CHANGED, 'chat-1');
-    expect(ctx.chatMetadata[METADATA_KEY].frontier).toBe('Mara: she waits.');
+    expect(ctx.chatMetadata[METADATA_KEY]).toEqual(EMPTY_STATE);
     expect(ctx.saveMetadata).not.toHaveBeenCalled();
   });
-});
 
-function marked(mark) {
-  return makeMessage({ mes: 'Mara: she waits.', extra: { [METADATA_KEY]: mark } });
-}
-
-describe('isPristine', () => {
-  it('requires frozen to be an empty array', () => {
-    expect(isPristine({ frozen: [], frontier: 'x' }, [])).toBe(true);
-    expect(isPristine({ frozen: [{ text: 'one.', words: 1, createdAt: 0 }] }, [])).toBe(false);
-    expect(isPristine({ frontier: 'x' }, [])).toBe(false);
-    expect(isPristine({ frozen: 'nope' }, [])).toBe(false);
-  });
-
-  it('is false when any chat entry carries a captured or appended marker', () => {
-    const state = createState();
-    expect(isPristine(state, [marked({ captured: true })])).toBe(false);
-    expect(isPristine(state, [marked({ appended: true })])).toBe(false);
-    expect(isPristine(state, [makeMessage({ mes: 'a.' }), marked({ captured: true })])).toBe(false);
-  });
-
-  it('is true for unrelated extra content, other keys and captured: false', () => {
-    const state = createState();
-    expect(isPristine(state, [marked({ captured: false, appended: false })])).toBe(true);
-    expect(isPristine(state, [marked({ somethingElse: true })])).toBe(true);
-    expect(isPristine(state, [makeMessage({ mes: 'a.', extra: { other: { captured: true } } })])).toBe(
-      true,
-    );
-  });
-
-  it('decides on frozen alone for a missing or nullish chat', () => {
-    expect(isPristine(createState(), undefined)).toBe(true);
-    expect(isPristine(createState(), null)).toBe(true);
-    expect(isPristine({ frozen: [{ text: 'one.' }] }, undefined)).toBe(false);
-  });
-});
-
-describe('reseedIfPristine', () => {
-  afterEach(() => uninstall());
-
-  it('re-seeds a pristine chat in place and saves metadata once', async () => {
-    const ctx = installFakeContext({ chat: [makeMessage({ mes: 'Mara: the second greeting.' })] });
-    ctx.chatMetadata[METADATA_KEY] = { version: STATE_VERSION, frozen: [], frontier: 'Mara: the first greeting.' };
-    const before = ctx.chatMetadata[METADATA_KEY];
-
-    await expect(reseedIfPristine(ctx)).resolves.toBe(true);
-    expect(ctx.chatMetadata[METADATA_KEY]).toBe(before);
-    expect(before.frontier).toBe(initialiseFromChat(ctx.chat).frontier);
-    expect(before.frontier).toBe('Mara: the second greeting.');
-    expect(before.frozen).toEqual([]);
-    expect(ctx.saveMetadata).toHaveBeenCalledTimes(1);
-    expect(ctx.saveChat).not.toHaveBeenCalled();
-  });
-
-  it('follows a deleted and an edited message across a multi-message chat', async () => {
+  it('migrates a stored v1 structure when the chat is opened', async () => {
     const ctx = installFakeContext({
-      chat: [
-        makeMessage({ mes: 'Mara: one.' }),
-        makeMessage({ mes: 'Anton: two.' }),
-        makeMessage({ mes: '   ', is_system: false }),
-        makeMessage({ mes: 'Mara: three.', is_system: true }),
-      ],
+      chat: [makeMessage({ mes: 'Mara: she waits.' })],
+      chatMetadata: { [METADATA_KEY]: { version: 1, frozen: [], frontier: 'stale text' } },
     });
-    ctx.chatMetadata[METADATA_KEY] = createState();
+    vi.spyOn(console, 'log').mockImplementation(() => {});
+    await import('../index.js');
 
-    await reseedIfPristine(ctx);
-    expect(ctx.chatMetadata[METADATA_KEY].frontier).toBe(initialiseFromChat(ctx.chat).frontier);
-    expect(ctx.chatMetadata[METADATA_KEY].frontier).toBe('Mara: one.\n\nAnton: two.');
-
-    ctx.chat.splice(1, 1);
-    await reseedIfPristine(ctx);
-    expect(ctx.chatMetadata[METADATA_KEY].frontier).toBe(initialiseFromChat(ctx.chat).frontier);
-    expect(ctx.chatMetadata[METADATA_KEY].frontier).toBe('Mara: one.');
-
-    ctx.chat[0].mes = 'Mara: one, rewritten.';
-    await reseedIfPristine(ctx);
-    expect(ctx.chatMetadata[METADATA_KEY].frontier).toBe('Mara: one, rewritten.');
-  });
-
-  it('does nothing once frozen is non-empty or a marker is present', async () => {
-    for (const seed of [
-      { state: { version: STATE_VERSION, frozen: [{ text: 'one.', words: 1, createdAt: 0 }], frontier: 'kept.' }, chat: [makeMessage({ mes: 'new.' })] },
-      { state: createState(), chat: [marked({ captured: true })] },
-      { state: createState(), chat: [marked({ appended: true })] },
-    ]) {
-      const ctx = installFakeContext({ chat: seed.chat });
-      seed.state.frontier = 'kept.';
-      ctx.chatMetadata[METADATA_KEY] = seed.state;
-
-      await expect(reseedIfPristine(ctx)).resolves.toBe(false);
-      expect(ctx.chatMetadata[METADATA_KEY].frontier).toBe('kept.');
-      expect(ctx.saveMetadata).not.toHaveBeenCalled();
-      uninstall();
-    }
-  });
-
-  it('materialises absent state through getState and then re-seeds', async () => {
-    const ctx = installFakeContext({ chat: [makeMessage({ mes: 'Mara: she waits.' })] });
-    await expect(reseedIfPristine(ctx)).resolves.toBe(true);
-    expect(ctx.chatMetadata[METADATA_KEY].frontier).toBe('Mara: she waits.');
-    expect(ctx.saveMetadata).toHaveBeenCalledTimes(1);
+    expect(ctx.chatMetadata[METADATA_KEY]).toEqual(EMPTY_STATE);
   });
 });
 
-describe('index.js pristine reseed subscriptions', () => {
+describe('index.js after the edit subscriptions were removed', () => {
   beforeEach(() => {
     vi.resetModules();
   });
@@ -403,31 +344,13 @@ describe('index.js pristine reseed subscriptions', () => {
     delete globalThis[INTERCEPTOR_GLOBAL];
   });
 
-  it('re-seeds on each of the three events, ignoring the payload', async () => {
+  it('changes nothing and saves nothing on MESSAGE_EDITED, SWIPED and DELETED', async () => {
     const ctx = installFakeContext({ chat: [makeMessage({ mes: 'Mara: first.' })] });
     vi.spyOn(console, 'log').mockImplementation(() => {});
     await import('../index.js');
 
-    const cases = [
-      [ctx.eventTypes.MESSAGE_SWIPED, 0],
-      [ctx.eventTypes.MESSAGE_EDITED, undefined],
-      [ctx.eventTypes.MESSAGE_DELETED, ctx.chat.length],
-    ];
-    for (const [index, [name, payload]] of cases.entries()) {
-      ctx.chat[0].mes = `Mara: alternate ${index}.`;
-      await ctx.eventSource.emit(name, payload);
-      expect(ctx.chatMetadata[METADATA_KEY].frontier).toBe(`Mara: alternate ${index}.`);
-    }
-    expect(ctx.saveMetadata).toHaveBeenCalledTimes(3);
-  });
-
-  it('leaves a non-pristine frontier byte-identical on all three events', async () => {
-    const ctx = installFakeContext({ chat: [marked({ captured: true })] });
-    ctx.chatMetadata[METADATA_KEY] = { version: STATE_VERSION, frozen: [], frontier: 'Mara: canonical.' };
-    vi.spyOn(console, 'log').mockImplementation(() => {});
-    await import('../index.js');
-
-    ctx.chat[0].mes = 'Mara: swiped away.';
+    const before = JSON.stringify(ctx.chatMetadata);
+    ctx.chat[0].mes = 'Mara: edited.';
     for (const name of [
       ctx.eventTypes.MESSAGE_SWIPED,
       ctx.eventTypes.MESSAGE_EDITED,
@@ -435,22 +358,27 @@ describe('index.js pristine reseed subscriptions', () => {
     ]) {
       await ctx.eventSource.emit(name, 0);
     }
-    expect(ctx.chatMetadata[METADATA_KEY].frontier).toBe('Mara: canonical.');
+
+    expect(JSON.stringify(ctx.chatMetadata)).toBe(before);
     expect(ctx.saveMetadata).not.toHaveBeenCalled();
+    expect(ctx.saveChat).not.toHaveBeenCalled();
   });
 
-  it('names the three events in the absent-events warning when the host lacks them', async () => {
+  it('initialises with those names absent from eventTypes and never names them', async () => {
     const ctx = installFakeContext();
     delete ctx.eventTypes.MESSAGE_SWIPED;
     delete ctx.eventTypes.MESSAGE_EDITED;
     delete ctx.eventTypes.MESSAGE_DELETED;
     vi.spyOn(console, 'log').mockImplementation(() => {});
     const warnSpy = vi.spyOn(console, 'warn').mockImplementation(() => {});
-    await import('../index.js');
+    const mod = await import('../index.js');
 
-    const line = warnSpy.mock.calls.map((call) => call[0]).find((text) => text.includes('absent events:'));
-    expect(line).toContain('MESSAGE_SWIPED');
-    expect(line).toContain('MESSAGE_EDITED');
-    expect(line).toContain('MESSAGE_DELETED');
+    expect(mod.isReady()).toBe(true);
+    expect(warnSpy).not.toHaveBeenCalled();
+
+    const source = fs.readFileSync(path.resolve('index.js'), 'utf8');
+    for (const name of ['MESSAGE_SWIPED', 'MESSAGE_EDITED', 'MESSAGE_DELETED']) {
+      expect(source).not.toContain(name);
+    }
   });
 });

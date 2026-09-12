@@ -1,19 +1,11 @@
 import { getCtx } from './host.js';
-import { METADATA_KEY, LOG_PREFIX } from './constants.js';
+import { METADATA_KEY } from './constants.js';
 import { isTrailingBlockComplete, truncateToLastCompleteBlock } from './grammar.js';
-import { getState, appendToFrontier, setFrontier, save } from './state.js';
 import { reservedLiteral, findBoundary, trimAtBoundary } from './boundary.js';
-import { maybeFreeze } from './freeze.js';
+import { ensureMessageId, assignIds } from './derive.js';
 
 // duplicated-eligibility: same list as boundary, wired independently → docs/modules/recovery.md#ordering
 const SKIPPED_RECEIPT_TYPES = ['quiet', 'impersonate', 'first_message'];
-
-// resample-fallback: last append of this session, when the marker is gone → docs/modules/recovery.md#swipes
-let lastAppend = null;
-
-export function resetRecoveryState() {
-  lastAppend = null;
-}
 
 // classification-order: empty before boundary, the text is the only signal → docs/modules/recovery.md#classification
 export function classifyOutcome(text, literal, boundaryMarked = false) {
@@ -25,7 +17,16 @@ export function classifyOutcome(text, literal, boundaryMarked = false) {
   return 'incomplete';
 }
 
-// single-entry-point: model text joins canonical state here and nowhere else → docs/modules/recovery.md#append
+// in-message-edit: the message text is the frontier, so the message is edited → docs/modules/recovery.md#rollback
+function writeBack(message, text, index, ctx) {
+  message.mes = text;
+  if (Array.isArray(message.swipes) && message.swipes[message.swipe_id] !== undefined) {
+    message.swipes[message.swipe_id] = text;
+  }
+  ctx.updateMessageBlock(index, message);
+}
+
+// single-entry-point: model text is classified here and nowhere else → docs/modules/recovery.md#append
 export async function onMessageReceived(index, type, ctx = getCtx()) {
   if (SKIPPED_RECEIPT_TYPES.includes(type)) return 'skipped';
 
@@ -35,66 +36,39 @@ export async function onMessageReceived(index, type, ctx = getCtx()) {
   if (message.is_user === true || message.is_system === true) return 'skipped';
 
   const mark = message.extra?.[METADATA_KEY] ?? {};
+  // resample-passes-the-guard: a new sample must be classified again → docs/modules/recovery.md#swipes
   const isResample = type === 'swipe' || type === 'regenerate';
 
-  // append-once: message-local flag, the only replay path this module sees → docs/modules/recovery.md#append
-  if (mark.appended === true && !isResample) return 'skipped';
+  // receive-once: message-local flag, the only replay path this module sees → docs/modules/recovery.md#append
+  if (mark.received === true && !isResample) return 'skipped';
 
   const literal = reservedLiteral(ctx);
   const outcome = classifyOutcome(message.mes, literal, mark.boundary === true);
-
-  let text = message.mes;
   let chatDirty = false;
 
   // rollback: incomplete trailing block is transport debris, never history → docs/modules/recovery.md#rollback
   if (outcome === 'incomplete') {
-    text = truncateToLastCompleteBlock(message.mes);
-    message.mes = text;
-    if (Array.isArray(message.swipes) && message.swipes[message.swipe_id] !== undefined) {
-      message.swipes[message.swipe_id] = text;
-    }
-    ctx.updateMessageBlock(index, message);
+    writeBack(message, truncateToLastCompleteBlock(message.mes), index, ctx);
     chatDirty = true;
   }
 
-  // boundary-kept: handed-over block appended, literal trimmed as a safety net → docs/modules/recovery.md#boundary-not-rolled-back
-  if (outcome === 'boundary') text = trimAtBoundary(text, literal);
+  // boundary-kept: handed-over block kept, literal trimmed as a safety net → docs/modules/recovery.md#boundary-not-rolled-back
+  if (outcome === 'boundary') {
+    writeBack(message, trimAtBoundary(message.mes, literal), index, ctx);
+    chatDirty = true;
+  }
 
-  // floor-stays: nothing is appended and no text is forced → docs/modules/recovery.md#rollback
-  if (text.trim() === '') {
+  // floor-stays: nothing is recorded and no text is forced → docs/modules/recovery.md#rollback
+  if (message.mes.trim() === '') {
     if (chatDirty) await ctx.saveChat();
     return outcome === 'incomplete' ? outcome : 'empty';
   }
 
-  const state = getState(ctx);
-  const appendedText = text.trim();
+  ensureMessageId(message);
+  message.extra[METADATA_KEY] = { ...message.extra[METADATA_KEY], received: true };
 
-  // swipe-replacement: only the trailing occurrence, never a frozen span → docs/modules/recovery.md#swipes
-  if (isResample) {
-    const previous = typeof mark.appendedText === 'string' && mark.appendedText !== ''
-      ? mark.appendedText
-      : (lastAppend?.text ?? '');
-    if (previous !== '') {
-      const settled = state.frontier.replace(/\s+$/, '');
-      if (settled.endsWith(previous)) {
-        setFrontier(state, settled.slice(0, -previous.length).replace(/\s+$/, ''));
-      } else {
-        console.warn(`${LOG_PREFIX} previous generation is no longer at the frontier edge; appending without replacing it`);
-      }
-    }
-  }
-
-  appendToFrontier(state, text);
-  lastAppend = { index, text: appendedText };
-
-  message.extra = message.extra ?? {};
-  message.extra[METADATA_KEY] = { ...(message.extra[METADATA_KEY] ?? {}), appended: true, appendedText };
-  chatDirty = true;
-
-  // freeze-after-append: word count decides, never one generation one chunk → docs/modules/recovery.md#freeze-hookup
-  maybeFreeze(state, literal, {});
-
-  await save(ctx);
-  if (chatDirty) await ctx.saveChat();
+  // freeze-disabled: re-enabled with the watermark mapping → docs/modules/recovery.md#freeze-hookup
+  assignIds(ctx.chat);
+  await ctx.saveChat();
   return outcome;
 }

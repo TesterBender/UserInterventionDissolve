@@ -1,8 +1,7 @@
 import { getCtx } from './host.js';
 import { METADATA_KEY } from './constants.js';
 import { parseTagHeader } from './grammar.js';
-import { reservedLiteral } from './boundary.js';
-import { getState, appendToFrontier, save } from './state.js';
+import { ensureMessageId, assignIds } from './derive.js';
 
 // transformation-rule: tag the first block only, rest byte-identical → docs/modules/capture.md#transformation-rule
 // reserved-literal: borrowed from boundary, empty name writes no tag → docs/modules/capture.md#reserved-literal
@@ -27,16 +26,12 @@ export async function captureMessage(index, ctx = getCtx()) {
   if (message.is_user !== true || message.is_system === true) return false;
   if (message.extra?.[METADATA_KEY]?.captured === true) return false;
 
-  const block = toManuscriptBlock(message.mes, reservedLiteral(ctx));
-  if (block === '') return false;
-
-  appendToFrontier(getState(ctx), block);
+  ensureMessageId(message);
 
   // capture-marker: message-local idempotence flag, spread past boundary's → docs/modules/capture.md#capture-marker
-  message.extra = message.extra ?? {};
-  message.extra[METADATA_KEY] = { ...(message.extra[METADATA_KEY] ?? {}), captured: true };
+  message.extra[METADATA_KEY] = { ...message.extra[METADATA_KEY], captured: true };
 
-  await save(ctx);
+  assignIds(ctx.chat);
   await ctx.saveChat();
   return true;
 }

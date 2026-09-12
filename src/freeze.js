@@ -1,5 +1,4 @@
 import { parseManuscript, findTagLiteral } from './grammar.js';
-import { pushFrozen, setFrontier } from './state.js';
 import { FREEZE_MIN_WORDS, FREEZE_MAX_WORDS, FREEZE_DENSE_RADIUS } from './constants.js';
 
 // sentence-final: copy of grammar's private TERMINAL → docs/modules/freeze.md#salience-heuristics
@@ -134,27 +133,5 @@ export function selectCut(frontierText, literal, opts = {}) {
     words: cumWords[chosen],
     target,
     overrun: cumWords[chosen] > max,
-  };
-}
-
-// freeze-apply: remainder kept verbatim, the delimiter dropped → docs/modules/freeze.md#candidates
-export function maybeFreeze(state, literal, opts = {}) {
-  const cut = selectCut(state?.frontier, literal, opts);
-  if (cut === null) return null;
-
-  const text = state.frontier.slice(0, cut.frozenEnd);
-  const rest = state.frontier.slice(cut.index);
-
-  // push-refusal: a refused span leaves the frontier byte-identical → docs/modules/freeze.md#overrun
-  if (!pushFrozen(state, { text, words: cut.words })) return null;
-  setFrontier(state, rest);
-
-  return {
-    frozenIndex: state.frozen.length - 1,
-    words: cut.words,
-    index: cut.index,
-    target: cut.target,
-    overrun: cut.overrun,
-    blockIndex: cut.blockIndex,
   };
 }

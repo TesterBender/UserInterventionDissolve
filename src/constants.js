@@ -5,7 +5,7 @@ export const LOG_PREFIX = '[UID]';
 export const METADATA_KEY = 'userInterventionDissolve';
 
 // state-shape: version field of the stored per-chat structure → docs/modules/state.md#shape
-export const STATE_VERSION = 1;
+export const STATE_VERSION = 2;
 
 // block-delimiter: write-side join string; read side is grammar's parser → docs/modules/grammar.md#block-delimiter
 export const BLOCK_DELIMITER = '\n\n';

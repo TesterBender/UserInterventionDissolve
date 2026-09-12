@@ -4,6 +4,7 @@ import path from 'node:path';
 import { installFakeContext, uninstall, makeMessage, makeAssistantMessage } from './helpers/fake-context.js';
 import { METADATA_KEY } from '../src/constants.js';
 import { getState } from '../src/state.js';
+import { deriveFrontier } from '../src/derive.js';
 import { toManuscriptBlock, captureMessage } from '../src/capture.js';
 
 const LITERAL = 'Mara:';
@@ -21,6 +22,10 @@ function installWithUser(mes, extra) {
   getState(ctx);
   ctx.chat.push(makeMessage({ name: 'Mara', mes, ...(extra === undefined ? {} : { extra }) }));
   return ctx;
+}
+
+function frontierOf(ctx) {
+  return deriveFrontier(ctx.chat, getState(ctx), LITERAL).text;
 }
 
 afterEach(() => {
@@ -71,35 +76,46 @@ describe('toManuscriptBlock', () => {
 });
 
 describe('captureMessage', () => {
-  it('appends the transformed block, marks the message and saves both legs', async () => {
+  it('marks and ids the message, saves the chat once and metadata never', async () => {
     const ctx = installWithUser('sets the cup down.');
-    getState(ctx).frontier = 'Anton: he looks up.';
+    const canonicalBefore = JSON.parse(JSON.stringify(ctx.chatMetadata[METADATA_KEY]));
 
     await expect(captureMessage(0, ctx)).resolves.toBe(true);
-    expect(getState(ctx).frontier).toBe('Anton: he looks up.\n\nMara: sets the cup down.');
+
     expect(ctx.chat[0].extra[METADATA_KEY].captured).toBe(true);
-    expect(ctx.saveMetadata).toHaveBeenCalledTimes(1);
+    expect(typeof ctx.chat[0].extra[METADATA_KEY].id).toBe('string');
+    expect(ctx.chatMetadata[METADATA_KEY]).toEqual(canonicalBefore);
+    expect(ctx.saveMetadata).not.toHaveBeenCalled();
     expect(ctx.saveChat).toHaveBeenCalledTimes(1);
   });
 
-  it('leaves the visible message and the chat array untouched', async () => {
+  it('leaves the visible message and the chat array untouched, and derives the block', async () => {
     const ctx = installWithUser('sets the cup down.  ');
     const before = ctx.chat[0].mes;
 
     await captureMessage(0, ctx);
     expect(ctx.chat[0].mes).toBe(before);
     expect(ctx.chat).toHaveLength(1);
+    expect(frontierOf(ctx)).toBe('Mara: sets the cup down.');
+  });
+
+  it('ids every other message in the chat on the same save', async () => {
+    const ctx = installWithUser('sets the cup down.');
+    ctx.chat.unshift(makeAssistantMessage({ mes: 'he looks up.' }));
+
+    await captureMessage(1, ctx);
+    expect(typeof ctx.chat[0].extra[METADATA_KEY].id).toBe('string');
+    expect(ctx.saveChat).toHaveBeenCalledTimes(1);
   });
 
   it('takes a fresh context when none is passed', async () => {
     const ctx = installWithUser('sets the cup down.');
     await expect(captureMessage(0)).resolves.toBe(true);
-    expect(getState(ctx).frontier).toBe('Mara: sets the cup down.');
+    expect(ctx.chat[0].extra[METADATA_KEY].captured).toBe(true);
   });
 
   it('ignores assistant, system, out-of-range and non-object entries', async () => {
     const ctx = installMara();
-    const frontier = getState(ctx).frontier;
     ctx.chat.push(makeAssistantMessage({ mes: 'he looks up.' }));
     ctx.chat.push(makeMessage({ mes: 'the scene changes.', is_system: true }));
     ctx.chat.push(null);
@@ -107,39 +123,33 @@ describe('captureMessage', () => {
     for (const index of [0, 1, 2, 9]) {
       await expect(captureMessage(index, ctx)).resolves.toBe(false);
     }
-    expect(getState(ctx).frontier).toBe(frontier);
-    expect(ctx.saveMetadata).not.toHaveBeenCalled();
+    expect(ctx.chat[0].extra[METADATA_KEY]).toBeUndefined();
     expect(ctx.saveChat).not.toHaveBeenCalled();
   });
 
   it('refuses a message already marked captured', async () => {
     const ctx = installWithUser('sets the cup down.', { [METADATA_KEY]: { captured: true } });
-    const frontier = getState(ctx).frontier;
 
     await expect(captureMessage(0, ctx)).resolves.toBe(false);
-    expect(getState(ctx).frontier).toBe(frontier);
-    expect(ctx.saveMetadata).not.toHaveBeenCalled();
     expect(ctx.saveChat).not.toHaveBeenCalled();
   });
 
-  it('appends exactly one block when called twice on the same message', async () => {
+  it('marks and saves exactly once when called twice on the same message', async () => {
     const ctx = installWithUser('sets the cup down.');
 
     await captureMessage(0, ctx);
     await captureMessage(0, ctx);
-    expect(getState(ctx).frontier).toBe('Mara: sets the cup down.');
-    expect(ctx.saveMetadata).toHaveBeenCalledTimes(1);
+    expect(frontierOf(ctx)).toBe('Mara: sets the cup down.');
+    expect(ctx.saveChat).toHaveBeenCalledTimes(1);
   });
 
-  it('refuses an empty or whitespace-only message', async () => {
+  it('accepts a blank message: it is marked and simply derives to nothing', async () => {
     for (const mes of ['', '   \n ']) {
       const ctx = installWithUser(mes);
-      const frontier = getState(ctx).frontier;
 
-      await expect(captureMessage(0, ctx)).resolves.toBe(false);
-      expect(getState(ctx).frontier).toBe(frontier);
-      expect(ctx.saveMetadata).not.toHaveBeenCalled();
-      expect(ctx.saveChat).not.toHaveBeenCalled();
+      await expect(captureMessage(0, ctx)).resolves.toBe(true);
+      expect(ctx.chat[0].extra[METADATA_KEY].captured).toBe(true);
+      expect(frontierOf(ctx)).toBe('');
       uninstall();
     }
   });
@@ -148,16 +158,27 @@ describe('captureMessage', () => {
     const ctx = installWithUser('sets the cup down.', { [METADATA_KEY]: { boundary: true } });
 
     await captureMessage(0, ctx);
-    expect(ctx.chat[0].extra[METADATA_KEY]).toEqual({ boundary: true, captured: true });
+    const mark = ctx.chat[0].extra[METADATA_KEY];
+    expect(mark.boundary).toBe(true);
+    expect(mark.captured).toBe(true);
+    expect(Object.keys(mark).sort()).toEqual(['boundary', 'captured', 'id']);
   });
 
-  it('appends untagged when the persona name is empty', async () => {
+  it('derives untagged when the persona name is empty', async () => {
     const ctx = installFakeContext({ name1: '', substituteParams: vi.fn((s) => s) });
     getState(ctx);
     ctx.chat.push(makeMessage({ mes: 'she stands.' }));
 
     await expect(captureMessage(0, ctx)).resolves.toBe(true);
-    expect(getState(ctx).frontier).toBe('she stands.');
+    expect(deriveFrontier(ctx.chat, getState(ctx), '').text).toBe('she stands.');
+  });
+
+  it('re-tags from the current text when the message is edited afterwards', async () => {
+    const ctx = installWithUser('sets the cup down.');
+    await captureMessage(0, ctx);
+
+    ctx.chat[0].mes = 'lifts the cup instead.';
+    expect(frontierOf(ctx)).toBe('Mara: lifts the cup instead.');
   });
 });
 
@@ -176,10 +197,10 @@ describe('MESSAGE_SENT subscription', () => {
     ctx.chat.push(makeMessage({ name: 'Mara', mes: 'sets the cup down.' }));
     await ctx.eventSource.emit(ctx.eventTypes.MESSAGE_SENT, 0);
 
-    expect(getState(ctx).frontier).toBe('Mara: sets the cup down.');
+    expect(frontierOf(ctx)).toBe('Mara: sets the cup down.');
     expect(ctx.chat[0].extra[METADATA_KEY].captured).toBe(true);
     expect(ctx.chat[0].mes).toBe('sets the cup down.');
-    expect(ctx.saveMetadata).toHaveBeenCalledTimes(1);
+    expect(ctx.saveMetadata).not.toHaveBeenCalled();
     expect(ctx.saveChat).toHaveBeenCalledTimes(1);
   });
 
@@ -202,5 +223,11 @@ describe('src/capture.js', () => {
     for (const name of ['Mara', 'Anton']) {
       expect(text.includes(name)).toBe(false);
     }
+  });
+
+  it('reads and writes no canonical state', () => {
+    const text = fs.readFileSync(path.resolve('src', 'capture.js'), 'utf8');
+    expect(text).not.toContain('state.js');
+    expect(text).not.toContain('saveMetadata');
   });
 });

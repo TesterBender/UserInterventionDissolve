@@ -178,7 +178,7 @@ describe('the /uidsolo slash command', () => {
 
   it('clears the flag and still resolves to the empty string when generate rejects', async () => {
     const ctx = installFakeContext({
-      chatMetadata: { [METADATA_KEY]: { version: 1, frozen: [], frontier: 'A' } },
+      chatMetadata: { [METADATA_KEY]: { version: 2, frozen: [{ text: 'A' }], frozenIds: [], watermark: { messageId: null, offset: 0 } } },
       generate: vi.fn(async () => {
         throw new Error('blocked');
       }),

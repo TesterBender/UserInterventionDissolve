@@ -1,8 +1,9 @@
 import { describe, it, expect } from 'vitest';
 import fs from 'node:fs';
 import path from 'node:path';
-import { countWords, selectCut, maybeFreeze } from '../src/freeze.js';
-import { createState, pushFrozen, initialiseFromChat } from '../src/state.js';
+import { countWords, selectCut } from '../src/freeze.js';
+import { createState, pushFrozen } from '../src/state.js';
+import { deriveFrontier } from '../src/derive.js';
 import { isTrailingBlockComplete, parseManuscript } from '../src/grammar.js';
 import { FREEZE_MIN_WORDS, FREEZE_MAX_WORDS, FREEZE_DENSE_RADIUS } from '../src/constants.js';
 
@@ -22,12 +23,6 @@ function tag(actor, n) {
 
 function manuscript(blocks) {
   return blocks.join('\n\n');
-}
-
-function stateWith(text) {
-  const state = createState();
-  state.frontier = text;
-  return state;
 }
 
 function seedWhere(text, literal, opts, predicate) {
@@ -52,29 +47,21 @@ describe('countWords', () => {
     expect(code.match(/\\S\+/g) ?? []).toHaveLength(1);
   });
 
-  it('gives a frozen span the count pushFrozen would have filled in', () => {
+  it('gives a cut the count pushFrozen would have filled in', () => {
     const text = manuscript([buf(100), buf(100), buf(100), buf(100)]);
-    const state = stateWith(text);
-    const result = maybeFreeze(state, LITERAL, { min: 150, max: 350 });
+    const cut = selectCut(text, LITERAL, { min: 150, max: 350 });
 
-    expect(result).not.toBeNull();
-    const span = state.frozen.at(-1);
-    const other = createState();
-    expect(pushFrozen(other, { text: span.text })).toBe(true);
-    expect(span.words).toBe(other.frozen[0].words);
-    expect(span.words).toBe(result.words);
+    expect(cut).not.toBeNull();
+    const state = createState();
+    expect(pushFrozen(state, { text: text.slice(0, cut.frozenEnd) })).toBe(true);
+    expect(state.frozen[0].words).toBe(cut.words);
   });
 });
 
 describe('selectCut refusals', () => {
-  it('returns null below min and leaves maybeFreeze a no-op', () => {
+  it('returns null below min', () => {
     const text = manuscript([buf(50), buf(50), buf(50)]);
-    const state = stateWith(text);
-
     expect(selectCut(text, LITERAL, { min: 1000, max: 2000 })).toBeNull();
-    expect(maybeFreeze(state, LITERAL, { min: 1000, max: 2000 })).toBeNull();
-    expect(state.frozen).toHaveLength(0);
-    expect(state.frontier).toBe(text);
   });
 
   it('returns null for non-string, empty and single-block frontiers', () => {
@@ -88,12 +75,8 @@ describe('selectCut refusals', () => {
     const text = manuscript([
       buf(100), buf(100), tag('Mara', 100), buf(100), buf(100), tag('Mara', 100),
     ]);
-    const state = stateWith(text);
 
     expect(selectCut(text, LITERAL, { min: 100, max: 600 })).toBeNull();
-    expect(maybeFreeze(state, LITERAL, { min: 100, max: 600 })).toBeNull();
-    expect(state.frozen).toHaveLength(0);
-    expect(state.frontier).toBe(text);
   });
 });
 
@@ -275,49 +258,22 @@ describe('INV-6: complete blocks only', () => {
   });
 });
 
-describe('maybeFreeze', () => {
-  it('keeps both sides verbatim and drops only the delimiter', () => {
-    const text = `${manuscript([buf(100), buf(100), buf(100), buf(100)])}   \n`;
-    const state = stateWith(text);
-    const cut = selectCut(text, LITERAL, { min: 150, max: 350, jitterSeed: 5 });
-
-    const result = maybeFreeze(state, LITERAL, { min: 150, max: 350, jitterSeed: 5 });
-    expect(result.frozenIndex).toBe(0);
-    expect(result.blockIndex).toBe(cut.blockIndex);
-    expect(result.index).toBe(cut.index);
-    expect(result.words).toBe(cut.words);
-    expect(result.target).toBe(cut.target);
-    expect(result.overrun).toBe(cut.overrun);
-
-    expect(state.frozen.at(-1).text).toBe(text.slice(0, cut.frozenEnd));
-    expect(state.frontier).toBe(text.slice(cut.index));
-    expect(state.frontier.endsWith('   \n')).toBe(true);
-    expect(state.frozen.at(-1).createdAt).toBeTypeOf('number');
+describe('no apply step between briefs 0020a and 0020b', () => {
+  it('exports selectCut and countWords only, and touches no state', () => {
+    expect(SOURCE).not.toContain('maybeFreeze');
+    expect(SOURCE).not.toContain('state.js');
+    expect(SOURCE.match(/^export function \w+/gm)).toEqual([
+      'export function countWords',
+      'export function selectCut',
+    ]);
   });
 
-  it('returns null and leaves the frontier untouched when pushFrozen refuses', () => {
+  it('still refuses a cut whose span would end mid-block', () => {
     const text = manuscript(['w0 w1 w2 no terminal punctuation here', buf(100), buf(100)]);
-    const state = stateWith(text);
+    const cut = selectCut(text, LITERAL, { min: 6, max: 6 });
 
-    expect(selectCut(text, LITERAL, { min: 6, max: 6 }).blockIndex).toBe(0);
-    expect(maybeFreeze(state, LITERAL, { min: 6, max: 6 })).toBeNull();
-    expect(state.frozen).toHaveLength(0);
-    expect(state.frontier).toBe(text);
-  });
-
-  it('reads no field of state besides frontier and frozen', () => {
-    const text = manuscript([buf(100), buf(100), buf(100), buf(100)]);
-    const raw = stateWith(text);
-    const read = new Set();
-    const proxy = new Proxy(raw, {
-      get(target, key) {
-        if (typeof key === 'string') read.add(key);
-        return target[key];
-      },
-    });
-
-    expect(maybeFreeze(proxy, LITERAL, { min: 150, max: 350 })).not.toBeNull();
-    expect([...read].sort()).toEqual(['frontier', 'frozen']);
+    expect(cut.blockIndex).toBe(0);
+    expect(pushFrozen(createState(), { text: text.slice(0, cut.frozenEnd) })).toBe(false);
   });
 });
 
@@ -336,24 +292,21 @@ describe('purity and INV-10', () => {
     expect(SOURCE).toMatch(/export function selectCut\(frontierText, literal, opts = \{\}\)/);
   });
 
-  it('collapses two live histories with the same frontier to the same span', () => {
+  it('collapses two live histories with the same frontier to the same cut', () => {
     const blocks = [buf(100), buf(100), buf(100), buf(100)];
-    const chatA = blocks.map((mes) => ({ mes, is_system: false }));
+    const chatA = blocks.map((mes) => ({ mes, is_system: false, extra: {} }));
     const chatB = [
-      { mes: `${blocks[0]}\n\n${blocks[1]}`, is_system: false },
-      { mes: 'housekeeping', is_system: true },
-      { mes: `${blocks[2]}\n\n${blocks[3]}`, is_system: false },
+      { mes: `${blocks[0]}\n\n${blocks[1]}`, is_system: false, extra: {} },
+      { mes: 'housekeeping', is_system: true, extra: {} },
+      { mes: `${blocks[2]}\n\n${blocks[3]}`, is_system: false, extra: {} },
     ];
 
-    const stateA = initialiseFromChat(chatA);
-    const stateB = initialiseFromChat(chatB);
-    expect(stateA.frontier).toBe(stateB.frontier);
+    const textA = deriveFrontier(chatA, createState(), LITERAL).text;
+    const textB = deriveFrontier(chatB, createState(), LITERAL).text;
+    expect(textA).toBe(textB);
 
-    const resultA = maybeFreeze(stateA, LITERAL, { min: 150, max: 350 });
-    const resultB = maybeFreeze(stateB, LITERAL, { min: 150, max: 350 });
-    expect(resultA).toEqual(resultB);
-    expect(stateA.frozen.at(-1).text).toBe(stateB.frozen.at(-1).text);
-    expect(stateA.frontier).toBe(stateB.frontier);
+    expect(selectCut(textA, LITERAL, { min: 150, max: 350 }))
+      .toEqual(selectCut(textB, LITERAL, { min: 150, max: 350 }));
   });
 
   it('names no clock, no randomness and no host', () => {
@@ -373,10 +326,9 @@ describe('defaults', () => {
       blocks.push(i === 2 || i === 55 ? tag('Mara', 100) : buf(100, `b${i}w`));
     }
     const text = manuscript(blocks);
-    const state = stateWith(text);
 
     expect(countWords(text)).toBe(6000);
-    const result = maybeFreeze(state, LITERAL);
+    const result = selectCut(text, LITERAL);
 
     expect(result).not.toBeNull();
     expect(result.overrun).toBe(false);
@@ -384,8 +336,7 @@ describe('defaults', () => {
     expect(result.words).toBeLessThanOrEqual(FREEZE_MAX_WORDS);
     expect(result.target).toBeGreaterThanOrEqual(FREEZE_MIN_WORDS);
     expect(result.target).toBeLessThanOrEqual(FREEZE_MAX_WORDS);
-    expect(state.frozen).toHaveLength(1);
-    expect(state.frontier).toBe(text.slice(result.index));
+    expect(isTrailingBlockComplete(text.slice(0, result.frozenEnd))).toBe(true);
   });
 
   it('exposes the three freeze constants', () => {

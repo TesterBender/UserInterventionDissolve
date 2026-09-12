@@ -1,5 +1,5 @@
 # Brief 0020a — the mutable frontier becomes derived from the visible chat
-Status: draft
+Status: implemented
 Complexity: high
 PLAN sections: §9 (collaborator input is captured and *transformed* into a manuscript block before it reaches the model; the transform is what INV-3 needs, not the moment it happens), §10 (editing authority is manuscript-wide **within the mutable frontier** — the collaborator may change Mara blocks, model tags, buffers, ordering and wording of anything not yet frozen), §12 (normalization happens **every request**; the next request reconstructs the still-mutable manuscript from scratch so earlier live seams disappear), §16 (freezing is append-only and old frozen spans are not re-cut — unchanged by this brief and the reason frozen spans stay compiled-once)
 Invariants touched: INV-3 (the transform moves from capture-time to derive-time and must still apply to every user message), INV-4 (reconstruction every request — this brief makes it literal), INV-6 (frozen spans stay append-only and immutable), INV-10 (derivation must be a pure function of `(chat, state)` so many live histories collapse to one manuscript)
@@ -101,21 +101,21 @@ This brief is 0020a of two. Brief **0020b** re-enables freezing on top of the de
 - (empty — every entry above is `status: verified`.)
 
 ## Acceptance
-- [ ] `createState()` deep-equals `{ version: 2, frozen: [], frozenIds: [], watermark: { messageId: null, offset: 0 } }`; no code path in `src/` writes a `frontier` key (grep for `.frontier` in `src/` returns only `options.frontier` in `frontier.js` and its caller).
-- [ ] `deriveFrontier` on `[system, user "Mara opens the door.", assistant "The hall is cold."]` yields the user block prefixed with the reserved literal, the assistant text verbatim, joined by `BLOCK_DELIMITER`, with the system message absent, and `segments` whose `text.slice(start, end)` equals each block.
-- [ ] `deriveFrontier` skips every message whose id is in `state.frozenIds`, applies `mes.slice(offset)` to the watermark message only, and — when the watermark message id is not present in `chat` at all — returns exactly the blocks of the remaining unfrozen messages with no throw.
-- [ ] `deriveFrontier` mutates neither argument: deep-equal snapshots of `chat` and `state` before and after are unchanged (including no id assignment).
-- [ ] INV-10: two different live histories that produce identical `chat` arrays and identical states produce deep-equal `buildHistory` output; calling `deriveFrontier` twice returns identical `text` and `segments`.
-- [ ] Editing `chat[i].mes`, swiping it (assigning a new `mes`), or removing the entry from `chat` changes the next `interceptGeneration` result accordingly, with no listener involved and no state write.
-- [ ] `captureMessage` assigns an id, sets `captured: true`, calls `saveChat` once and `saveMetadata` zero times, and leaves `chatMetadata[METADATA_KEY]` deep-equal to before (ids live on messages, never in state).
-- [ ] `onMessageReceived` still rolls back an incomplete trailing block in `message.mes` and `message.swipes[swipe_id]` and calls `updateMessageBlock` (INV-8 tests preserved); a `boundary` outcome now also trims `message.mes` itself; re-swiping the same message produces the correct derived frontier with no replacement logic and no `lastAppend`.
-- [ ] `src/recovery.js` contains no import from `src/freeze.js`; `src/freeze.js` contains no import from `src/state.js` and no `maybeFreeze` export; every `selectCut` test still passes unmodified.
-- [ ] Migration: a stored `{ version: 1, frozen: [], frontier: 'seeded text' }` becomes the v2 shape with `frontier` gone and derives from `chat`; a stored v1 with one frozen span and a frontier of two complete blocks ends with two frozen spans, every current non-system message id in `frozenIds`, an empty derived frontier, and the original frozen span byte-identical; a v1 whose frontier has no complete block ends with the original frozen list unchanged.
-- [ ] A stored `{ version: 7 }` is returned untouched with exactly one `console.warn`, as before.
-- [ ] After importing `index.js`, emitting MESSAGE_EDITED / MESSAGE_SWIPED / MESSAGE_DELETED changes nothing and calls no save; `init()` still succeeds with those names absent from `eventTypes`.
-- [ ] `src/derive.js` and `src/state.js` contain no occurrence of the identifier `SillyTavern`.
-- [ ] `npm run check` passes.
-- [ ] every new pointer comment resolves (`node tools/check-comments.mjs`).
+- [x] `createState()` deep-equals `{ version: 2, frozen: [], frozenIds: [], watermark: { messageId: null, offset: 0 } }`; no code path in `src/` writes a `frontier` key (grep for `.frontier` in `src/` returns only `options.frontier` in `frontier.js` and its caller).
+- [x] `deriveFrontier` on `[system, user "Mara opens the door.", assistant "The hall is cold."]` yields the user block prefixed with the reserved literal, the assistant text verbatim, joined by `BLOCK_DELIMITER`, with the system message absent, and `segments` whose `text.slice(start, end)` equals each block.
+- [x] `deriveFrontier` skips every message whose id is in `state.frozenIds`, applies `mes.slice(offset)` to the watermark message only, and — when the watermark message id is not present in `chat` at all — returns exactly the blocks of the remaining unfrozen messages with no throw.
+- [x] `deriveFrontier` mutates neither argument: deep-equal snapshots of `chat` and `state` before and after are unchanged (including no id assignment).
+- [x] INV-10: two different live histories that produce identical `chat` arrays and identical states produce deep-equal `buildHistory` output; calling `deriveFrontier` twice returns identical `text` and `segments`.
+- [x] Editing `chat[i].mes`, swiping it (assigning a new `mes`), or removing the entry from `chat` changes the next `interceptGeneration` result accordingly, with no listener involved and no state write.
+- [x] `captureMessage` assigns an id, sets `captured: true`, calls `saveChat` once and `saveMetadata` zero times, and leaves `chatMetadata[METADATA_KEY]` deep-equal to before (ids live on messages, never in state).
+- [x] `onMessageReceived` still rolls back an incomplete trailing block in `message.mes` and `message.swipes[swipe_id]` and calls `updateMessageBlock` (INV-8 tests preserved); a `boundary` outcome now also trims `message.mes` itself; re-swiping the same message produces the correct derived frontier with no replacement logic and no `lastAppend`.
+- [x] `src/recovery.js` contains no import from `src/freeze.js`; `src/freeze.js` contains no import from `src/state.js` and no `maybeFreeze` export; every `selectCut` test still passes unmodified.
+- [x] Migration: a stored `{ version: 1, frozen: [], frontier: 'seeded text' }` becomes the v2 shape with `frontier` gone and derives from `chat`; a stored v1 with one frozen span and a frontier of two complete blocks ends with two frozen spans, every current non-system message id in `frozenIds`, an empty derived frontier, and the original frozen span byte-identical; a v1 whose frontier has no complete block ends with the original frozen list unchanged.
+- [x] A stored `{ version: 7 }` is returned untouched with exactly one `console.warn`, as before.
+- [x] After importing `index.js`, emitting MESSAGE_EDITED / MESSAGE_SWIPED / MESSAGE_DELETED changes nothing and calls no save; `init()` still succeeds with those names absent from `eventTypes`.
+- [x] `src/derive.js` and `src/state.js` contain no occurrence of the identifier `SillyTavern`.
+- [x] `npm run check` passes.
+- [x] every new pointer comment resolves (`node tools/check-comments.mjs`).
 
 ## Docs to write/update
 - `docs/modules/derive.md` (new) — headings `## Derivation rule {#derivation-rule}` (per-message inclusion, the skip list, the watermark slice, user vs assistant transform, the join, what a segment is and who will consume it), `## Why per-message, not positional {#per-message}` (survives deletes and reordering with no repair code; the accepted cost when the watermark message is deleted), `## Purity {#purity}` (INV-10: same chat + same state ⇒ same output; no id assignment, no save, no cache), `## Message ids {#message-ids}` (random, meaningless, assigned only by `capture`/`recovery` via `assignIds`, persisted by the `saveChat` those handlers already do; why an index- or time-derived id would violate INV-10).

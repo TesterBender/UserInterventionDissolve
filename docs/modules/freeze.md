@@ -1,9 +1,9 @@
 # freeze
 Owns: INV-6 (cut point), INV-7 (cut selection), INV-10 (with frontier) (docs/protocol/invariants.md)
 PLAN: §16, §17, §18
-Depends on: grammar, state, constants
+Depends on: grammar, constants
 
-`src/freeze.js` answers one question: given the current mutable frontier and the reserved external literal, where — if anywhere — may a span be cut off the front and promoted into immutable history? `selectCut` decides, `maybeFreeze` applies the decision through `pushFrozen`/`setFrontier` (`docs/modules/state.md#append-only`). The module reads no SillyTavern context, no clock and no `chat[]`; the caller that persists the result is a later brief.
+`src/freeze.js` answers one question: given the current mutable frontier text and the reserved external literal, where — if anywhere — may a span be cut off the front and promoted into immutable history? `selectCut` decides, and that is currently the module's whole exported surface besides `countWords`. The module reads no SillyTavern context, no clock, no `chat[]` and no canonical state; it imports nothing from `src/state.js`.
 
 ## Target and jitter {#target-jitter}
 
@@ -35,6 +35,8 @@ A boundary is the gap between two blocks — the blank line that PLAN §5 makes 
 
 A frontier of fewer than two blocks therefore has no candidate at all, and neither does a frontier that has not yet reached `min`; both return `null`, which means "do not freeze" and is a normal outcome.
 
+**`maybeFreeze` is absent between brief 0020a and brief 0020b.** It applied a cut by moving text into `state.frozen` and assigning the remainder back to a stored `state.frontier`; the frontier is no longer stored, so the function it applied the cut to is gone (`docs/modules/derive.md#derivation-rule`, `docs/modules/recovery.md#freeze-hookup`). Everything on this page below and above that sentence — `selectCut`, the candidate rules, the jitter, the salience heuristics, the word counting — is unchanged and untouched; 0020b re-introduces the apply step in its derived form, mapping the chosen offset onto a `(messageId, offset)` watermark.
+
 The chosen cut reports two offsets into the frontier text. `frozenEnd` is `blocks[i].end` — the end of the last frozen block, with the trailing whitespace `parseManuscript` already trimmed off. `index` is `blocks[i + 1].start` — where the remaining frontier begins. Everything between them is the inter-block delimiter, which is a separator and belongs to neither side, so it is dropped. Both sides are otherwise taken **verbatim**: `text = frontier.slice(0, frozenEnd)` and `rest = frontier.slice(index)`, with no re-joining, no normalisation, no delimiter repair and no trimming beyond those offsets. Rolling back an incomplete trailing block is `recovery`'s job (INV-8); this module only declines to cut at one.
 
 ## Salience heuristics {#salience-heuristics}
@@ -58,7 +60,7 @@ Two implementation facts belong here. `SENTENCE_FINAL` is a deliberate copy of g
 
 PLAN §16 makes the ceiling advisory: the compiler "may overrun it to reach a better block boundary". When every safe candidate is past `FREEZE_MAX_WORDS`, `selectCut` returns the **first** safe boundary past the ceiling with `overrun: true` and does not look further. The preferences (c) and (d) are not applied to an overrun choice — overrunning is licensed to *reach* a safe boundary, not to shop for a nicer one, and searching on would let a dense external-character passage stretch the span arbitrarily.
 
-Two outcomes are refusals, not errors. `selectCut` returns `null` when no boundary survives (a) and (b) at all: the manuscript is simply not ready to be cut, and the frontier keeps growing until it is. And `maybeFreeze` returns `null` when `pushFrozen` refuses the span (`docs/modules/state.md#append-only`); in that case `state.frontier` is left byte-identical, because the frontier is never emptied without a corresponding frozen span.
+A refusal is not an error. `selectCut` returns `null` when no boundary survives (a) and (b) at all: the manuscript is simply not ready to be cut, and the frontier keeps growing until it is. The other refusal belongs to the apply step, wherever it lives — `pushFrozen` can decline a span (`docs/modules/state.md#append-only`), and a declined span must leave the watermark exactly where it was, because the mutable region is never shortened without a corresponding frozen span.
 
 ## Word counting {#word-counting}
 
@@ -68,7 +70,7 @@ The letters-only regex in `tests/prompt.test.js` (`/[A-Za-z'’]+/g`) is deliber
 
 ## Purity and INV-10 {#purity}
 
-`selectCut`'s inputs are the frontier text, the reserved literal and an options object — nothing else. No host context, no `chat[]`, no clock, no randomness, no module-level mutable state; `src/freeze.js` contains no occurrence of `SillyTavern`, `Date.now`, `Math.random` or `performance`, and imports nothing from `src/host.js`. `maybeFreeze` is impure only in that it mutates the `state` object it is handed, and it reads only `state.frontier` and `state.frozen`; `createdAt` is deliberately left for `pushFrozen` to fill, which keeps `Date.now()` out of this module entirely.
+`selectCut`'s inputs are the frontier text, the reserved literal and an options object — nothing else. No host context, no `chat[]`, no clock, no randomness, no module-level mutable state; `src/freeze.js` contains no occurrence of `SillyTavern`, `Date.now`, `Math.random` or `performance`, and imports nothing from `src/host.js`. The module is now pure end to end: with the apply step gone it mutates nothing at all, and `createdAt` is deliberately left for `pushFrozen` to fill, which keeps `Date.now()` out of this module entirely.
 
 That is what makes INV-10 testable here: two live interaction histories that normalise to the same frontier string produce byte-identical frozen span text and the same remaining frontier. Whether a passage arrived in one generation or six, whether the human intervened or not, cannot influence the cut, because none of that is an input.
 
@@ -84,6 +86,6 @@ The consequence §18 asks for follows directly: dense external-character activit
 
 - **No pre-freeze lint.** §20's own closing caveat and `docs/decisions/0001-prompt-level-grammar.md` make lint advisory to the editor and never a gate on promotion (`docs/protocol/invariants.md#enforcement-model`). There is no warning, flag, report object or "would be rejected" field here, and no lint anywhere yet.
 - **No semantic salience.** §17 also names emotional peaks, chapter-like resolutions, POV resets and obvious handoffs. Those are not mechanically detectable and are not attempted — no sentiment scoring, no keyword lists, no model call.
-- **No persistence.** No `saveMetadata`, no `save()`, no `getState()`, no `chatMetadata`. `maybeFreeze` mutates the state object it is given; the caller saves.
-- **No caller.** Nothing invokes `maybeFreeze` yet. Wiring it to the `recovery`/bootstrap path — deciding *when* a freeze is attempted, and persisting the result — is the later `recovery` brief (`docs/protocol/host-mapping.md#s14-recovery`), not this one.
+- **No persistence.** No `saveMetadata`, no `save()`, no `getState()`, no `chatMetadata`. The caller applies a cut and saves.
+- **No caller.** Nothing invokes `selectCut` today. Deciding *when* a freeze is attempted, applying it to the watermark and persisting the result is brief 0020b's (`docs/modules/recovery.md#freeze-hookup`), not this module's.
 - **No seeding, no token targets, no settings.** §19's seed span has no privileged meaning here, the target is counted in words rather than tokens, and none of the target, jitter or radius is readable or writable from `extensionSettings` or any UI.

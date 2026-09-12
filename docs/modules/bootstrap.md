@@ -25,7 +25,7 @@ The interceptor deliberately does not depend on `ready`. The capability gate pro
 
 ## State materialisation {#state-materialisation}
 
-`index.js` makes sure every open chat has its canonical state object (`docs/modules/state.md#lazy-init`) and does nothing else with it. Two call sites, both at the end of a successful `init()`:
+`index.js` makes sure every open chat has its canonical state object, and that a v1 structure is migrated when the chat opens rather than mid-request (`docs/modules/state.md#lazy-init`, `docs/modules/state.md#migration-v1`). It does nothing else with it. Two call sites, both at the end of a successful `init()`:
 
 - One `CHAT_CHANGED` subscription (`docs/api/sillytavern.md#message-lifecycle-events`), guarded by `EVENT(ctx).CHAT_CHANGED` being defined, whose handler calls `getState()` with a fresh context and returns. The payload is `getCurrentChatId()` and is used only to return early when it is nullish — that means no chat is open, and materialising state then would write into whatever metadata object happens to be current. The handler captures no `ctx`, because context values are read live at call time (`docs/api/sillytavern.md#context-at-load`). Listener errors are swallowed by the emitter (`docs/api/sillytavern.md#events`), so there is no try/catch and no extra logging.
 - One direct call at the end of `init()`, because a chat may already be open when the extension loads and `CHAT_CHANGED` will not fire again for it. It is guarded by `Array.isArray(ctx.chat) && ctx.chat.length > 0`: `chat` is `[]` until a chat loads (`docs/api/sillytavern.md#context-at-load`), and materialising against a not-yet-loaded chat would persist an empty structure into the wrong metadata object.
@@ -78,13 +78,11 @@ The handler passes on only the event payload — `(index, type)` — and lets `o
 
 `index.js` still holds wiring only. It contains no outcome classification, no rollback, no append and no save — every decision lives in `src/recovery.js`. Recovery's whole cost in the entry file is one import line and one map entry.
 
-## Pristine reseed subscriptions {#pristine-reseed-subscriptions}
+## No edit, swipe or delete subscriptions {#no-edit-subscriptions}
 
-`MESSAGE_SWIPED`, `MESSAGE_EDITED` and `MESSAGE_DELETED` are three plain entries in the same guarded handler map, each calling `reseedIfPristine()` (`docs/modules/state.md#reseed-while-pristine`). They are not composed with anything, have no ordering constraint against any other handler, and get no separate `eventSource.on` call or teardown: they join the one loop every other subscription goes through, so an absent name on a host build joins the existing `absent events:` warning and nothing else changes.
+`MESSAGE_SWIPED`, `MESSAGE_EDITED` and `MESSAGE_DELETED` are not subscribed to at all. Every one of them changes `chat[]`, and `chat[]` is read fresh by the derivation on the next request (`docs/modules/derive.md#derivation-rule`), so an edit takes effect with no listener, no handler and nothing saved — the events carry no information the next request does not already have. Emitting any of them changes nothing in this extension.
 
-Each handler ignores its argument. The three payloads differ — `MESSAGE_SWIPED (mesId)`, `MESSAGE_EDITED (id)`, `MESSAGE_DELETED (chat.length)`, the last being the new length rather than the deleted index (`docs/api/sillytavern.md#message-lifecycle-events`) — and none is needed: the handler re-reads `ctx.chat`, which already holds the swiped-to, edited or remaining text by the time the event fires. Ignoring the payload also keeps the three entries identical, so there is no per-event branch to get wrong.
-
-`MESSAGE_SWIPED` here is unrelated to `recovery`'s swipe handling. `recovery` classifies a *model resample* arriving on MESSAGE_RECEIVED with `type` `'swipe'`/`'regenerate'` (`docs/modules/recovery.md#ordering`); this entry is a different event on a different path, runs only while canonical state is pristine, and never touches recovery's bookkeeping.
+`MESSAGE_SWIPED` is unrelated to `recovery`'s swipe handling, which classifies a *model resample* arriving on MESSAGE_RECEIVED with `type` `'swipe'`/`'regenerate'` (`docs/modules/recovery.md#swipes`) — a different event on a different path.
 
 ## Slash commands {#slash-commands}
 

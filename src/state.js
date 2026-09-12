@@ -1,60 +1,67 @@
 import { getCtx } from './host.js';
-import { METADATA_KEY, STATE_VERSION, BLOCK_DELIMITER, LOG_PREFIX } from './constants.js';
-import { isTrailingBlockComplete } from './grammar.js';
+import { METADATA_KEY, STATE_VERSION, LOG_PREFIX } from './constants.js';
+import { isTrailingBlockComplete, truncateToLastCompleteBlock } from './grammar.js';
+import { assignIds } from './derive.js';
 
 // unknown-version: warn once per stored object, never migrate → docs/modules/state.md#unknown-version
 const warned = new WeakSet();
 
-// state-shape: JSON-plain, stored inline in chatMetadata → docs/modules/state.md#shape
-export function createState() {
-  return { version: STATE_VERSION, frozen: [], frontier: '' };
+function warnOnce(stored) {
+  if (warned.has(stored)) return;
+  warned.add(stored);
+  console.warn(`${LOG_PREFIX} unknown state version: ${stored.version}`);
 }
 
-// initialise-from-chat: non-system messages verbatim, blank-line joined → docs/modules/state.md#initialise-from-chat
-export function initialiseFromChat(chat) {
-  const state = createState();
-  if (!Array.isArray(chat)) return state;
+// state-shape: frozen spans, consumed ids, one watermark; no frontier → docs/modules/state.md#shape
+export function createState() {
+  return { version: STATE_VERSION, frozen: [], frozenIds: [], watermark: { messageId: null, offset: 0 } };
+}
 
-  const blocks = [];
-  for (const message of chat) {
-    if (message.is_system === true) continue;
-    const text = message.mes.trim();
-    if (text === '') continue;
-    blocks.push(text);
+// migration-v1: one shot, in place, the frontier text is not carried over → docs/modules/state.md#migration-v1
+export function migrateV1(state, chat) {
+  if (!Array.isArray(state.frozen)) {
+    warnOnce(state);
+    return false;
   }
-  state.frontier = blocks.join(BLOCK_DELIMITER);
-  return state;
+
+  state.version = STATE_VERSION;
+  state.frozenIds = [];
+
+  if (state.frozen.length > 0) {
+    const tail = truncateToLastCompleteBlock(String(state.frontier ?? ''));
+    if (tail.trim() !== '') pushFrozen(state, { text: tail });
+
+    assignIds(chat);
+    state.frozenIds = (Array.isArray(chat) ? chat : [])
+      .map((message) => message?.extra?.[METADATA_KEY]?.id)
+      .filter((id) => typeof id === 'string');
+  }
+
+  delete state.frontier;
+  state.watermark = { messageId: null, offset: 0 };
+  return true;
 }
 
 // lazy-init: materialised on first read, assigned but not saved → docs/modules/state.md#lazy-init
 export function getState(ctx = getCtx()) {
   const stored = ctx.chatMetadata?.[METADATA_KEY];
   if (stored === undefined) {
-    const state = initialiseFromChat(ctx.chat);
+    const state = createState();
     ctx.chatMetadata[METADATA_KEY] = state;
     return state;
   }
 
-  if (stored.version !== STATE_VERSION && !warned.has(stored)) {
-    warned.add(stored);
-    console.warn(`${LOG_PREFIX} unknown state version: ${stored.version}`);
+  if (stored.version === 1) {
+    migrateV1(stored, ctx.chat);
+    return stored;
   }
+
+  if (stored.version !== STATE_VERSION) warnOnce(stored);
   return stored;
 }
 
-// mutation-is-storage: helpers mutate the stored object in place → docs/modules/state.md#mutation-is-storage
-export function setFrontier(state, text) {
-  state.frontier = String(text);
-}
-
-export function appendToFrontier(state, block) {
-  const text = block?.trim() ?? '';
-  if (text === '') return;
-  const existing = state.frontier.replace(/\s+$/, '');
-  state.frontier = existing === '' ? text : existing + BLOCK_DELIMITER + text;
-}
-
 // append-only: refuse a mid-block span, no removal or replacement path → docs/modules/state.md#append-only
+// mutation-is-storage: the stored object is mutated in place → docs/modules/state.md#mutation-is-storage
 export function pushFrozen(state, span) {
   const text = span.text;
   if (typeof text !== 'string' || text.trim() === '') return false;
@@ -66,28 +73,7 @@ export function pushFrozen(state, span) {
   return true;
 }
 
-// save-metadata-only: saveChat leg belongs to the recovery brief → docs/modules/state.md#save
+// save-metadata-only: message markers are saved by their own handlers → docs/modules/state.md#save
 export async function save(ctx = getCtx()) {
   await ctx.saveMetadata();
-}
-
-// reseed-while-pristine: frozen empty and no capture/append marker → docs/modules/state.md#reseed-while-pristine
-export function isPristine(state, chat) {
-  if (!Array.isArray(state?.frozen) || state.frozen.length > 0) return false;
-  if (!Array.isArray(chat)) return true;
-
-  for (const message of chat) {
-    const marks = message?.extra?.[METADATA_KEY];
-    if (marks?.captured === true || marks?.appended === true) return false;
-  }
-  return true;
-}
-
-export async function reseedIfPristine(ctx = getCtx()) {
-  const state = getState(ctx);
-  if (!isPristine(state, ctx.chat)) return false;
-
-  setFrontier(state, initialiseFromChat(ctx.chat).frontier);
-  await save(ctx);
-  return true;
 }
