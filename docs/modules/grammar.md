@@ -3,7 +3,7 @@ Owns: INV-1 (docs/protocol/invariants.md)
 PLAN: §5, §7, §8, §14
 Depends on: nothing
 
-`src/grammar.js` is the only parser of manuscript text. It is pure: a string in, plain data out. No SillyTavern API, no state, no I/O, no configuration. Everything it answers is *structural* — where blocks begin and end, whether a block carries a tag header, how an actor name classifies against a caller-supplied membership set. Judgements about content (does this buffer introduce a commitment, does this tag commit someone else) belong to `lint`, not here. INV-9 (no universal tag may commit the human-authored character) is a prompt-level convention, not something this module detects or enforces (docs/decisions/0001-prompt-level-grammar.md).
+`src/grammar.js` is the only parser of manuscript text. It is pure: a string in, plain data out. No SillyTavern API, no state, no I/O, no configuration. Everything it answers is *structural* — where blocks begin and end, whether a block carries a tag header, how an actor name classifies against a caller-supplied membership set. Judgements about content (does this buffer introduce a commitment, does this tag commit someone else) belong to `lint`, not here.
 
 ## Block delimiter
 
