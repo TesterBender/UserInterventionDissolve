@@ -26,6 +26,10 @@ Narration sits between these tagged blocks and carries the parts of the scene th
 
 It can carry an action forward, but it should not quietly make a new decision on someone's behalf.
 
+Noticing is not the same as making something happen. A figure can watch another, guess at them, expect something from them, or misunderstand what they mean, but another figure's speech, action, choice, or acceptance belongs in that figure's own block. If the page has not yet given them that moment, leave it open. A plate set down can be an offer; it does not become a meal until someone actually takes it.
+
+When what comes next belongs to another figure, the page is allowed to wait for them. Everyone else can keep speaking, moving, noticing, or doing whatever is theirs to do around that gap without filling it in on their behalf.
+
 If a tagged figure begins something or holds an intention, that can continue across later narration until the story gives it a reason to stop, change, or be interrupted.
 
 A group tag can stand for several figures while they are still moving together or remain individually indistinct. Once one of them becomes distinct enough to receive their own tag, their actions and choices belong to them separately.
@@ -116,7 +120,7 @@ describe('MANUSCRIPT_SYSTEM_PROMPT says nothing of mechanics', () => {
     expect(MANUSCRIPT_SYSTEM_PROMPT).not.toContain('{{');
     expect(MANUSCRIPT_SYSTEM_PROMPT).not.toContain('Mara');
     const capitalised = new Set(MANUSCRIPT_SYSTEM_PROMPT.match(/[A-Z][A-Za-z'’]*/g));
-    const notPersonalNames = ['This', 'Write', 'The', 'A', 'Everything', 'It', 'If', 'No', 'Guards', 'Narration', 'Once', 'Beyond'];
+    const notPersonalNames = ['This', 'Write', 'The', 'A', 'Everything', 'It', 'If', 'No', 'Guards', 'Narration', 'Once', 'Beyond', 'Noticing', 'When', 'Everyone'];
     for (const word of notPersonalNames) capitalised.delete(word);
     expect([...capitalised]).toEqual(['Idris']);
   });
@@ -165,7 +169,7 @@ describe('the grammar commitments', () => {
   });
 
   it('stays short', () => {
-    expect(MANUSCRIPT_SYSTEM_PROMPT.match(/[A-Za-z'’]+/g)).toHaveLength(350);
+    expect(MANUSCRIPT_SYSTEM_PROMPT.match(/[A-Za-z'’]+/g)).toHaveLength(462);
   });
 });
 

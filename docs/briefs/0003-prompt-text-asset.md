@@ -155,3 +155,11 @@ src/prompt.js (the constant only); tests/prompt.test.js (verbatim assertion; wor
 - [x] Forbidden-word tests pass with the single documented exemption.
 - [x] `presets/Manuscript Protocol.json` and the sysprompt JSON regenerated; `npm run build:preset` run twice leaves the tree unchanged.
 - [x] `npm run check` passes.
+
+## Amendment 2 (2026-09-13) — noticing is not doing; the page may wait
+
+User-authored replacement of `MANUSCRIPT_SYSTEM_PROMPT` (byte-for-byte; 462 words by `/[A-Za-z'’]+/g`), applied directly by the orchestrator under the pinned-string lane. Trigger: a live continuation committed the collaborator's figure to eating from inside another figure's block ("watches the intruder eat — because the intruder does eat") and treated an offer as accepted; the stop string cannot catch that because no reserved tag was written. Two paragraphs were added after the narration rule: "Noticing is not the same as making something happen…" and "When what comes next belongs to another figure, the page is allowed to wait for them…". Everything else is unchanged from Amendment 1. Tests: verbatim assertion, word-count freeze 350→462, capitalised-word allowlist gains Noticing/When/Everyone. Presets regenerated.
+
+- [x] constant equals the user's text verbatim
+- [x] presets regenerated, idempotent
+- [x] `npm run check` passes

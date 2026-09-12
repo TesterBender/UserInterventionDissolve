@@ -9,7 +9,7 @@ Depends on: nothing
 
 The system prompt does two things at once, and the order matters. It opens as craft framing — creative writing shaped by what is already on the page, the voices, the unfinished gestures, written as prose that feels particular and sensory and lets the story be strange — and only then lists a few formatting rules. PLAN §20 is explicit that "the grammar exists to preserve agency, not to flatten prose into legalese": a bare rule list gets obeyed as a form, producing stage directions rather than fiction. The framing is what keeps the rules in service of the writing.
 
-As of Amendment 1 (2026-09-12), this text is the user's own wording, chosen because the previous draft read as flat and mechanical rather than as one human addressing another. It commits to the same load-bearing semantics and nothing more (§5–§7):
+As of Amendment 2 (2026-09-13; Amendment 1 on 2026-09-12 introduced the user's voice, Amendment 2 added the "noticing is not doing" and "the page is allowed to wait" paragraphs after a live case where another figure's act was committed inside a tag block), this text is the user's own wording, chosen because the previous draft read as flat and mechanical rather than as one human addressing another. It commits to the same load-bearing semantics and nothing more (§5–§7):
 
 - blocks are written with a blank line between each one, and each block is either tagged to a figure or left as narration;
 - a tagged block belongs to one figure alone, and that ownership covers interiority as well as action — what they say, do, choose, notice, intend, and how they understand what is happening;
