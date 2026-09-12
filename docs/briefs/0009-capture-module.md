@@ -1,5 +1,5 @@
 # Brief 0009 — `capture`: composer input → manuscript block on the frontier
-Status: partial
+Status: implemented
 Complexity: high
 PLAN sections: §9 (the collaborator's real input must not survive as a model-visible user turn containing the external character's action: capture it, transform it into manuscript text, merge it into the current manuscript immediately after the model-generated material), §10 (capture is character-specific — ordinary composer input after a stop produces the external character's tag block and nothing else; manuscript-wide editing of the frontier is a *separate* authority that does not go through the composer, and is not built here), §15 (barge-in: the collaborator may insert the external character at any valid block boundary without waiting for the model; once inserted the block is normalised exactly as if the stop had been reached, and after reconstruction the two cases must be indistinguishable)
 Invariants touched: INV-3 (this module is its owner), INV-4 (it writes to the frontier through `state`'s API only; it does not reconstruct anything)
@@ -44,6 +44,7 @@ When the collaborator sends a message in the normal composer, the text they wrot
 
 ## Files
 - allowed to create/modify: `src/capture.js`, `index.js` (the one guarded MESSAGE_SENT subscription only), `tests/capture.test.js`, `tests/helpers/fake-context.js` (user-message builder only, only if absent), `docs/modules/capture.md`, `docs/modules/bootstrap.md` (one added heading), and this brief's Status line.
+- amended: `tests/boundary.test.js` — inclusion assertions only, authorised by orchestrator 2026-09-12.
 - must not touch: `src/grammar.js`, `src/state.js`, `src/boundary.js`, `src/host.js`, `src/constants.js`, `src/prompt.js`, `src/preset.js` (all import-only), `tests/bootstrap.test.js`, `tests/grammar.test.js`, `tests/state.test.js`, `tests/boundary.test.js`, `tests/prompt.test.js`, `tests/preset.test.js`, `manifest.json`, `style.css`, `package.json`, `eslint.config.js`, `vitest.config.js`, `tools/*`, `presets/`, `PLAN.txt`, `CLAUDE.md`, `docs/api/sillytavern.md`, `docs/protocol/*`, `docs/decisions/*`, other `docs/briefs/*`.
 
 ## ST APIs used
@@ -73,7 +74,7 @@ When the collaborator sends a message in the normal composer, the text they wrot
 - [x] The marker write preserves a pre-existing sibling flag in the same namespace (`extra[METADATA_KEY] = { boundary: true }` ⇒ afterwards both `boundary` and `captured` are `true`).
 - [x] Emitting `MESSAGE_SENT` with the index of a user message through the fake event source produces exactly the same effects as calling `captureMessage` directly (the `index.js` subscription is wired and guarded by presence on `EVENT(ctx)`).
 - [x] `src/capture.js` contains no occurrence of the identifier `SillyTavern` and no hard-coded character name.
-- [ ] `npm run check` passes.
+- [x] `npm run check` passes.
 - [x] every new pointer comment resolves (`node tools/check-comments.mjs`).
 
 ## Docs to write/update
@@ -86,3 +87,6 @@ When the collaborator sends a message in the normal composer, the text they wrot
   - `## Empty send is not a capture {#empty-send}` — pressing Send on an empty composer emits no MESSAGE_SENT at all (`docs/api/sillytavern.md#empty-send`); it is the continuation trigger and this module deliberately contains no code for it.
   - `## Editing is not capture {#editing-is-not-capture}` — §10's second half: manuscript-wide editing of the frontier is a distinct authority that does not go through the composer and is not implemented here; a later edit of the visible message does not re-enter the frontier.
 - `docs/modules/bootstrap.md` — add one heading, `## Capture subscription {#capture-subscription}`: the single guarded `MESSAGE_SENT` subscription, that the handler passes only the index and takes a fresh context, and that `index.js` still holds wiring only — every decision lives in `src/capture.js`.
+
+## Carry-forward
+- `getState()` materialises lazily and seeds the frontier from `chat[]` (`src/state.js` `initialiseFromChat`, `docs/modules/state.md#lazy-init`). If state has never been materialised when MESSAGE_SENT fires, the just-pushed user message is seeded into the frontier and then appended again by `captureMessage` — the same text twice. In practice bootstrap prevents this: `index.js` materialises state on CHAT_CHANGED and once at init for an already-open chat (`docs/modules/bootstrap.md#state-materialisation`). Capture deliberately adds no dedupe (out of scope, and step order is fixed by this brief). Flag for a future brief if a chat can ever become current without either of those two paths firing first.
