@@ -1,5 +1,5 @@
 # Brief 0004 — Tag header: recognise any `name:` at block start, case-insensitively
-Status: partial
+Status: implemented
 Complexity: low
 PLAN sections: §5 (a manuscript is atomic blocks separated by a blank line; a block is a tag block or a buffer block; the tag block's shape is `Anton: sets the cup down. "No."` — a name, a colon, then the block body), §8 (the reserved external literal is the bare tag `Mara:`, not `\n\nMara:`; the stop is keyed to the reserved tag syntax itself)
 Invariants touched: INV-1 (tag/buffer split is what makes commitment legible), INV-2 (the boundary stop literal is the persona name verbatim, so the actor text this module returns must not be case-normalised)
@@ -53,7 +53,9 @@ Invariants touched: INV-1 (tag/buffer split is what makes commitment legible), I
 - [x] `parseTagHeader('she said: "no"')` returns `{ actor: 'she said', body: '"no"' }`.
 - [x] `parseTagHeader('anton: waits.').actor === 'anton'` — the actor is returned with its original case, never lowercased.
 - [x] `The tall woman in the doorway:`, `Guard 2:`, `Dr. Weiss:`, `Élodie:`, `Jean-Luc:`, `D'Vora:`, `The Innkeeper:` all parse as tags with the actor text verbatim.
-- [ ] `"No," she said.`, `: nothing.`, `12:30 by the clock.`, `  Anton: sets the cup down.`, `He turned. Anton: sets the cup down.` all parse as buffers. — the first four hold; the fifth does not: the mandated pattern (`. ` and space both admitted tag characters) matches `He turned. Anton:` as a tag (`actor: 'He turned. Anton'`). This is a contradiction between the brief's exact-pattern requirement and this acceptance line, not an implementation choice; the pattern was kept verbatim as specified and the conflict is documented in `docs/modules/grammar.md#tag-header` and covered by a test.
+- [x] `"No," she said.`, `: nothing.`, `12:30 by the clock.`, `  Anton: sets the cup down.` parse as buffers. `He turned. Anton: sets the cup down.` parses as a tag with actor `He turned. Anton` — accepted by the orchestrator on 2026-09-12 under the user rule "assume confidently whatever begins with 
+
+name: is a tag"; periods and spaces stay admitted so `Dr. Vance:` works. Documented in docs/modules/grammar.md#tag-header.
 - [x] A tag part of 41+ characters parses as a buffer; a colon that appears only on the block's second line does not produce a header.
 - [x] `src/grammar.js` applies no case transformation to any value returned from `parseTagHeader` or `parseManuscript`.
 - [x] `docs/modules/grammar.md#tag-header` states the rule, the pattern, the two exclusions and the accepted `she said:` cost, and no longer claims an uppercase initial is required.
