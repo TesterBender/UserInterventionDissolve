@@ -168,6 +168,18 @@ checked: 1.18.0 @ 8172dcd on 2026-09-12
 evidence: user `public/script.js:5818-5827` — `{ name, is_user: true, is_system: false, send_date: getMessageTimeStamp(), mes, extra: { isSmallSys } }`; assistant `:6684-6694` — `extra: {}`, `name: name2`, `is_user: false`, `extra.api/model/reasoning/reasoning_duration/reasoning_signature`; `swipes = []`, `swipe_info = []` (`:6729, 6742`), `swipe_id` (`:6610-6612`); `swipe_info[i] = { send_date, gen_started, gen_finished, extra }` (`:3707-3712`).
 notes: Prompt exclusion is `chat.filter(x => !x.is_system || (canUseTools && Array.isArray(x.extra?.tool_invocations)))` (`:4437`). No `extra.type` filtering on that path. When editing an assistant message in place, also set `message.swipes[message.swipe_id]` (`Intercede:src/transaction.js:454-458`).
 
+### updateMessageBlock {#updatemessageblock}
+status: verified
+checked: 1.18.0 @ 8172dcd on 2026-09-12
+evidence: `public/script.js:1974-1985` — `export function updateMessageBlock(messageId, message, { rerenderMessage = true } = {}) { const messageElement = chatElement.find([mesid="${messageId}"]); if (rerenderMessage) { const text = message?.extra?.display_text ?? message.mes; messageElement.find('.mes_text').html(messageFormatting(text, …)); } … addCopyToCodeBlocks(messageElement); appendMediaToMessage(message, messageElement); }`
+notes: Sync, not async; no return value. Uses the **passed `message` object** for text/media, not a re-read of `chat[messageId]` — caller must pass `chat[messageId]` itself (or a same-shape object) after editing `.mes` in place. `rerenderMessage: false` skips the `.mes_text` HTML rewrite but still runs reasoning UI update, code-block copy buttons, and media re-append. No `swipes` handling — swipe array/UI are untouched. Emits **no event** (no MESSAGE_UPDATED). If `[mesid="…"]` matches no DOM node (message not rendered, e.g. off-screen not-yet-attached or wrong id), `messageElement` is an empty jQuery set — every call is a silent no-op, no error.
+
+### Edit-on-receipt ordering {#edit-on-receipt}
+status: verified
+checked: 1.18.0 @ 8172dcd on 2026-09-12
+evidence: non-streaming `public/script.js:6628-6632` (also `:6656-6657, 6678-6679, 6721-6722`) — `!fromStreaming && await eventSource.emit(event_types.MESSAGE_RECEIVED, chat_id, type); addOneMessage(chat[chat_id]); !fromStreaming && await eventSource.emit(event_types.CHARACTER_MESSAGE_RENDERED, chat_id, type);`; streaming `public/script.js:3691-3740` `finalizeIntermediaryMessage()` calls `onProgressStreaming()` (writes `formattedText` into `this.messageTextDom.innerHTML`, `:3665-3669`) **before** `await eventSource.emit(event_types.MESSAGE_RECEIVED, …)` at `:3740`; `saveReply(..., fromStreaming: true)` is called after, and its own `MESSAGE_RECEIVED`/`addOneMessage` are skipped by the `!fromStreaming` guard.
+notes: **Non-streaming path** (`script.js:6632` etc.): MESSAGE_RECEIVED fires *before* `addOneMessage()` — the `.mes` DOM node doesn't exist yet, so editing `chat[messageId].mes` in the listener is enough; `addOneMessage` renders the edited text. No refresh call needed. **Streaming path** (`:3740`): the DOM is already painted with the streamed text via `onProgressStreaming` *before* MESSAGE_RECEIVED fires, and `CHARACTER_MESSAGE_RENDERED` fires right after (`:3741`). Editing `message.mes` here does nothing visible unless the listener also calls `getContext().updateMessageBlock(messageId, chat[messageId])` to force the `.mes_text` re-render.
+
 ### Per-chat persistence {#chat-metadata}
 status: verified
 checked: 1.18.0 @ 8172dcd on 2026-09-12; Intercede real-install
