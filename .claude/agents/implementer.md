@@ -21,5 +21,6 @@ Work:
 
 Finish:
 - Run `npm run check` (lint + tests + comment pointers). Fix what you broke. Do not fix pre-existing failures outside the brief's files; report them.
+- If the sandbox or a permission check blocks an action (a commit message, a command, a path), stop and report `BLOCKED: <what> — <reason>`. Never re-shape the action to get past the block, even when the content is benign; the orchestrator decides.
 - Tick the acceptance checkboxes in the brief that you have evidence for. Set `Status: implemented` (or `Status: partial` with SCOPE_GAP lines).
 - Return ≤ 15 lines: files changed, tests added, check result verbatim summary line, SCOPE_GAP/BLOCKED lines. Do not paste diffs or file contents.
