@@ -21,6 +21,15 @@ Before `ready` is set to `true`, `init()` requires: the global `SillyTavern` obj
 
 The manifest's `generate_interceptor` key is wired to `globalThis[INTERCEPTOR_GLOBAL]` here so that later briefs only fill the function body — no packaging or host-door change is needed when `frontier` lands. The body in this brief is a real no-op: it must not read, mutate, reorder, or replace `chat`, and must not call `abort`, so that installing the extension with only this brief applied has zero effect on generation. The body that reconstructs model-visible history from canonical state is `docs/protocol/host-mapping.md#s12-frontier`.
 
+## State materialisation {#state-materialisation}
+
+`index.js` makes sure every open chat has its canonical state object (`docs/modules/state.md#lazy-init`) and does nothing else with it. Two call sites, both at the end of a successful `init()`:
+
+- One `CHAT_CHANGED` subscription (`docs/api/sillytavern.md#message-lifecycle-events`), guarded by `EVENT(ctx).CHAT_CHANGED` being defined, whose handler calls `getState()` with a fresh context and returns. The payload is `getCurrentChatId()` and is used only to return early when it is nullish — that means no chat is open, and materialising state then would write into whatever metadata object happens to be current. The handler captures no `ctx`, because context values are read live at call time (`docs/api/sillytavern.md#context-at-load`). Listener errors are swallowed by the emitter (`docs/api/sillytavern.md#events`), so there is no try/catch and no extra logging.
+- One direct call at the end of `init()`, because a chat may already be open when the extension loads and `CHAT_CHANGED` will not fire again for it. It is guarded by `Array.isArray(ctx.chat) && ctx.chat.length > 0`: `chat` is `[]` until a chat loads (`docs/api/sillytavern.md#context-at-load`), and materialising against a not-yet-loaded chat would persist an empty structure into the wrong metadata object.
+
+`index.js` still implements no protocol behaviour. It creates the container; every read and write of what is inside it belongs to `capture`, `frontier`, `freeze` and `recovery`.
+
 ## Fake context omission sentinel {#fake-context-omit}
 
 `tests/helpers/fake-context.js`'s `installFakeContext(overrides)` shallow-merges `overrides` into the fake context object. The sentinel for "this key is absent" is the plain JS value `undefined`: any key in `overrides` whose value is `undefined` is `delete`d from the resulting context instead of being assigned, so `installFakeContext({ name1: undefined })` produces a context with no `name1` property at all (not a `name1: undefined` property — `requireKeys`'s presence test treats both the same, but deleting matches "absent" literally). Any other value shallow-overwrites the corresponding default.

@@ -1,5 +1,5 @@
 # Brief 0007 — canonical state: per-chat frozen spans + mutable frontier
-Status: draft
+Status: implemented
 Complexity: high
 PLAN sections: §4 (the "canonical history" layer — the persistent conditioning surface actually shown to the model, which must preserve fiction and agency while discarding collaboration topology; this brief builds the container for it), §11 (the live cycle names "canonical history" and "mutable frontier" as the two things every later step reads and writes), §12 (normalization happens every request, freezing only when the frontier reaches its transport target — so the frontier must be a single mutable string, not a list of turns), §16 first half (freezing is append-only; old frozen spans are not re-cut, because re-cutting disturbs demonstrations, invalidates cache prefixes and rewrites transport statistics)
 Invariants touched: INV-4 (this brief provides the single mutable frontier that §12 reconstruction reads), INV-6 (append-only frozen list, refusal to append a span that ends mid-block), INV-10 (the stored structure is the only model-visible input, so live interaction topology has no representation in it)
@@ -61,22 +61,22 @@ Every chat has one persistent structure — `chatMetadata[METADATA_KEY] = { vers
 - (empty — nothing is blocked.)
 
 ## Acceptance
-- [ ] `createState()` returns `{ version: 1, frozen: [], frontier: '' }` and survives a `JSON.parse(JSON.stringify(…))` round trip deep-equal.
-- [ ] `initialiseFromChat([])` and `initialiseFromChat(undefined)` both deep-equal `createState()`.
-- [ ] `initialiseFromChat` over a chat of user, assistant, system and blank messages produces a frontier containing every non-system non-blank `mes` in order, verbatim, separated by exactly one blank line, with no system message text present and no leading/trailing whitespace.
-- [ ] `getState(ctx)` on a context whose `chatMetadata` has no `METADATA_KEY` materialises the initialised state at `ctx.chatMetadata[METADATA_KEY]`, and `ctx.saveMetadata` is **not** called.
-- [ ] `getState(ctx)` is idempotent: two calls return the **same object reference**, the second does not recompute from `chat` (mutate `frontier` between calls and assert the mutation survives, and that a `chat` change between calls has no effect).
-- [ ] Mutating the returned state via `setFrontier`/`appendToFrontier`/`pushFrozen` is visible at `ctx.chatMetadata[METADATA_KEY]` without any further call.
-- [ ] `appendToFrontier` on an empty frontier produces the block alone; on a non-empty one, exactly one blank line separates old and new; a blank, whitespace-only, `null` or `undefined` block leaves the frontier byte-identical.
-- [ ] `pushFrozen` refuses (returns `false`, `frozen.length` unchanged) for: missing `text`, non-string `text`, `''`, whitespace-only, and a text whose trailing block is incomplete per `isTrailingBlockComplete` (e.g. `'Anton: he reaches for the'`). It accepts a complete-trailing-block text, returns `true`, appends one entry, and fills `words` (number) and `createdAt` (number) when the caller omits them, preserving caller-supplied finite values.
-- [ ] Order is preserved and nothing is ever removed: three successive `pushFrozen` calls yield `frozen` of length 3 in call order; the module exports no function capable of removing or replacing an entry (assert on the module's export names).
-- [ ] `await save(ctx)` calls `ctx.saveMetadata` exactly once and `ctx.saveChat` zero times.
-- [ ] A context whose stored state has `version: 99` is returned unchanged (same reference, fields untouched, `frozen`/`frontier` not added or reset), a `console.warn` naming the version is emitted once, and a second `getState` call emits no further warning.
-- [ ] With a fake context whose `chat` is non-empty, importing `index.js` materialises `chatMetadata[METADATA_KEY]` exactly once at load; with an empty `chat` it does not.
-- [ ] Emitting `CHAT_CHANGED` with a chat id materialises state for the current context; emitting it with a nullish payload does not write to `chatMetadata`.
-- [ ] The existing bootstrap leak test still passes: `src/state.js` contains no occurrence of the identifier `SillyTavern`.
-- [ ] `npm run check` passes.
-- [ ] every new pointer comment resolves (`node tools/check-comments.mjs`).
+- [x] `createState()` returns `{ version: 1, frozen: [], frontier: '' }` and survives a `JSON.parse(JSON.stringify(…))` round trip deep-equal.
+- [x] `initialiseFromChat([])` and `initialiseFromChat(undefined)` both deep-equal `createState()`.
+- [x] `initialiseFromChat` over a chat of user, assistant, system and blank messages produces a frontier containing every non-system non-blank `mes` in order, verbatim, separated by exactly one blank line, with no system message text present and no leading/trailing whitespace.
+- [x] `getState(ctx)` on a context whose `chatMetadata` has no `METADATA_KEY` materialises the initialised state at `ctx.chatMetadata[METADATA_KEY]`, and `ctx.saveMetadata` is **not** called.
+- [x] `getState(ctx)` is idempotent: two calls return the **same object reference**, the second does not recompute from `chat` (mutate `frontier` between calls and assert the mutation survives, and that a `chat` change between calls has no effect).
+- [x] Mutating the returned state via `setFrontier`/`appendToFrontier`/`pushFrozen` is visible at `ctx.chatMetadata[METADATA_KEY]` without any further call.
+- [x] `appendToFrontier` on an empty frontier produces the block alone; on a non-empty one, exactly one blank line separates old and new; a blank, whitespace-only, `null` or `undefined` block leaves the frontier byte-identical.
+- [x] `pushFrozen` refuses (returns `false`, `frozen.length` unchanged) for: missing `text`, non-string `text`, `''`, whitespace-only, and a text whose trailing block is incomplete per `isTrailingBlockComplete` (e.g. `'Anton: he reaches for the'`). It accepts a complete-trailing-block text, returns `true`, appends one entry, and fills `words` (number) and `createdAt` (number) when the caller omits them, preserving caller-supplied finite values.
+- [x] Order is preserved and nothing is ever removed: three successive `pushFrozen` calls yield `frozen` of length 3 in call order; the module exports no function capable of removing or replacing an entry (assert on the module's export names).
+- [x] `await save(ctx)` calls `ctx.saveMetadata` exactly once and `ctx.saveChat` zero times.
+- [x] A context whose stored state has `version: 99` is returned unchanged (same reference, fields untouched, `frozen`/`frontier` not added or reset), a `console.warn` naming the version is emitted once, and a second `getState` call emits no further warning.
+- [x] With a fake context whose `chat` is non-empty, importing `index.js` materialises `chatMetadata[METADATA_KEY]` exactly once at load; with an empty `chat` it does not.
+- [x] Emitting `CHAT_CHANGED` with a chat id materialises state for the current context; emitting it with a nullish payload does not write to `chatMetadata`.
+- [x] The existing bootstrap leak test still passes: `src/state.js` contains no occurrence of the identifier `SillyTavern`.
+- [x] `npm run check` passes.
+- [x] every new pointer comment resolves (`node tools/check-comments.mjs`).
 
 ## Docs to write/update
 - `docs/modules/state.md` — new file with the header `Owns: INV-4 (frontier container), INV-6 (append-only frozen list) (docs/protocol/invariants.md)` / `PLAN: §4, §11, §12, §16` / `Depends on: host, constants, grammar`, then one heading per pointer comment written in `src/state.js`, at least:

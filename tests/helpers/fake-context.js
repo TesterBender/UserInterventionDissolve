@@ -54,6 +54,11 @@ function defaultContext() {
   };
 }
 
+// message-shape: chat[] entry with ST's own defaults → docs/api/sillytavern.md#message-shape
+export function makeMessage(overrides = {}) {
+  return { name: 'User', is_user: true, is_system: false, mes: '', extra: {}, ...overrides };
+}
+
 let previous;
 
 // fake-context-omit: undefined-valued override deletes the key → docs/modules/bootstrap.md#fake-context-omit
