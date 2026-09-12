@@ -1,0 +1,14 @@
+{
+  "display_name": "User Intervention Dissolve",
+  "loading_order": 50,
+  "requires": [],
+  "optional": [],
+  "js": "index.js",
+  "css": "style.css",
+  "author": "mrdanger2nd",
+  "version": "0.0.0",
+  "minimum_client_version": "1.18.0",
+  "homePage": "https://example.invalid/user-intervention-dissolve",
+  "auto_update": false,
+  "generate_interceptor": "userInterventionDissolveInterceptor"
+}
