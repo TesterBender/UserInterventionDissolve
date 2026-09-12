@@ -1,5 +1,5 @@
 # Brief 0016 — reword REWRITE_INSTRUCTION so the rewrite call reads as scene direction
-Status: implemented
+Status: done
 Complexity: low
 PLAN sections: §19 (cold start: the first request lacks demonstrations, so a manually prepared or hand-corrected seed span — substantial prose, tag/buffer alternation, the externally owned figure appearing naturally, no artificial handoff — is recommended; the starter reformatter is how one is produced, so the instruction that produces it must actually reach the model), §20 (frozen spans and other persistent demonstrations are checked before promotion, and the check is advisory to the human — nothing here becomes a gate)
 Invariants touched: `docs/protocol/invariants.md#enforcement-model` (model-facing text is prompt-level, not code-enforced); INV-2 is untouched — the reserved-literal drop in `dropReservedBlocks`/`sanitiseRewrite` is not modified by this brief
