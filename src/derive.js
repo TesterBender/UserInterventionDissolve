@@ -1,5 +1,20 @@
 import { METADATA_KEY, BLOCK_DELIMITER } from './constants.js';
-import { toManuscriptBlock } from './capture.js';
+import { parseTagHeader } from './grammar.js';
+
+// transformation-rule: tag the first block only, rest byte-identical → docs/modules/derive.md#transformation-rule
+// reserved-literal: borrowed from boundary, empty name writes no tag → docs/modules/derive.md#reserved-literal
+export function toManuscriptBlock(text, literal) {
+  if (typeof text !== 'string') return '';
+  const trimmed = text.trim();
+  if (trimmed === '') return '';
+  if (typeof literal !== 'string' || literal === '') return trimmed;
+
+  const actor = literal.replace(/:$/, '').trim();
+  const header = parseTagHeader(trimmed);
+  if (header !== null && header.actor.trim().toLowerCase() === actor.trim().toLowerCase()) return trimmed;
+
+  return `${literal} ${trimmed}`;
+}
 
 // message-ids: random and meaningless, spread past sibling markers → docs/modules/derive.md#message-ids
 export function ensureMessageId(message) {

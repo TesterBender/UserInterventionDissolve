@@ -147,14 +147,13 @@ describe('onMessageReceived — rollback', () => {
     expect(message.mes).toBe('');
     expect(ctx.chat).toHaveLength(1);
     expect(frontierOf(ctx)).toBe('');
-    expect(message.extra[METADATA_KEY]?.received).toBeUndefined();
     expect(ctx.saveMetadata).not.toHaveBeenCalled();
     expect(ctx.saveChat).toHaveBeenCalledTimes(1);
   });
 });
 
 describe('onMessageReceived — receipt', () => {
-  it('marks and ids a complete message and saves the chat only', async () => {
+  it('ids a complete message and saves the chat only', async () => {
     const ctx = installFakeContext();
     seed(ctx);
     const message = makeAssistantMessage({ mes: '  She left.  ' });
@@ -164,24 +163,31 @@ describe('onMessageReceived — receipt', () => {
 
     expect(outcome).toBe('complete');
     expect(frontierOf(ctx)).toBe('She left.');
-    expect(message.extra[METADATA_KEY].received).toBe(true);
     expect(message.extra[METADATA_KEY].appendedText).toBeUndefined();
     expect(typeof message.extra[METADATA_KEY].id).toBe('string');
     expect(ctx.saveMetadata).not.toHaveBeenCalled();
     expect(ctx.saveChat).toHaveBeenCalledTimes(1);
   });
 
-  it('does nothing on a repeated event for the same index', async () => {
+  it('is idempotent on a repeated receipt for the same index', async () => {
     const ctx = installFakeContext();
-    seed(ctx);
-    ctx.chat.push(makeAssistantMessage({ mes: 'She left.' }));
+    const state = seed(ctx);
+    const message = makeAssistantMessage({ mes: 'She left.' });
+    ctx.chat.push(message);
 
-    await onMessageReceived(0, 'normal');
+    const first = await onMessageReceived(0, 'normal');
+    const idAfterFirst = message.extra[METADATA_KEY].id;
+    const frontierAfterFirst = frontierOf(ctx);
+    const frozenAfterFirst = JSON.parse(JSON.stringify(state.frozen));
+
     const second = await onMessageReceived(0, 'normal');
 
-    expect(second).toBe('skipped');
-    expect(frontierOf(ctx)).toBe('She left.');
-    expect(ctx.saveChat).toHaveBeenCalledTimes(1);
+    expect(second).toBe(first);
+    expect(message.mes).toBe('She left.');
+    expect(message.extra[METADATA_KEY].id).toBe(idAfterFirst);
+    expect(frontierOf(ctx)).toBe(frontierAfterFirst);
+    expect(state.frozen).toEqual(frozenAfterFirst);
+    expect(ctx.saveChat).toHaveBeenCalledTimes(2);
   });
 
   it('writes nothing at all for an empty outcome', async () => {
@@ -194,12 +200,11 @@ describe('onMessageReceived — receipt', () => {
 
     expect(outcome).toBe('empty');
     expect(state.frozen).toEqual([]);
-    expect(message.extra[METADATA_KEY].received).toBeUndefined();
     expect(ctx.saveMetadata).not.toHaveBeenCalled();
     expect(ctx.saveChat).not.toHaveBeenCalled();
   });
 
-  it('merges the marker with flags written by other modules', async () => {
+  it('writes only the id, not a receipt marker', async () => {
     const ctx = installFakeContext();
     seed(ctx);
     const message = makeAssistantMessage({ mes: 'She left.', extra: { [METADATA_KEY]: { boundary: true } } });
@@ -209,8 +214,7 @@ describe('onMessageReceived — receipt', () => {
 
     const mark = message.extra[METADATA_KEY];
     expect(mark.boundary).toBe(true);
-    expect(mark.received).toBe(true);
-    expect(Object.keys(mark).sort()).toEqual(['boundary', 'id', 'received']);
+    expect(Object.keys(mark).sort()).toEqual(['boundary', 'id']);
   });
 
   it('ids every other message in the chat on the same save', async () => {
@@ -240,7 +244,7 @@ describe('onMessageReceived — swipes and regeneration', () => {
     expect(warnSpy).not.toHaveBeenCalled();
   });
 
-  it('rolls back an incomplete resample even though the marker is already set', async () => {
+  it('rolls back an incomplete resample on a message already classified once', async () => {
     const ctx = installFakeContext();
     seed(ctx);
     const message = makeAssistantMessage({ mes: 'A sentence.' });

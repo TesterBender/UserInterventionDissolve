@@ -1,7 +1,6 @@
 import { getCtx } from './host.js';
 import { METADATA_KEY, STATE_VERSION, LOG_PREFIX } from './constants.js';
-import { isTrailingBlockComplete, truncateToLastCompleteBlock } from './grammar.js';
-import { assignIds } from './derive.js';
+import { isTrailingBlockComplete } from './grammar.js';
 
 // unknown-version: warn once per stored object, never migrate → docs/modules/state.md#unknown-version
 const warned = new WeakSet();
@@ -17,46 +16,16 @@ export function createState() {
   return { version: STATE_VERSION, frozen: [], frozenIds: [], watermark: { messageId: null, offset: 0 } };
 }
 
-// migration-v1: one shot, in place, the frontier text is not carried over → docs/modules/state.md#migration-v1
-export function migrateV1(state, chat) {
-  if (!Array.isArray(state.frozen)) {
-    warnOnce(state);
-    return false;
-  }
-
-  state.version = STATE_VERSION;
-  state.frozenIds = [];
-
-  if (state.frozen.length > 0) {
-    const tail = truncateToLastCompleteBlock(String(state.frontier ?? ''));
-    if (tail.trim() !== '') pushFrozen(state, { text: tail });
-
-    assignIds(chat);
-    state.frozenIds = (Array.isArray(chat) ? chat : [])
-      .map((message) => message?.extra?.[METADATA_KEY]?.id)
-      .filter((id) => typeof id === 'string');
-  }
-
-  delete state.frontier;
-  state.watermark = { messageId: null, offset: 0 };
-  return true;
-}
-
 // lazy-init: materialised on first read, assigned but not saved → docs/modules/state.md#lazy-init
 export function getState(ctx = getCtx()) {
   const stored = ctx.chatMetadata?.[METADATA_KEY];
-  if (stored === undefined) {
+  if (stored === undefined || stored.version !== STATE_VERSION) {
+    if (stored !== undefined) warnOnce(stored);
     const state = createState();
     ctx.chatMetadata[METADATA_KEY] = state;
     return state;
   }
 
-  if (stored.version === 1) {
-    migrateV1(stored, ctx.chat);
-    return stored;
-  }
-
-  if (stored.version !== STATE_VERSION) warnOnce(stored);
   return stored;
 }
 

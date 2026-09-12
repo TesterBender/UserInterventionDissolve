@@ -3,7 +3,7 @@ Owns: —
 PLAN: §23
 Depends on: host, constants
 
-`index.js` is the extension entry SillyTavern loads. It wires the `generate_interceptor` global as a no-op, verifies the host context is usable, and logs readiness. It does not subscribe to any event and does not implement any protocol behaviour — those belong to later briefs (`boundary`, `capture`, `recovery`, `frontier`).
+`index.js` is the extension entry SillyTavern loads. It wires the `generate_interceptor` global as a no-op, verifies the host context is usable, and logs readiness. It does not subscribe to any event and does not implement any protocol behaviour — those belong to later briefs (`boundary`, `recovery`, `frontier`).
 
 ## Log prefix {#log-prefix}
 
@@ -25,12 +25,12 @@ The interceptor deliberately does not depend on `ready`. The capability gate pro
 
 ## State materialisation {#state-materialisation}
 
-`index.js` makes sure every open chat has its canonical state object, and that a v1 structure is migrated when the chat opens rather than mid-request (`docs/modules/state.md#lazy-init`, `docs/modules/state.md#migration-v1`). It does nothing else with it. Two call sites, both at the end of a successful `init()`:
+`index.js` makes sure every open chat has its canonical state object (`docs/modules/state.md#lazy-init`). It does nothing else with it. Two call sites, both at the end of a successful `init()`:
 
 - One `CHAT_CHANGED` subscription (`docs/api/sillytavern.md#message-lifecycle-events`), guarded by `EVENT(ctx).CHAT_CHANGED` being defined, whose handler calls `getState()` with a fresh context and returns. The payload is `getCurrentChatId()` and is used only to return early when it is nullish — that means no chat is open, and materialising state then would write into whatever metadata object happens to be current. The handler captures no `ctx`, because context values are read live at call time (`docs/api/sillytavern.md#context-at-load`). Listener errors are swallowed by the emitter (`docs/api/sillytavern.md#events`), so there is no try/catch and no extra logging.
 - One direct call at the end of `init()`, because a chat may already be open when the extension loads and `CHAT_CHANGED` will not fire again for it. It is guarded by `Array.isArray(ctx.chat) && ctx.chat.length > 0`: `chat` is `[]` until a chat loads (`docs/api/sillytavern.md#context-at-load`), and materialising against a not-yet-loaded chat would persist an empty structure into the wrong metadata object.
 
-`index.js` still implements no protocol behaviour. It creates the container; every read and write of what is inside it belongs to `capture`, `frontier`, `freeze` and `recovery`.
+`index.js` still implements no protocol behaviour. It creates the container; every read and write of what is inside it belongs to `derive`, `frontier`, `freeze` and `recovery`.
 
 ## Boundary subscriptions {#boundary-subscriptions}
 
@@ -43,14 +43,6 @@ Each name is looked up on `EVENT(ctx)` (`docs/modules/host.md#event-alias`) and 
 ## Fake context omission sentinel {#fake-context-omit}
 
 `tests/helpers/fake-context.js`'s `installFakeContext(overrides)` shallow-merges `overrides` into the fake context object. The sentinel for "this key is absent" is the plain JS value `undefined`: any key in `overrides` whose value is `undefined` is `delete`d from the resulting context instead of being assigned, so `installFakeContext({ name1: undefined })` produces a context with no `name1` property at all (not a `name1: undefined` property — `requireKeys`'s presence test treats both the same, but deleting matches "absent" literally). Any other value shallow-overwrites the corresponding default.
-
-## Capture subscription {#capture-subscription}
-
-Capture adds one name to the same guarded subscription loop the boundary block already runs (see [Boundary subscriptions](#boundary-subscriptions)): `MESSAGE_SENT` (`docs/api/sillytavern.md#message-sent`) → `captureMessage` from `src/capture.js` (`docs/modules/capture.md#composer-path`). It is not a separate block, so an absent `MESSAGE_SENT` degrades exactly like an absent boundary event — the name is collected and reported in the one `console.warn` line, and the remaining listeners still register.
-
-The handler passes only the event payload — the message index — and lets `captureMessage` take a fresh context by default (`docs/api/sillytavern.md#getcontext`); it captures no `ctx` and assumes nothing else about the payload. Listener errors are swallowed by the emitter (`docs/api/sillytavern.md#events`), so there is no try/catch and no extra logging.
-
-`index.js` still holds wiring only. It contains no message test, no transformation and no save — every decision, including which messages are capture input and how the text becomes a manuscript block, lives in `src/capture.js`. Capture's whole cost in the entry file is one import line and one entry in the handler map.
 
 ## Settings drawer wiring {#settings-drawer-wiring}
 

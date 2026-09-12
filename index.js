@@ -8,7 +8,6 @@ import {
   onStreamToken,
   onMessageReceived,
 } from './src/boundary.js';
-import { captureMessage } from './src/capture.js';
 import { interceptGeneration } from './src/frontier.js';
 import { armSolo, consumeSoloFlag } from './src/solo.js';
 import { renderSettings, refreshReservedLiteral } from './src/ui/settings.js';
@@ -69,8 +68,6 @@ export function init() {
       await onMessageReceived(...args);
       await onRecoveryMessageReceived(...args);
     },
-    // capture-subscription: MESSAGE_SENT joins the same guarded loop → docs/modules/bootstrap.md#capture-subscription
-    MESSAGE_SENT: (index) => captureMessage(index),
     // frozen-edit-notice: edit and swipe carry the notice and nothing else → docs/modules/bootstrap.md#no-edit-subscriptions
     MESSAGE_EDITED: (id) => noticeFrozenEdit(id),
     MESSAGE_SWIPED: (id) => noticeFrozenEdit(id),

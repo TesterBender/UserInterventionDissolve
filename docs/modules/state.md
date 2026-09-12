@@ -1,9 +1,9 @@
 # state
 Owns: INV-6 (append-only frozen list) (docs/protocol/invariants.md)
 PLAN: §4, §11, §12, §16, §19
-Depends on: host, constants, grammar, derive
+Depends on: host, constants, grammar
 
-`src/state.js` is the only module that reads or writes the extension's per-chat protocol state. Everything the protocol persists lives in one object under one key in `chatMetadata`: the append-only list of frozen spans and the watermark that says how much of the visible chat those spans have already consumed. The mutable frontier is **not** stored — it is derived from `chat[]` on every request (`docs/modules/derive.md#derivation-rule`). The module is pure apart from `getState` (which may materialise or migrate state on the context) and `save` (which calls `saveMetadata`), and it never names the ST global — it reaches the host only through `getCtx` (`docs/modules/host.md#single-door`).
+`src/state.js` is the only module that reads or writes the extension's per-chat protocol state. Everything the protocol persists lives in one object under one key in `chatMetadata`: the append-only list of frozen spans and the watermark that says how much of the visible chat those spans have already consumed. The mutable frontier is **not** stored — it is derived from `chat[]` on every request (`docs/modules/derive.md#derivation-rule`). The module is pure apart from `getState` (which may materialise or discard state on the context) and `save` (which calls `saveMetadata`), and it never names the ST global — it reaches the host only through `getCtx` (`docs/modules/host.md#single-door`).
 
 ## Shape
 
@@ -29,30 +29,15 @@ A frozen span's `text` is one string, not a list of turns, because §16 freezes 
 
 ## Lazy init
 
-State is created on first *read*, not at install time and not on a migration pass. `getState` materialises `createState()` when the key is absent — it assigns the new object onto `ctx.chatMetadata` and returns it, but never calls `saveMetadata`. The first real write (a capture, a receipt, a freeze) is what persists it, via `save`.
+State is created on first *read*, not at install time and not on a migration pass. `getState` materialises `createState()` when the key is absent — it assigns the new object onto `ctx.chatMetadata` and returns it, but never calls `saveMetadata`. The first real write (a receipt, a freeze) is what persists it, via `save`.
 
 The materialised object is empty: no frozen spans, no consumed ids, no watermark message. It does not read `chat[]` and does not seed anything, because nothing needs seeding — the whole visible chat is above the watermark and therefore already the frontier (`docs/modules/derive.md#derivation-rule`).
 
 This keeps installation inert: opening a chat and doing nothing leaves the chat file byte-identical, and a user who installs and uninstalls the extension without interacting leaves no residue. It also means there is exactly one code path that produces state, so the "chat that existed before the extension" and the "chat created after" cases cannot diverge.
 
-## Migration from v1 {#migration-v1}
-
-Version 1 stored `{ version: 1, frozen: […], frontier: '' }`, where `frontier` was an accumulated second copy of the text the collaborator could see (`docs/decisions/0004-derived-frontier.md`). `migrateV1(state, chat)` converts that object in place, once, the first time `getState` reads it; the object reference stays the one in `chatMetadata`, and nothing is saved here — the first `save()` from whatever caller triggered the read persists it.
-
-A `frozen` that is not an array is not a v1 structure at all, whatever its `version` says: the object is left untouched, one warning is emitted, and `migrateV1` returns `false`. That is [Unknown version](#unknown-version)'s refuse-to-repair rule, reached by a different route.
-
-Two cases, both deterministic:
-
-- **`frozen` is empty.** `frontier` is deleted, `frozenIds` becomes `[]` and `watermark` becomes `{ messageId: null, offset: 0 }`. The v1 frontier text is discarded without loss, because derivation rebuilds it from the same chat it was seeded from.
-- **`frozen` is non-empty.** The v1 frontier has no message-level provenance — it is compiled text with no record of which `chat[]` entries produced it — so it cannot be handed back to the mutable region. It is preserved as history instead: `truncateToLastCompleteBlock(state.frontier)` and, if anything remains, `pushFrozen`. Then every non-system message currently in `chat` is given an id and **all** of them are listed in `frozenIds`, so the derived frontier starts empty rather than repeating text the new span already carries.
-
-The second case is a **documented approximation**. The model's view stays byte-continuous across the upgrade, but the pre-migration tail becomes uneditable (it is a frozen span now), and a trailing *incomplete* block in it is dropped by the truncation. Nothing in `chat[]` is altered beyond the id assignment, and no `saveChat` happens here; the handler that next writes a marker performs it (`docs/modules/capture.md#capture-marker`).
-
-A one-time bump is allowed here while [Unknown version](#unknown-version) still refuses everything else because this codebase wrote v1 and understands its shape exactly, the alternative is a permanently wrong frontier on every existing chat, and the only installation is the author's. An unknown version is a shape nobody here has seen; v1 is not.
-
 ## Mutation is storage
 
-`getState` returns the stored object itself, not a copy. `migrateV1` and `pushFrozen` mutate that object in place, so a mutation is immediately visible at `chatMetadata[METADATA_KEY]` with no write-back step; persisting it to disk is a separate `save()` call. This is intentional: one object, one owner, no reconciliation between a working copy and a stored copy, and no window in which the two disagree. Callers must not hold a state object across a chat change — `getState()` is cheap and is called fresh where it is needed.
+`getState` returns the stored object itself, not a copy. `pushFrozen` and `advanceWatermark` mutate that object in place, so a mutation is immediately visible at `chatMetadata[METADATA_KEY]` with no write-back step; persisting it to disk is a separate `save()` call. This is intentional: one object, one owner, no reconciliation between a working copy and a stored copy, and no window in which the two disagree. Callers must not hold a state object across a chat change — `getState()` is cheap and is called fresh where it is needed.
 
 ## Append only
 
@@ -70,12 +55,12 @@ It is append-only in the same sense `pushFrozen` is: there is no removal path, n
 
 The two writes belong in one function because they are one event: a freeze consumes whole messages *and* leaves at most one message half-consumed, and a state that recorded only one of the two would send text twice or lose it. Nothing else in the codebase may move them independently.
 
-## Unknown version
+## Unknown version {#unknown-version}
 
-A stored structure whose `version` is neither `STATE_VERSION` nor the migratable `1` (including a missing `version`) is returned **unchanged**: not repaired, not overwritten, not normalised, not migrated. One `console.warn` naming the unknown version is emitted, at most once per state object — a module-level `WeakSet` of already-warned objects keeps a per-request caller from filling the console.
+A stored structure whose `version` is not `STATE_VERSION` (including a missing `version`, `1`, or any other value) is treated as **absent**: `getState` discards it, assigns a fresh `createState()` to `chatMetadata[METADATA_KEY]`, and returns that new object. One `console.warn` naming the unknown version is emitted, at most once per state object — a module-level `WeakSet` of already-warned objects keeps a per-request caller from filling the console. Nothing is saved by `getState` itself; the first real write persists the fresh object, exactly as for the ordinary absent-key case.
 
-Refusing to repair is safer than guessing. The structure is the model's entire conditioning surface and the only copy of the user's frozen history; a wrong guess about a shape written by a different version would silently corrupt history that cannot be reconstructed. Leaving it intact means a downgrade is reversible by reinstalling the matching version, and the warning tells the user which version wrote it.
+Discarding rather than migrating is safer than guessing, and simpler than carrying a migration path forward indefinitely. The structure is the model's entire conditioning surface, but a shape this codebase cannot read is not usable as one: a wrong guess about a shape written by a different version would silently corrupt history that cannot be reconstructed, and the only value migration ever bought (`docs/decisions/0004-derived-frontier.md#status`) was continuity for the author's own v1 test chats, which are inconsequential to lose. The warning tells the user which version wrote the discarded structure.
 
 ## Save
 
-`save(ctx)` awaits `ctx.saveMetadata()` and does nothing else. Only metadata changes in this module, so `saveChat` is not called. Intercede's real-install sequence saves chat then metadata (`docs/api/sillytavern.md#chat-metadata`), and the `saveChat` leg belongs to the modules that edit `chat[]` messages — `capture` and `recovery`. There is no debounced variant here: the protocol's writes are request-scoped, not keystroke-scoped, and a debounced save could lose a freeze to a reload.
+`save(ctx)` awaits `ctx.saveMetadata()` and does nothing else. Only metadata changes in this module, so `saveChat` is not called. Intercede's real-install sequence saves chat then metadata (`docs/api/sillytavern.md#chat-metadata`), and the `saveChat` leg belongs to the module that edits `chat[]` messages — `recovery`. There is no debounced variant here: the protocol's writes are request-scoped, not keystroke-scoped, and a debounced save could lose a freeze to a reload.
