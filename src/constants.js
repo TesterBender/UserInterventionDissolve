@@ -4,6 +4,12 @@ export const LOG_PREFIX = '[UID]';
 // metadata-key: chatMetadata namespace for canonical state → docs/modules/host.md#metadata-namespace
 export const METADATA_KEY = 'userInterventionDissolve';
 
+// state-shape: version field of the stored per-chat structure → docs/modules/state.md#shape
+export const STATE_VERSION = 1;
+
+// block-delimiter: write-side join string; read side is grammar's parser → docs/modules/grammar.md#block-delimiter
+export const BLOCK_DELIMITER = '\n\n';
+
 // settings-key: extensionSettings namespace → docs/modules/host.md#settings-namespace
 export const SETTINGS_KEY = 'userInterventionDissolve';
 

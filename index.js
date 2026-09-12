@@ -1,5 +1,6 @@
 import { getCtx, requireKeys, EVENT } from './src/host.js';
 import { LOG_PREFIX, INTERCEPTOR_GLOBAL, REQUIRED_KEYS } from './src/constants.js';
+import { getState } from './src/state.js';
 
 // interceptor-placeholder: real no-op, body filled by frontier brief → docs/modules/bootstrap.md#interceptor-placeholder
 // eslint-disable-next-line no-unused-vars
@@ -31,6 +32,16 @@ export function init() {
 
   ready = true;
   console.log(`${LOG_PREFIX} ready`);
+
+  // state-materialisation: one CHAT_CHANGED subscription plus one load-time call → docs/modules/bootstrap.md#state-materialisation
+  const chatChanged = EVENT(ctx).CHAT_CHANGED;
+  if (chatChanged !== undefined) {
+    ctx.eventSource.on(chatChanged, (chatId) => {
+      if (chatId === null || chatId === undefined) return;
+      getState();
+    });
+  }
+  if (Array.isArray(ctx.chat) && ctx.chat.length > 0) getState();
 }
 
 export function isReady() {
