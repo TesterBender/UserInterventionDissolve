@@ -30,6 +30,14 @@ The manifest's `generate_interceptor` key is wired to `globalThis[INTERCEPTOR_GL
 
 `index.js` still implements no protocol behaviour. It creates the container; every read and write of what is inside it belongs to `capture`, `frontier`, `freeze` and `recovery`.
 
+## Boundary subscriptions {#boundary-subscriptions}
+
+The second block at the end of a successful `init()` registers exactly five listeners for `src/boundary.js` (`docs/modules/boundary.md`): `GENERATION_STARTED` (records the generation type and clears the per-generation stop flag), `CHAT_COMPLETION_SETTINGS_READY` and `TEXT_COMPLETION_SETTINGS_READY` (install the reserved literal as the first stop string), `STREAM_TOKEN_RECEIVED` (the stop fallback) and `MESSAGE_RECEIVED` (the receipt-side trim).
+
+Each name is looked up on `EVENT(ctx)` (`docs/modules/host.md#event-alias`) and subscribed only when it is present; absent names are collected and reported in a single `console.warn` line prefixed with `LOG_PREFIX`, so a host build that lacks one event degrades to the remaining injection points instead of throwing at load and losing all of them. Listener errors are swallowed by the emitter (`docs/api/sillytavern.md#events`), so no handler is wrapped here.
+
+`index.js` holds wiring only. It contains no type test, no literal computation and no message edit — every decision lives in `src/boundary.js`, and the block is one import line and one loop, so that later briefs can add their own block without touching this one.
+
 ## Fake context omission sentinel {#fake-context-omit}
 
 `tests/helpers/fake-context.js`'s `installFakeContext(overrides)` shallow-merges `overrides` into the fake context object. The sentinel for "this key is absent" is the plain JS value `undefined`: any key in `overrides` whose value is `undefined` is `delete`d from the resulting context instead of being assigned, so `installFakeContext({ name1: undefined })` produces a context with no `name1` property at all (not a `name1: undefined` property — `requireKeys`'s presence test treats both the same, but deleting matches "absent" literally). Any other value shallow-overwrites the corresponding default.

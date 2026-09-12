@@ -51,12 +51,21 @@ function defaultContext() {
     extensionSettings: {},
     substituteParams: vi.fn((s) => s),
     stopGeneration: vi.fn(),
+    updateMessageBlock: vi.fn(),
   };
 }
 
 // message-shape: chat[] entry with ST's own defaults → docs/api/sillytavern.md#message-shape
 export function makeMessage(overrides = {}) {
   return { name: 'User', is_user: true, is_system: false, mes: '', extra: {}, ...overrides };
+}
+
+// message-shape: assistant chat[] entry with its swipe array → docs/api/sillytavern.md#message-shape
+export function makeAssistantMessage({ mes = '', swipes, swipe_id, extra } = {}) {
+  const message = { name: 'Anton', is_user: false, is_system: false, mes, extra: extra ?? {} };
+  if (swipes !== undefined) message.swipes = swipes;
+  if (swipe_id !== undefined) message.swipe_id = swipe_id;
+  return message;
 }
 
 let previous;
