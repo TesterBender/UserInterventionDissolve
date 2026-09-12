@@ -48,7 +48,7 @@ function isConsidered(message) {
   return typeof message.mes === 'string' && message.is_system !== true;
 }
 
-// regeneration-scope: swipe/regenerate drop the message under regeneration → docs/modules/derive.md#regeneration-scope
+// regeneration-scope: swipe drops the message under regeneration; regenerate already removed it → docs/modules/derive.md#regeneration-scope
 function excludedIndex(chat, options) {
   if (options?.excludeLastAssistant !== true) return -1;
   for (let i = chat.length - 1; i >= 0; i -= 1) {
