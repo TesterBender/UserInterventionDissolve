@@ -152,12 +152,12 @@ describe('getCtx', () => {
 describe('fake context shape', () => {
   afterEach(() => uninstall());
 
-  it('has every REQUIRED_KEYS entry and exactly eleven eventTypes constants', () => {
+  it('has every REQUIRED_KEYS entry and exactly fourteen eventTypes constants', () => {
     const ctx = installFakeContext();
     for (const key of REQUIRED_KEYS) {
       expect(ctx[key]).not.toBeUndefined();
     }
-    expect(Object.keys(ctx.eventTypes)).toHaveLength(11);
+    expect(Object.keys(ctx.eventTypes)).toHaveLength(14);
   });
 });
 

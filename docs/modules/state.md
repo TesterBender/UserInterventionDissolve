@@ -1,6 +1,6 @@
 # state
 Owns: INV-4 (frontier container), INV-6 (append-only frozen list) (docs/protocol/invariants.md)
-PLAN: §4, §11, §12, §16
+PLAN: §4, §10, §11, §12, §16, §19
 Depends on: host, constants, grammar
 
 `src/state.js` is the only module that reads or writes the extension's per-chat protocol state. Everything the protocol persists lives in one object under one key in `chatMetadata`: the append-only list of frozen spans and the single mutable frontier string. `capture`, `frontier`, `freeze` and `recovery` all go through this module; no other module touches `chatMetadata`. The module is pure apart from `getState` (which may materialise state on the context) and `save` (which calls `saveMetadata`), and it never names the ST global — it reaches the host only through `getCtx` (`docs/modules/host.md#single-door`).
@@ -48,3 +48,17 @@ Refusing to repair is safer than guessing. The structure is the model's entire c
 ## Save
 
 `save(ctx)` awaits `ctx.saveMetadata()` and does nothing else. Only metadata changes in this module, so `saveChat` is not called. Intercede's real-install sequence saves chat then metadata (`docs/api/sillytavern.md#chat-metadata`), and the `saveChat` leg belongs to the first module that edits a `chat[]` message — `recovery`. There is no debounced variant here: the protocol's writes are request-scoped, not keystroke-scoped, and a debounced save could lose a freeze to a reload.
+
+## Reseed while pristine {#reseed-while-pristine}
+
+The state is **pristine** while the manuscript has not started: `frozen` is an empty array **and** no `chat[]` entry carries `extra[METADATA_KEY].captured === true` or `extra[METADATA_KEY].appended === true`. Those two markers are the ones `capture` and `recovery` already write, so pristineness is read off existing bookkeeping; no third marker, flag or counter is introduced. A state whose `frozen` is missing or not an array is *not* pristine — an unknown-version structure is never re-seeded, in keeping with [Unknown version](#unknown-version)'s refuse-to-touch rule. A missing or non-array `chat` contributes no markers, so `frozen` alone decides and nothing throws.
+
+`isPristine(state, chat)` is that pure test. `reseedIfPristine(ctx)` reads the state through `getState`, returns `false` untouched when it is not pristine, and otherwise sets the frontier to `initialiseFromChat(ctx.chat).frontier` and saves. Only `.frontier` is taken from the freshly initialised state; `frozen` is never assigned or replaced, so the stored object stays the same reference and keeps its identity for every other holder.
+
+This is not a re-compile. `docs/protocol/host-mapping.md#s16-freeze` says a frozen span is compiled once and thereafter no longer tracks `chat[]` — but while the state is pristine nothing has been compiled. The initial frontier is not a compilation result; it is a convenience derived from the visible chat ([Initialise from chat](#initialise-from-chat)), and until the manuscript starts it must follow the collaborator's greeting choice: editorial authority is manuscript-wide within the mutable frontier (PLAN §10), and the opening exemplar is the greeting the collaborator actually chose (PLAN §19). If the collaborator swipes the greeting to an alternate, edits it, or deletes a message before anything has been captured, the model must be conditioned on the text on screen rather than the one that happened to be present when `getState` first materialised.
+
+The path becomes inert by construction. The first capture or append writes a marker (and the first freeze fills `frozen`), after which `isPristine` is permanently `false` and "compiled once, remembered" takes over at exactly the moment it begins to apply. There is therefore no mid-manuscript rebuild, repair or reconciliation path here.
+
+The save is unconditional on the pristine path rather than dirty-checked: pristine means re-seed. A comparison against the current frontier would buy one skipped `saveMetadata` on a no-op event at the cost of a second notion of "changed" that could disagree with the visible chat, and being wrong here means conditioning the model on text the collaborator is no longer looking at.
+
+Nothing about the live interaction is recorded. Which swipe was chosen, how many edits preceded it, which message was deleted — none of it is stored anywhere; only the resulting visible text is re-read (INV-10).
