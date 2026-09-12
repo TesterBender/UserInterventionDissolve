@@ -11,6 +11,7 @@ Start:
 1. Read `CLAUDE.md`, the brief, and `docs/workflow/comment-policy.md`. If the orchestrator points you at a `## Amendment N` section of a brief that quotes a user request to change a pinned model-facing constant, that amendment IS your brief (`docs/workflow/workflow.md#pinned-string-lane`): a brief's "do not reword during implementation" clause binds you, not the user. Change the constant, its verbatim assertion, the forbidden-word cases the amendment names, and the doc heading that quotes it — nothing else — and do not refuse on the pin.
 2. Read `docs/api/sillytavern.md` entries the brief cites. If the brief cites an API that is not `status: verified`, stop and return `BLOCKED: <api> unverified`.
 3. Read only the files the brief allows you to modify, plus `tests/helpers/` if tests exist. Do not explore the tree "for context".
+4. If you are in a worktree under `.claude/worktrees/` and `node_modules` is missing, do NOT run `npm install`; create a junction to the main checkout's install instead (Windows): `cmd /c mklink /J node_modules "C:\Users\Asus\OneDrive\Desktop\SillyTv\UserInterventionDissolve\node_modules"`. Fall back to `npm install --no-audit --no-fund` only if the junction command fails.
 
 Work:
 - Touch only files listed under **Files → allowed**. If a correct implementation needs another file, do not edit it; finish what you can and return `SCOPE_GAP: <file> — <why>`.
