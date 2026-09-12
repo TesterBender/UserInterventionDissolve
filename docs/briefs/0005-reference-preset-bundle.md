@@ -16,12 +16,29 @@ The repository ships a checked-in, human-readable SillyTavern preset bundle unde
       { "identifier": "main", "name": "Main Prompt", "role": "system", "system_prompt": true, "content": "<MANUSCRIPT_SYSTEM_PROMPT>" }
     ],
     "prompt_order": [
-      { "character_id": 100001, "order": [ { "identifier": "main", "enabled": true } ] }
+      {
+        "character_id": 100001,
+        "order": [
+          { "identifier": "main", "enabled": true },
+          { "identifier": "worldInfoBefore", "enabled": true },
+          { "identifier": "personaDescription", "enabled": true },
+          { "identifier": "charDescription", "enabled": true },
+          { "identifier": "charPersonality", "enabled": true },
+          { "identifier": "scenario", "enabled": true },
+          { "identifier": "enhanceDefinitions", "enabled": false },
+          { "identifier": "nsfw", "enabled": true },
+          { "identifier": "worldInfoAfter", "enabled": true },
+          { "identifier": "dialogueExamples", "enabled": true },
+          { "identifier": "chatHistory", "enabled": true },
+          { "identifier": "jailbreak", "enabled": true }
+        ]
+      }
     ]
   }
   ```
   Justification: no key is required at apply time — `onSettingsPresetChange` applies each key only `if (preset[key] !== undefined)` and skips the rest, so a minimal file imports and applies cleanly while leaving the user's other settings untouched (`#preset-openai-minimal-fields`). The `prompts[]` entry fields are the verified minimum for a plain text prompt (`#preset-openai-prompt-entry-shape`). `character_id` **must** be `100001`, the live openai `promptManagerModule` `dummyId`; a preset shipping only `100000` imports without error and renders an empty prompt order (same anchor).
-  - Marker entries (`chatHistory`, `dialogueExamples`, `charDescription`, …) are **not** in the template pending V5 below; see Verification needed.
+  - `prompts[]` contains **only** the `main` entry. The marker prompt objects (`chatHistory`, `dialogueExamples`, …) are auto-filled from `chatCompletionDefaultPrompts` by `checkForMissingPrompts`; do not ship them (`#preset-openai-prompt-order-markers`).
+  - The full default `order` sequence above is emitted even though omitting an identifier would not disable it (a missing order entry counts as enabled, same anchor): the shipped preset states stock semantics explicitly, so a user reading or tinkering with the file sees exactly what will be sent. The sequence and the single `enhanceDefinitions: false` flag are Default.json's `character_id: 100001` order verbatim.
 - Create `presets/manuscript-protocol.sysprompt.json` — a system-prompt template for the text-completion path, shape `{ name: "Manuscript Protocol", content: <MANUSCRIPT_SYSTEM_PROMPT> }`. Here the name *is* read from `data.name` by the master-import route, so the filename is free.
   **Recommendation, justified:** ship it. Its shape is fully verified (`isPossiblySystemPromptData` checks `name` + `content`, `#preset-master-import`), it is two fields generated from the same constant, and it gives text-completion users the identical register without a second brief; it adds no unverified surface.
 - Create `tools/build-preset.mjs`: exports a pure `buildPresets()` returning `{ '<filename>': <object> }` built from the imported constant plus a module-local frozen `TEMPLATE` object, and, when run as the entry module, writes each file to `presets/` with `JSON.stringify(obj, null, 2) + '\n'`. No CLI flags, no arguments, no network, no `node_modules` additions.
@@ -39,6 +56,7 @@ The repository ships a checked-in, human-readable SillyTavern preset bundle unde
 - Any runtime code: no `index.js` change, no `manifest.json` change, no event subscription, no `setExtensionPrompt`, no slash command, no `/preset` switching.
 - Any settings, toggle, or configurability; any second preset variant (per-model, "lite", "strict"); any per-character or per-chat preset.
 - Sampler values, `temperature`, token limits, streaming/connection keys, or any other `settingsToUpdate` key beyond `prompts` and `prompt_order`. Adding them would silently overwrite the user's own settings on import for no protocol benefit (`#preset-openai-minimal-fields`).
+- Shipping marker prompt objects in `prompts[]`, editing the default order sequence, reordering it to suit the protocol, or disabling any entry other than the stock `enhanceDefinitions: false`.
 - A `character_id: 100000` compatibility entry, or any second `prompt_order` entry.
 - Editing, rewording, wrapping, or appending to `MANUSCRIPT_SYSTEM_PROMPT`. The preset carries the register by carrying that text verbatim — no extra "style", "tone", or "author note" prose is added anywhere in the preset.
 - Context-template (`story_string`) and instruct-template files. Not needed to carry the prompt text; a later brief may add them if a text-completion user needs them.
@@ -54,20 +72,21 @@ The repository ships a checked-in, human-readable SillyTavern preset bundle unde
 - openai import route; filename becomes the preset name, top-level `name` ignored — docs/api/sillytavern.md#preset-openai-import-route (status: verified-negative on `performMasterImport`, verified on the `#import_oai_preset` route)
 - Every `settingsToUpdate` key optional at apply time — docs/api/sillytavern.md#preset-openai-minimal-fields (status: verified)
 - `prompts[]` main-entry fields and `prompt_order` shape; `character_id` sentinel 100001 — docs/api/sillytavern.md#preset-openai-prompt-entry-shape (status: verified)
+- Marker auto-fill and the Default.json order sequence — docs/api/sillytavern.md#preset-openai-prompt-order-markers (status: verified-negative on suppression; the order sequence is verified)
 - Import UI labels ("AI Response Configuration" → "Chat Completion Presets" → "Import preset") — docs/api/sillytavern.md#preset-openai-import-ui-path (status: verified)
 - sysprompt auto-detection (`name` + `content`) and naming from `data.name` — docs/api/sillytavern.md#preset-master-import (status: verified)
 - No API is *called* by this brief's code; the generator and tests run in Node with no SillyTavern present.
 
 ## Verification needed
-- **V5** — whether a `prompt_order[].order` listing only `main` suppresses chat history and the other core blocks: i.e. must the marker entries (`chatHistory`, `dialogueExamples`, `charDescription`, `charPersonality`, `scenario`, `personaDescription`, `worldInfoBefore`/`After`, …) also be listed in `order` (and present in `prompts[]` as `marker:true`) for the prompt manager to render them? `#preset-openai-prompt-entry-shape` establishes that an unmatched `character_id` renders nothing, but does not state what an order containing only `main` renders. Needed: the exact identifier list and enabled-state a minimal working preset must carry.
-  - This blocks **only** the final content of `presets/Manuscript Protocol.json`. If the answer is "yes", the generator's template gains those identifiers (marker entries, no `content`) and nothing else; if "no", the template above ships as written. The generator, the sysprompt file, the tests, the docs and the README are unblocked and may be implemented first.
+- (empty — all items resolved.)
 
 ## Acceptance
 - [ ] `npm run build:preset` is idempotent: running it twice in a row leaves the working tree unchanged.
 - [ ] Every file in `presets/` parses as JSON and is 2-space-indented with a single trailing newline.
-- [ ] `presets/Manuscript Protocol.json` contains `MANUSCRIPT_SYSTEM_PROMPT` verbatim as the `content` of exactly one `prompts[]` entry, and that entry is `{identifier:"main", name, role:"system", system_prompt:true, content}`.
-- [ ] `prompt_order` has exactly one element and `prompt_order[0].character_id === 100001` (strictly the number, not the string), and `prompt_order[0].order` contains `{identifier:"main", enabled:true}`.
-- [ ] `presets/Manuscript Protocol.json` has no top-level `name` key and no `settingsToUpdate` key other than `prompts` and `prompt_order` (assert the top-level key set exactly).
+- [ ] `presets/Manuscript Protocol.json` contains `MANUSCRIPT_SYSTEM_PROMPT` verbatim as the `content` of exactly one `prompts[]` entry, and `prompts` has length 1 with that entry equal to `{identifier:"main", name:"Main Prompt", role:"system", system_prompt:true, content}`.
+- [ ] `prompt_order` has exactly one element and `prompt_order[0].character_id === 100001` (strictly the number, not the string).
+- [ ] `prompt_order[0].order.map(e => e.identifier)` deep-equals exactly `["main","worldInfoBefore","personaDescription","charDescription","charPersonality","scenario","enhanceDefinitions","nsfw","worldInfoAfter","dialogueExamples","chatHistory","jailbreak"]`, and every entry has `enabled === true` except `enhanceDefinitions`, which has `enabled === false`.
+- [ ] `presets/Manuscript Protocol.json` has no top-level `name` key and no key other than `prompts` and `prompt_order` (assert the top-level key set exactly).
 - [ ] The openai file's basename without extension equals the intended preset name, and `README.md` names that same string.
 - [ ] `presets/manuscript-protocol.sysprompt.json` deep-equals `{ name: "Manuscript Protocol", content: MANUSCRIPT_SYSTEM_PROMPT }`.
 - [ ] Staleness test: `tests/preset.test.js` deep-equals each committed `presets/*.json` against the corresponding `buildPresets()` output and fails if the constant is edited without regenerating.
@@ -83,5 +102,6 @@ The repository ships a checked-in, human-readable SillyTavern preset bundle unde
 - `docs/modules/preset.md#why-a-preset` — why delivery is a downloadable reference preset rather than a runtime injection: the register lives in the prompt text, and a preset is inspectable and tinkerable by the user and other authors (user decision, 2026-09-12); programmatic install is deferred to brief 0006.
 - `docs/modules/preset.md#not-the-continuation-string` — that `CONTINUATION_CONTROL` is deliberately absent, because it is the reconstructed user turn at the active edge (PLAN §13, `docs/protocol/host-mapping.md#s13-continuation`, INV-5) and must have exactly one byte-identical source in `frontier`/`continuation`.
 - `docs/modules/preset.md#template-fields` — each shipped key traced to its `docs/api/sillytavern.md` anchor; why nothing else is shipped (missing keys are skipped, extra keys would overwrite the user's settings); why `character_id` is `100001` and what breaks if it is `100000`.
+- `docs/modules/preset.md#default-order-and-markers` — why the full stock order is written out although omission would not disable anything, and why the marker prompt objects are left to ST's auto-fill (`#preset-openai-prompt-order-markers`).
 - `docs/modules/preset.md#filename-is-the-preset-name` — the openai import route takes the name from the filename and ignores top-level `name`, so renaming the file renames the preset; the sysprompt file is the opposite case.
 - `README.md#import-the-reference-preset` — the verified UI steps and the note that the extension need not be installed to use the preset.
