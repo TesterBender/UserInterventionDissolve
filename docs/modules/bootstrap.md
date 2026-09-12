@@ -51,3 +51,11 @@ Capture adds one name to the same guarded subscription loop the boundary block a
 The handler passes only the event payload — the message index — and lets `captureMessage` take a fresh context by default (`docs/api/sillytavern.md#getcontext`); it captures no `ctx` and assumes nothing else about the payload. Listener errors are swallowed by the emitter (`docs/api/sillytavern.md#events`), so there is no try/catch and no extra logging.
 
 `index.js` still holds wiring only. It contains no message test, no transformation and no save — every decision, including which messages are capture input and how the text becomes a manuscript block, lives in `src/capture.js`. Capture's whole cost in the entry file is one import line and one entry in the handler map.
+
+## Settings drawer wiring {#settings-drawer-wiring}
+
+`init()` calls `renderSettings(ctx)` once, as its last statement, after the capability gate has passed and `ready` is set. The call is unconditional and unguarded: the context is known complete by then (`docs/api/sillytavern.md#context-at-load`), and `renderSettings` itself handles both the absent-container case and a repeat call (`docs/modules/ui-settings.md#container`). Its return value is discarded — nothing in `index.js` holds a reference to the drawer.
+
+The status line is refreshed by one added statement, not by a new subscription: the existing `CHAT_CHANGED` handler (see [State materialisation](#state-materialisation)) calls `refreshReservedLiteral(getCtx())` as its **first** statement, ahead of the nullish-`chatId` early return. The order matters. The persona can change together with the chat, and closing a chat (payload `null`) is exactly the case where the displayed literal is most likely to be stale; state materialisation must still skip that case, but the status line must stay honest when no chat is open. Refreshing is a `textContent` write against an element that may not exist, so it costs nothing when the drawer was never rendered (`docs/modules/ui-settings.md#status-line`).
+
+`index.js` holds no drawer logic: one import, one render call, one refresh call. What the drawer contains, where it attaches, what the button does and how failures are reported all live in `src/ui/settings.js`.

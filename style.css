@@ -1,2 +1,43 @@
-.uid-root {
+.uid-settings .inline-drawer-content {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+
+.uid-settings-section {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+
+.uid-settings-section + .uid-settings-section {
+  margin-top: 14px;
+}
+
+.uid-settings-heading {
+  font-size: 0.85em;
+  font-weight: bold;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+  color: var(--SmartThemeEmColor, rgb(145, 145, 145));
+}
+
+.uid-settings-note {
+  color: var(--SmartThemeEmColor, rgb(145, 145, 145));
+}
+
+.uid-settings-actions {
+  display: flex;
+  justify-content: flex-end;
+  gap: 8px;
+  border-top: 1px solid var(--SmartThemeBorderColor, rgba(145, 145, 145, 0.3));
+}
+
+.uid-settings-status {
+  font-family: monospace;
+}
+
+.uid-settings .menu_button {
+  width: auto;
+  white-space: nowrap;
 }
