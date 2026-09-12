@@ -1,5 +1,5 @@
 # Brief 0005 — reference preset bundle: ship the system prompt as an importable SillyTavern preset
-Status: implemented
+Status: done
 Complexity: high
 PLAN sections: §13 (continuation control is a separate, semantically boring, byte-identical message authorizing more manuscript; the intended reading is `[manuscript] + CONTINUE`, not submit→judge→installment — this is why the continuation string is *not* preset material)
 Invariants touched: INV-5 (the continuation seam is a reconstructed turn, not a preset field), INV-9 / `docs/protocol/invariants.md#enforcement-model` (all semantic grammar is carried by prompt text, so the delivery vehicle for that text is protocol-relevant)
