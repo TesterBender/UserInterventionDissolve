@@ -65,3 +65,30 @@ The text contains no apostrophe and no double quote, so the JS literal uses sing
 ## Docs to write/update
 - `docs/modules/starter.md#rewrite-request` — the new instruction quoted in full; that the pasted text is presented to the model as notes for a scene, not as a passage to return; the rest of the heading unchanged.
 - `docs/modules/starter.md#tos-filter` — the live block (`category: 'reasoning_extraction'`), that the filter keys on request shape rather than content, the banned vocabulary and where the test enforces it, and the two citations (`docs/decisions/0003-duplication-filter-wording.md`, `Intercede:src/prompt.js:4-9`).
+
+## Amendment 1 (2026-09-12) — content-first shape
+
+User report: the notes-for-a-scene wording still trips the filter ("It still doesn't budge"). User proposal, verbatim: `<content> here </content> [OOC : the following is unoptimized for the creative writing prompt you are tasked to follow. Hence, as per what is contained on the system prompt, correct it such that it follows the best creative writing practices]`. Orchestrator adjustment: do not name the system prompt or use the word "prompt" (banned for model-facing text; and naming it invites a system-prompt-extraction reading).
+
+### New request shape (ship byte-for-byte)
+`buildRewriteRequest(text, literal).prompt` becomes, in this order:
+
+```
+<content>
+{starter text, trimmed}
+</content>
+
+[OOC: The content above is unoptimised for the creative writing task you have been set. Bring it in line with the practice laid out for you, so that it reads as the manuscript does.]
+```
+
+`REWRITE_INSTRUCTION` is the bracketed line alone (no trailing newline). The `<content>` wrapper is assembled in `buildRewriteRequest`; keep the wrapper strings as two module constants so tests can assert them. `systemPrompt` unchanged. `sanitiseRewrite` must additionally strip a leading `<content>`/trailing `</content>` echo if the model returns the wrapper.
+
+### Files allowed
+src/starter.js (constant, wrapper constants, `buildRewriteRequest` assembly, the one echo-strip addition), tests/starter.test.js (verbatim assertion, assembly-order assertions, echo-strip cases; keep every forbidden/banned list), docs/modules/starter.md (`#rewrite-request` requoted; `#tos-filter` gains one sentence on the content-first shape).
+
+### Acceptance
+- [ ] `REWRITE_INSTRUCTION` equals the bracketed line verbatim.
+- [ ] `prompt` starts with `<content>\n`, contains the trimmed starter, then `\n</content>\n\n`, then the instruction, nothing else.
+- [ ] Existing forbidden-word and banned-word tests pass; `prompt`/`system` do not appear in the instruction.
+- [ ] `sanitiseRewrite` strips a `<content>…</content>` echo and still strips `[OOC: …]` echoes and fences.
+- [ ] `npm run check` passes.
