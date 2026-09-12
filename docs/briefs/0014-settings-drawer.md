@@ -1,5 +1,5 @@
 # Brief 0014 — minimal settings drawer: description, preset-import hint, one-click install, reserved-literal status
-Status: draft
+Status: implemented
 Complexity: high
 PLAN sections: §8 (the hard boundary is keyed to the bare reserved tag literal `Mara:`, derived from the externally authored character — the drawer displays that literal so the collaborator can see which tag is protected, and nothing else about it), §23 (host requirements: "enforce a hard external-character boundary" and "merge external text into manuscript-bearing context" are behaviours, not settings — the host list contains no configuration surface, which is why this drawer configures nothing)
 Invariants touched: INV-2 (the drawer *reports* the reserved literal; it must never let anyone set, override or store it), INV-9 / `docs/protocol/invariants.md#enforcement-model` (the semantic grammar is carried by the prompt text, which is why the only action in the drawer is installing the preset that carries it)
@@ -68,22 +68,22 @@ SillyTavern's Extensions panel gains one drawer for this extension containing ex
 - (empty — `#settings-container`, `#inline-drawer` and `#toastr` all landed as `verified` on 2026-09-12.)
 
 ## Acceptance
-- [ ] `renderSettings(ctx)` appends exactly one `#uid_settings` root into `#extensions_settings2` when both containers exist, into `#extensions_settings` when only it exists, and appends nothing and returns `null` when neither exists.
-- [ ] Calling `renderSettings(ctx)` twice leaves exactly one `#uid_settings` element in the document and adds no second click listener (a single click after two renders calls `savePreset` once).
-- [ ] The root contains the host drawer skeleton exactly once: one `.inline-drawer`, one `.inline-drawer-toggle.inline-drawer-header` with a `.inline-drawer-icon.fa-solid.fa-circle-chevron-down.down`, one `.inline-drawer-content`; no listener is registered on the toggle by this module.
-- [ ] The rendered drawer contains, in order: a description block, a hint block whose text contains `AI Response Configuration`, `Chat Completion Presets`, `Import preset` and `presets/Manuscript Protocol.json`, one `button.menu_button#uid_install_preset`, and `#uid_reserved_literal`. It contains no `input`, `select`, `textarea`, or second `button`.
-- [ ] Clicking the button calls `ctx.getPresetManager` exactly once with `'openai'`, then `savePreset` exactly once with exactly two arguments: `'Manuscript Protocol'` and an object that deep-equals `buildPresets()['Manuscript Protocol.json']` **and** deep-equals `JSON.parse(readFileSync('presets/Manuscript Protocol.json'))`.
-- [ ] A rejecting `savePreset` produces no unhandled rejection, leaves the DOM unchanged, and `installReferencePreset` resolves `false`; a context with no `getPresetManager` resolves `false` without throwing and without calling anything.
-- [ ] With a stub `globalThis.toastr`, success calls `toastr.success` and failure calls `toastr.error`, each once, with the message as the first argument; with `toastr` absent both paths complete without throwing.
-- [ ] `#uid_reserved_literal` shows the literal from `reservedLiteral(ctx)` (e.g. `Mara:`) after render; with a persona that yields `''` it shows the fixed no-persona sentence and no bare `:`.
-- [ ] Changing the fake context's persona and calling `refreshReservedLiteral(ctx)` updates the text; calling it when no drawer has been rendered is a silent no-op.
-- [ ] With `#extensions_settings2` present in the document, importing `index.js` under `installFakeContext()` renders the drawer once, and emitting `CHAT_CHANGED` — both with a chat id and with `null` — refreshes the status line without throwing.
-- [ ] `src/ui/settings.js` contains no occurrence of `SillyTavern`, no `innerHTML`, no `jQuery`/`$(`, and no reference to `extensionSettings` or `saveSettingsDebounced`.
-- [ ] `src/preset-template.js` imports nothing from `node:*` and has no top-level side effect; `npm run build:preset` run twice leaves the working tree unchanged and `presets/*.json` byte-identical to the committed files.
-- [ ] `tests/preset.test.js` passes with only the import path changed and the one extended assertion; `presets/` is not modified by this brief.
-- [ ] `style.css` defines only `uid-`prefixed selectors (plus host classes qualified by a `uid-` ancestor), uses `var(--SmartTheme*, <fallback>)` for every colour, and contains no `!important`.
-- [ ] `npm run check` passes.
-- [ ] every new pointer comment resolves (`node tools/check-comments.mjs`).
+- [x] `renderSettings(ctx)` appends exactly one `#uid_settings` root into `#extensions_settings2` when both containers exist, into `#extensions_settings` when only it exists, and appends nothing and returns `null` when neither exists.
+- [x] Calling `renderSettings(ctx)` twice leaves exactly one `#uid_settings` element in the document and adds no second click listener (a single click after two renders calls `savePreset` once).
+- [x] The root contains the host drawer skeleton exactly once: one `.inline-drawer`, one `.inline-drawer-toggle.inline-drawer-header` with a `.inline-drawer-icon.fa-solid.fa-circle-chevron-down.down`, one `.inline-drawer-content`; no listener is registered on the toggle by this module.
+- [x] The rendered drawer contains, in order: a description block, a hint block whose text contains `AI Response Configuration`, `Chat Completion Presets`, `Import preset` and `presets/Manuscript Protocol.json`, one `button.menu_button#uid_install_preset`, and `#uid_reserved_literal`. It contains no `input`, `select`, `textarea`, or second `button`.
+- [x] Clicking the button calls `ctx.getPresetManager` exactly once with `'openai'`, then `savePreset` exactly once with exactly two arguments: `'Manuscript Protocol'` and an object that deep-equals `buildPresets()['Manuscript Protocol.json']` **and** deep-equals `JSON.parse(readFileSync('presets/Manuscript Protocol.json'))`.
+- [x] A rejecting `savePreset` produces no unhandled rejection, leaves the DOM unchanged, and `installReferencePreset` resolves `false`; a context with no `getPresetManager` resolves `false` without throwing and without calling anything.
+- [x] With a stub `globalThis.toastr`, success calls `toastr.success` and failure calls `toastr.error`, each once, with the message as the first argument; with `toastr` absent both paths complete without throwing.
+- [x] `#uid_reserved_literal` shows the literal from `reservedLiteral(ctx)` (e.g. `Mara:`) after render; with a persona that yields `''` it shows the fixed no-persona sentence and no bare `:`.
+- [x] Changing the fake context's persona and calling `refreshReservedLiteral(ctx)` updates the text; calling it when no drawer has been rendered is a silent no-op.
+- [x] With `#extensions_settings2` present in the document, importing `index.js` under `installFakeContext()` renders the drawer once, and emitting `CHAT_CHANGED` — both with a chat id and with `null` — refreshes the status line without throwing.
+- [x] `src/ui/settings.js` contains no occurrence of `SillyTavern`, no `innerHTML`, no `jQuery`/`$(`, and no reference to `extensionSettings` or `saveSettingsDebounced`.
+- [x] `src/preset-template.js` imports nothing from `node:*` and has no top-level side effect; `npm run build:preset` run twice leaves the working tree unchanged and `presets/*.json` byte-identical to the committed files.
+- [x] `tests/preset.test.js` passes with only the import path changed and the one extended assertion; `presets/` is not modified by this brief.
+- [x] `style.css` defines only `uid-`prefixed selectors (plus host classes qualified by a `uid-` ancestor), uses `var(--SmartTheme*, <fallback>)` for every colour, and contains no `!important`.
+- [x] `npm run check` passes.
+- [x] every new pointer comment resolves (`node tools/check-comments.mjs`).
 
 ## Docs to write/update
 - `docs/modules/ui-settings.md` (new; header block `Owns: —`, `PLAN: §8, §23`, `Depends on: host, boundary, preset-template, constants`) with one heading per pointer comment written in `src/ui/settings.js`:

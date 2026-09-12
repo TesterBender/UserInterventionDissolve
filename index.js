@@ -9,6 +9,7 @@ import {
   onMessageReceived,
 } from './src/boundary.js';
 import { captureMessage } from './src/capture.js';
+import { renderSettings, refreshReservedLiteral } from './src/ui/settings.js';
 
 // interceptor-placeholder: real no-op, body filled by frontier brief → docs/modules/bootstrap.md#interceptor-placeholder
 // eslint-disable-next-line no-unused-vars
@@ -45,6 +46,8 @@ export function init() {
   const chatChanged = EVENT(ctx).CHAT_CHANGED;
   if (chatChanged !== undefined) {
     ctx.eventSource.on(chatChanged, (chatId) => {
+      // settings-drawer-wiring: status refresh runs ahead of the nullish guard → docs/modules/bootstrap.md#settings-drawer-wiring
+      refreshReservedLiteral(getCtx());
       if (chatId === null || chatId === undefined) return;
       getState();
     });
@@ -73,6 +76,8 @@ export function init() {
   if (absent.length > 0) {
     console.warn(`${LOG_PREFIX} absent events: ${absent.join(', ')}`);
   }
+
+  renderSettings(ctx);
 }
 
 export function isReady() {

@@ -4,8 +4,11 @@ import path from 'node:path';
 import { installFakeContext, uninstall } from './helpers/fake-context.js';
 import { REQUIRED_KEYS, LOG_PREFIX, INTERCEPTOR_GLOBAL } from '../src/constants.js';
 
-function listSrcFiles() {
-  return fs.readdirSync(path.resolve('src')).map((name) => path.join('src', name));
+function listSrcFiles(dir = 'src') {
+  return fs.readdirSync(path.resolve(dir), { withFileTypes: true }).flatMap((entry) => {
+    const rel = path.join(dir, entry.name);
+    return entry.isDirectory() ? listSrcFiles(rel) : [rel];
+  });
 }
 
 describe('manifest.json', () => {
@@ -180,9 +183,16 @@ describe('SillyTavern identifier leak', () => {
 });
 
 describe('style.css', () => {
-  it('contains only the one prefixed root class', () => {
-    const css = fs.readFileSync(path.resolve('style.css'), 'utf8');
+  const css = fs.readFileSync(path.resolve('style.css'), 'utf8');
+
+  it('contains only prefixed selectors, themed colours and no !important', () => {
     const selectors = [...css.matchAll(/([^{}]+)\{/g)].map((m) => m[1].trim());
-    expect(selectors).toEqual(['.uid-root']);
+    expect(selectors.length).toBeGreaterThan(0);
+    for (const selector of selectors) expect(selector.startsWith('.uid-')).toBe(true);
+    for (const declaration of css.match(/^\s*(?:color|background|border-top):.*$/gm) ?? []) {
+      expect(declaration).toContain('var(--SmartTheme');
+    }
+    expect(css).not.toContain('!important');
+    expect(css).not.toContain('@media');
   });
 });

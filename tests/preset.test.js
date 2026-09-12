@@ -2,7 +2,7 @@ import { describe, it, expect } from 'vitest';
 import { readFileSync, readdirSync, statSync } from 'node:fs';
 import { join } from 'node:path';
 import { execFileSync } from 'node:child_process';
-import { buildPresets } from '../tools/build-preset.mjs';
+import { buildPresets } from '../src/preset-template.js';
 import { MANUSCRIPT_SYSTEM_PROMPT, CONTINUATION_CONTROL } from '../src/prompt.js';
 
 const PRESET_DIR = 'presets';
@@ -96,6 +96,7 @@ describe('the continuation control is not preset material', () => {
 
   it('is not imported by the generator', () => {
     expect(readFileSync('tools/build-preset.mjs', 'utf8')).not.toContain('CONTINUATION_CONTROL');
+    expect(readFileSync('src/preset-template.js', 'utf8')).not.toContain('CONTINUATION_CONTROL');
   });
 });
 
