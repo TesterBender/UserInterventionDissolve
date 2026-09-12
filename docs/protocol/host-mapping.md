@@ -11,11 +11,11 @@ SillyTavern's own `chat[]` remains the user-facing view and is left honest: the 
 | PLAN | Requirement | ST mechanism | Module |
 |---|---|---|---|
 | §8 | Hard external-character boundary | stop strings via CHAT_COMPLETION_SETTINGS_READY / TEXT_COMPLETION_SETTINGS_READY; stream-side fallback via STREAM_TOKEN_RECEIVED + stopGeneration | `boundary` |
-| §9, §10 | Capture collaborator input before it becomes persistent raw history | no pre-send hook exists; capture at MESSAGE_SENT into canonical state, strip at prompt build | `capture` |
+| §9, §10 | Capture collaborator input before it becomes persistent raw history | no pre-send hook exists; the composer message lands in `chat[]` verbatim and is transformed at prompt build | `derive` |
 | §12 | Reconstruct model-visible history every request | `generate_interceptor` (both APIs) + CHAT_COMPLETION_PROMPT_READY in-place / GENERATE_AFTER_COMBINE_PROMPTS for dryRun parity | `frontier` |
 | §13 | Insert neutral continuation control | same reconstruction; last message is the canonical continuation string | `continuation` |
 | §14 | Classify generation outcome, roll back incomplete blocks | no finish reason exposed; classify from text; edit message + `swipes[swipe_id]`, `saveChat` | `recovery` |
-| §15 | Barge-in | same path as §9 (a user message at any time is a capture) | `capture` |
+| §15 | Barge-in | same path as §9 (a user message at any time is transformed the same way) | `derive` |
 | §16, §17 | Freeze at low-salience block boundary, append-only | pure function over canonical state; persist via `saveMetadata` | `freeze` |
 | §5–§7, §20 | Grammar structure (blocks, tag headers, completeness) | pure functions, no ST API | `grammar` |
 | §5–§7, §20, §21 | Grammar semantics, aggregate ownership, lint | system prompt via the prompt manager / `setExtensionPrompt`, seed span, collaborator discipline — not code (`docs/protocol/invariants.md#enforcement-model`) | `prompt` (text asset), `ui` (editor) |
@@ -32,12 +32,9 @@ SillyTavern's own `chat[]` remains the user-facing view and is left honest: the 
 
 ## §9 — Capture {#s9-capture}
 
-There is no event that lets an extension rewrite or cancel the composer text before it becomes a chat message (`#pre-send-hook`). Two compliant paths; the brief for `capture` chooses one and records a decision:
+There is no event that lets an extension rewrite or cancel the composer text before it becomes a chat message (`#pre-send-hook`). Capture is implicit in derivation: the collaborator types Mara's block in the normal composer, it lands in `chat[]` as a user message, and **nothing happens at send** — no handler runs, no marker is written, no id is assigned early. The message is transformed into a tagged manuscript block at request time by `toManuscriptBlock` (`docs/modules/derive.md#transformation-rule`) inside the derivation (`docs/modules/derive.md#derivation-rule`), so a turn the collaborator later edits is re-tagged from its current text. The user turn as such never reaches the model, because the reconstruction is total. The visible chat stays a faithful log.
 
-1. **Composer path.** The collaborator types Mara's block in the normal composer. It lands in `chat[]` as a user message and MESSAGE_SENT fires with its index. `capture` marks it (`extra.<ext>.captured = true`) and gives it an id; it copies nothing. The transform into a tagged manuscript block happens at prompt build, once per request, inside the derivation (`docs/modules/derive.md#derivation-rule`), so a turn the collaborator later edits is re-tagged from its current text. The user turn as such never reaches the model, because the reconstruction is total. The visible chat stays a faithful log.
-2. **Own input surface.** As Intercede did, an extension-owned textarea collects the block and pushes it into canonical state directly, optionally mirroring it into `chat[]` as an assistant-side message for display. Avoids relying on MESSAGE_SENT ordering but adds UI.
-
-Either way, INV-3 holds because the model-visible history is rebuilt from canonical state, never from `chat[]`. Editing authority (§10) is an edit of the frontier in canonical state via the extension UI; it does not go through the composer.
+INV-3 holds because the model-visible history is rebuilt from canonical state, never from `chat[]`. Editing authority (§10) is an edit of the frontier in canonical state via the extension UI; it does not go through the composer.
 
 ## §12 — Frontier reconstruction {#s12-frontier}
 

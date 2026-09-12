@@ -3,9 +3,51 @@ import fs from 'node:fs';
 import path from 'node:path';
 import { makeMessage, makeAssistantMessage } from './helpers/fake-context.js';
 import { METADATA_KEY, BLOCK_DELIMITER } from '../src/constants.js';
-import { ensureMessageId, assignIds, deriveFrontier } from '../src/derive.js';
+import { ensureMessageId, assignIds, deriveFrontier, toManuscriptBlock } from '../src/derive.js';
 
 const LITERAL = 'Mara:';
+
+describe('toManuscriptBlock', () => {
+  it('prefixes the reserved literal with a single space', () => {
+    expect(toManuscriptBlock('sets the cup down. "No."', LITERAL)).toBe('Mara: sets the cup down. "No."');
+  });
+
+  it('leaves an already-tagged block byte-identical', () => {
+    const text = 'Mara: sets the cup down.';
+    expect(toManuscriptBlock(text, LITERAL)).toBe(text);
+  });
+
+  it('recognises the tag in case and space variants', () => {
+    expect(toManuscriptBlock('mara: sets the cup down.', LITERAL)).toBe('mara: sets the cup down.');
+    expect(toManuscriptBlock('Mara : sets the cup down.', LITERAL)).toBe('Mara : sets the cup down.');
+  });
+
+  it('leaves a tagged two-block input untouched, second block included', () => {
+    const text = 'Mara: she stands.\n\nThe room settles.';
+    expect(toManuscriptBlock(text, LITERAL)).toBe(text);
+  });
+
+  it('prefixes an untagged two-block input on the first block only', () => {
+    expect(toManuscriptBlock('she stands.\n\nThe room settles.', LITERAL))
+      .toBe('Mara: she stands.\n\nThe room settles.');
+  });
+
+  it('prefixes a block tagged with a different actor', () => {
+    expect(toManuscriptBlock('Anton: he looks up.', LITERAL)).toBe('Mara: Anton: he looks up.');
+  });
+
+  it('returns the empty string for empty, blank, undefined and non-string input', () => {
+    expect(toManuscriptBlock('', LITERAL)).toBe('');
+    expect(toManuscriptBlock('   \n ', LITERAL)).toBe('');
+    expect(toManuscriptBlock(undefined, LITERAL)).toBe('');
+    expect(toManuscriptBlock(42, LITERAL)).toBe('');
+  });
+
+  it('returns trimmed text untagged when the literal is empty', () => {
+    expect(toManuscriptBlock('  she stands.  ', '')).toBe('she stands.');
+    expect(toManuscriptBlock('  she stands.  ', undefined)).toBe('she stands.');
+  });
+});
 
 function withId(message, id) {
   message.extra = message.extra ?? {};

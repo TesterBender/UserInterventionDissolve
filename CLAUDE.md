@@ -30,7 +30,7 @@ No settings/toggles unless PLAN.txt names the choice as host-selectable. No new 
 
 ```
 manifest.json, index.js, style.css   extension entry (SillyTavern loads these)
-src/                                  grammar, prompt, host, constants, state, boundary, capture, frontier, freeze, recovery, preset-template, ui/settings
+src/                                  grammar, prompt, host, constants, state, boundary, frontier, freeze, recovery, preset-template, ui/settings
 presets/                              generated reference preset (npm run build:preset; never hand-edited)
 tests/                                vitest; ST faked as globalThis.SillyTavern only
 tools/check-comments.mjs              comment-pointer enforcement (hook + npm run check:comments)

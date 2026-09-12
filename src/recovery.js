@@ -2,7 +2,7 @@ import { getCtx } from './host.js';
 import { METADATA_KEY } from './constants.js';
 import { isTrailingBlockComplete, truncateToLastCompleteBlock } from './grammar.js';
 import { reservedLiteral, findBoundary, trimAtBoundary } from './boundary.js';
-import { ensureMessageId, assignIds, deriveFrontier } from './derive.js';
+import { assignIds, deriveFrontier } from './derive.js';
 import { getState, save } from './state.js';
 import { maybeFreeze } from './freeze.js';
 
@@ -38,11 +38,6 @@ export async function onMessageReceived(index, type, ctx = getCtx()) {
   if (message.is_user === true || message.is_system === true) return 'skipped';
 
   const mark = message.extra?.[METADATA_KEY] ?? {};
-  // resample-passes-the-guard: a new sample must be classified again → docs/modules/recovery.md#swipes
-  const isResample = type === 'swipe' || type === 'regenerate';
-
-  // receive-once: message-local flag, the only replay path this module sees → docs/modules/recovery.md#append
-  if (mark.received === true && !isResample) return 'skipped';
 
   const literal = reservedLiteral(ctx);
   const outcome = classifyOutcome(message.mes, literal, mark.boundary === true);
@@ -65,9 +60,6 @@ export async function onMessageReceived(index, type, ctx = getCtx()) {
     if (chatDirty) await ctx.saveChat();
     return outcome === 'incomplete' ? outcome : 'empty';
   }
-
-  ensureMessageId(message);
-  message.extra[METADATA_KEY] = { ...message.extra[METADATA_KEY], received: true };
 
   // assign-ids: once per batch, on the save this handler already makes → docs/modules/derive.md#message-ids
   assignIds(ctx.chat);

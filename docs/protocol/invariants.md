@@ -6,7 +6,7 @@ Condensed from PLAN.txt §26. This is the only protocol text the orchestrator ke
 |---|---|---|---|
 | INV-1 | Commitment occurs through ownership-safe tag blocks. | §5, §7 | `grammar` |
 | INV-2 | The model cannot generate the externally owned character's committing tag. | §8 | `boundary` |
-| INV-3 | Real collaborator input is transformed into ordinary manuscript content, never preserved as a character-bearing user turn. | §9, §10 | `capture` |
+| INV-3 | Real collaborator input is transformed into ordinary manuscript content, never preserved as a character-bearing user turn. | §9, §10 | `derive` |
 | INV-4 | The mutable frontier is reconstructed on every request so old live continuation seams disappear immediately. | §12 | `frontier` |
 | INV-5 | Only one current continuation-control seam remains at the active edge. | §12, §13 | `frontier`, `continuation` |
 | INV-6 | Frozen spans are append-only and cut only at complete block boundaries. | §16 | `freeze` |

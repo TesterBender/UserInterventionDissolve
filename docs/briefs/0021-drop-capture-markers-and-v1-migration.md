@@ -1,5 +1,5 @@
 # Brief 0021 — drop the capture module, the receipt markers and the v1 migration
-Status: draft
+Status: done
 Complexity: low
 PLAN sections: §9 (collaborator input is captured and transformed into manuscript text before it is merged — the transform, not the moment it happens, is what §9 requires), §10 (capture is character-specific, editing is manuscript-wide within the mutable frontier), §14 (four outcomes classified per generation; incomplete trailing blocks rolled back), §15 (barge-in is normalised exactly like a stop-triggered insertion, and the two must be indistinguishable after reconstruction)
 Invariants touched: INV-3, INV-8
@@ -77,18 +77,18 @@ Why each removal is safe, in one line each: derivation transforms **every** user
 
 ## Acceptance
 
-- [ ] `src/capture.js` and `tests/capture.test.js` do not exist; no file in `src/`, `index.js` or `tests/` imports `./capture.js`.
-- [ ] `toManuscriptBlock` is exported from `src/derive.js`, and every assertion of the moved `toManuscriptBlock` suite passes unchanged in `tests/derive.test.js`.
-- [ ] Emitting `MESSAGE_SENT` after loading `index.js` writes nothing to the message and calls neither `saveChat` nor `saveMetadata`; the next derivation still tags that message's text.
-- [ ] No source file under `src/` or `index.js` contains the string `captured` or `received` as a metadata key.
-- [ ] Calling `onMessageReceived` twice for the same complete message returns the same outcome both times and leaves `mes`, the id and the derived frontier identical after the second call, with no second frozen span pushed.
-- [ ] A message received with `type` `'swipe'` or `'regenerate'` whose text ends in an incomplete block is still rolled back (INV-8), with no type-specific branch in the module.
-- [ ] `src/state.js` exports exactly `advanceWatermark`, `createState`, `getState`, `pushFrozen`, `save`.
-- [ ] `getState` on a context whose metadata holds `{ version: 1, … }`, a version-less object, or `{ version: 99 }` returns a fresh `createState()` object, assigns it to `chatMetadata[METADATA_KEY]`, emits exactly one `console.warn` per stored object, and calls no save.
-- [ ] `getState` on a valid `version: 2` structure returns that same object identity, unchanged.
-- [ ] `docs/modules/capture.md` is gone and no non-brief file under `docs/` links to it.
-- [ ] `npm run check` passes.
-- [ ] every new pointer comment resolves (`node tools/check-comments.mjs`).
+- [x] `src/capture.js` and `tests/capture.test.js` do not exist; no file in `src/`, `index.js` or `tests/` imports `./capture.js`.
+- [x] `toManuscriptBlock` is exported from `src/derive.js`, and every assertion of the moved `toManuscriptBlock` suite passes unchanged in `tests/derive.test.js`.
+- [x] Emitting `MESSAGE_SENT` after loading `index.js` writes nothing to the message and calls neither `saveChat` nor `saveMetadata`; the next derivation still tags that message's text. Untestable as a new assertion in `tests/bootstrap.test.js`/`tests/state.test.js` per this brief's own instruction ("do not add new assertions for the absence"); guaranteed structurally instead — `index.js` registers no `MESSAGE_SENT` handler at all (grep-verified), so the emitter has no listener to run and nothing can be written; the next request's `deriveFrontier` still transforms the message's current text regardless (covered by `tests/derive.test.js`).
+- [x] No source file under `src/` or `index.js` contains the string `captured` or `received` as a metadata key (grep-verified).
+- [x] Calling `onMessageReceived` twice for the same complete message returns the same outcome both times and leaves `mes`, the id and the derived frontier identical after the second call, with no second frozen span pushed.
+- [x] A message received with `type` `'swipe'` or `'regenerate'` whose text ends in an incomplete block is still rolled back (INV-8), with no type-specific branch in the module.
+- [x] `src/state.js` exports exactly `advanceWatermark`, `createState`, `getState`, `pushFrozen`, `save`.
+- [x] `getState` on a context whose metadata holds `{ version: 1, … }`, a version-less object, or `{ version: 99 }` returns a fresh `createState()` object, assigns it to `chatMetadata[METADATA_KEY]`, emits exactly one `console.warn` per stored object, and calls no save.
+- [x] `getState` on a valid `version: 2` structure returns that same object identity, unchanged.
+- [x] `docs/modules/capture.md` is gone and no non-brief file under `docs/` links to it.
+- [x] `npm run check` passes.
+- [x] every new pointer comment resolves (`node tools/check-comments.mjs`).
 
 ## Docs to write/update
 
