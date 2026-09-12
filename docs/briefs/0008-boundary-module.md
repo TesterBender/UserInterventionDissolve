@@ -1,5 +1,5 @@
 # Brief 0008 — `boundary`: reserved-literal stop strings, stream fallback, receipt-side trim
-Status: implemented
+Status: done
 Complexity: high
 PLAN sections: §8 (generation must be terminated before the model can commit the external character's block; the stop is keyed to the reserved tag syntax itself — bare `Mara:` — not `\n\nMara:`, because the name may be the first token sequence of a generation), §14 "External-character boundary" (the collaborator receives the floor) and "Empty output at the boundary" (the model tried to place the external character immediately; the floor stays with the collaborator; do not force model text merely to avoid an empty generation), §15 (the collaborator may insert the external character at any valid block boundary; the stop sequence is one trigger for external authorship, not the sole permission mechanism)
 Invariants touched: INV-2 (the model cannot generate the externally owned character's committing tag — this module is its owner), INV-8 (named only to be refused here: rolling back an incomplete trailing block belongs to `recovery`, not to this brief)
@@ -100,3 +100,6 @@ Invariants touched: INV-2 (the model cannot generate the externally owned charac
   - `## Boundary marker {#boundary-marker}` — `extra[METADATA_KEY].boundary` is the floor signal later modules read; it is a message-local flag, not canonical state.
   - `## Barge-in is not gated here {#barge-in}` — §15: the stop is one trigger for external authorship, not the permission mechanism; this module never blocks or requires collaborator input.
 - `docs/modules/bootstrap.md` — new `## Boundary subscriptions {#boundary-subscriptions}`: which five events `init()` subscribes to, that each is guarded by presence on `EVENT(ctx)` with a single warning line for absent names, and that `index.js` holds wiring only — every decision lives in `src/boundary.js`.
+
+## Carry-forward (from scope audit)
+- `currentDryRun` and `currentType` in src/boundary.js are sticky between generations; a settings-ready event arriving without its own GENERATION_STARTED would inherit stale values (fail-open only if the stale value was dryRun or a skipped type). Not observed in ST 1.18.0 (docs/api/sillytavern.md#generation-started fires for every Generate call). If a later brief touches boundary, reset both on GENERATION_ENDED/GENERATION_STOPPED.
