@@ -48,7 +48,7 @@ export function deriveFrontier(chat, state, literal) {
     if (id !== null && frozenIds.has(id)) continue;
 
     const offset = watermark.offset;
-    const source = id !== null && id === watermark.messageId && Number.isFinite(offset) && offset > 0
+    const source = id === watermark.messageId && Number.isFinite(offset) && offset > 0
       ? message.mes.slice(offset)
       : message.mes;
 

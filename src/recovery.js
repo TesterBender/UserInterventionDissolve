@@ -66,8 +66,9 @@ export async function onMessageReceived(index, type, ctx = getCtx()) {
 
   ensureMessageId(message);
   message.extra[METADATA_KEY] = { ...message.extra[METADATA_KEY], received: true };
-
   // freeze-disabled: re-enabled with the watermark mapping → docs/modules/recovery.md#freeze-hookup
+
+  // assign-ids: once per batch, on the save this handler already makes → docs/modules/derive.md#message-ids
   assignIds(ctx.chat);
   await ctx.saveChat();
   return outcome;
