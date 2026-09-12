@@ -1,5 +1,5 @@
 # Brief 0002 — Remove the universal-tag detector from `grammar`
-Status: implemented
+Status: done
 Complexity: low
 PLAN sections: §5 (manuscript is atomic blocks, each tag or buffer; no lint duty stated), §7 (aggregate tags may not bypass individual ownership; universal tags such as `Everyone:` are "discouraged or forbidden" — a convention stated in prose, with no enforcement mechanism assigned to code)
 Invariants touched: INV-9 (already restated in docs/protocol/invariants.md#inv-9 as prompt+seed convention, not code), INV-1 (unchanged; named only because it is `grammar`'s other owned invariant)
