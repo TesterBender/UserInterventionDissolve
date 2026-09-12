@@ -1,5 +1,5 @@
 # Brief 0015 — starter reformatter: restructure a prose starter into manuscript form, output for copy-paste
-Status: draft
+Status: implemented
 Complexity: high
 PLAN sections: §19 (cold start: the first request lacks demonstrations, so a *manually prepared or hand-corrected* seed is recommended — substantial prose, tag/buffer alternation, the external character appearing naturally, no artificial handoff; this brief gives the collaborator a machine-assisted way to produce such an exemplar from an ordinary-prose starter, still hand-checked and hand-placed), §23 (host requirements are behaviours, and "request model continuation" is the only one this feature uses; it adds no host requirement and no configuration), §20 (text that becomes a persistent demonstration should be checked first, and the check is advisory to the human, never a gate — hence an output the collaborator reads and moves by hand)
 Invariants touched: INV-2 (the rewrite output must not contain a block committing the externally owned figure; the sanitiser drops such a block instead of letting it become a greeting that demonstrates the wrong thing), INV-3 / INV-10 (the rewrite is a side channel: `generate_interceptor` never runs for `generateRaw`, and nothing the call sends or returns enters `chat[]`, canonical state, capture, frontier, freeze or recovery), `docs/protocol/invariants.md#enforcement-model` (the rewrite instruction is prompt-level scene direction, not a code-enforced schema — `docs/decisions/0001-prompt-level-grammar.md`)
@@ -67,22 +67,22 @@ The extension drawer gains one more element group: a textarea for a starter writ
 - (empty — `#generateraw` and `#generatequietprompt` landed `verified` on 2026-09-12; `#alternate-greetings` is verified but deliberately unused.)
 
 ## Acceptance
-- [ ] `buildRewriteRequest(text, literal).systemPrompt` is `MANUSCRIPT_SYSTEM_PROMPT` by `Object.is`; `.prompt` starts with `REWRITE_INSTRUCTION`, contains the trimmed starter after exactly one blank line, and contains no `{{` macro.
-- [ ] `REWRITE_INSTRUCTION` fails none of the whole-word and substring lists in `tests/prompt.test.js:50-83` (the new test restates the same lists), names no character, and is a single `[OOC: …]` bracketed line.
-- [ ] `buildRewriteRequest('…', 'Mara:')` drops a starter block beginning `Mara:` from the embedded body and keeps a mid-block occurrence of the same literal; with `literal` `''` or nullish the starter is embedded unchanged.
-- [ ] `sanitiseRewrite` removes a leading `[OOC: …]` echo, a trailing one, an enclosing ``` fence (with and without a language word), and every block whose header is the reserved literal, while leaving every other block byte-identical and separated by one blank line; an all-reserved input returns `''`.
-- [ ] `restructureStarter(text, fakeCtx)` calls `ctx.generateRaw` exactly once with exactly one argument, an object whose own keys are exactly `prompt` and `systemPrompt` and whose values are those of `buildRewriteRequest`, and returns `sanitiseRewrite(rawResult, reservedLiteral(ctx))`.
-- [ ] A rejecting `generateRaw` resolves `''` with one `console.error` and no throw; a context missing `generateRaw` resolves `''` without calling anything.
-- [ ] `restructureStarter` touches nothing else on the fake context: `chat` is unchanged and `saveChat`, `saveMetadata`, `updateMessageBlock`, `substituteParams`-driven writes and any character field are never written; no event is emitted by this module.
-- [ ] The drawer renders exactly one `#uid_starter_input` with the placeholder `Paste a starter in ordinary prose`, one `#uid_starter_restructure`, one `#uid_starter_copy`, one `readOnly` `#uid_starter_output`, and the hint line `Paste into the character's Alternate Greetings.`; rendering twice still yields one of each and a single click still calls the underlying function once.
-- [ ] **Restructure** is disabled with an empty/whitespace input and enabled after an `input` event with content; **Copy** is disabled until the output is non-empty.
-- [ ] Clicking **Restructure** puts the sanitised text in `#uid_starter_output.value` and unhides it; a rewrite that resolves `''` leaves the output empty and hidden, leaves **Copy** disabled, and produces one error notification.
-- [ ] Clicking **Copy** calls `navigator.clipboard.writeText` once with the output value; with `navigator.clipboard` absent or rejecting it selects the output text instead and neither path throws or writes anything.
-- [ ] Nothing persists the input: after typing and re-rendering (or re-importing the module), the textarea is empty, and `extensionSettings`, `saveSettingsDebounced`, `chatMetadata` and `localStorage` were never written by either module.
-- [ ] `src/starter.js` and `src/ui/settings.js` contain no occurrence of `SillyTavern`, no `innerHTML`, no `jQuery`/`$(`, no `fetch`, and no `merge-attributes`.
-- [ ] `style.css` adds only `uid-`prefixed selectors (host classes qualified by a `uid-` ancestor), every colour a `var(--SmartTheme*, <fallback>)`, no `!important`.
-- [ ] `npm run check` passes.
-- [ ] every new pointer comment resolves (`node tools/check-comments.mjs`).
+- [x] `buildRewriteRequest(text, literal).systemPrompt` is `MANUSCRIPT_SYSTEM_PROMPT` by `Object.is`; `.prompt` starts with `REWRITE_INSTRUCTION`, contains the trimmed starter after exactly one blank line, and contains no `{{` macro.
+- [x] `REWRITE_INSTRUCTION` fails none of the whole-word and substring lists in `tests/prompt.test.js:50-83` (the new test restates the same lists), names no character, and is a single `[OOC: …]` bracketed line.
+- [x] `buildRewriteRequest('…', 'Mara:')` drops a starter block beginning `Mara:` from the embedded body and keeps a mid-block occurrence of the same literal; with `literal` `''` or nullish the starter is embedded unchanged.
+- [x] `sanitiseRewrite` removes a leading `[OOC: …]` echo, a trailing one, an enclosing ``` fence (with and without a language word), and every block whose header is the reserved literal, while leaving every other block byte-identical and separated by one blank line; an all-reserved input returns `''`.
+- [x] `restructureStarter(text, fakeCtx)` calls `ctx.generateRaw` exactly once with exactly one argument, an object whose own keys are exactly `prompt` and `systemPrompt` and whose values are those of `buildRewriteRequest`, and returns `sanitiseRewrite(rawResult, reservedLiteral(ctx))`.
+- [x] A rejecting `generateRaw` resolves `''` with one `console.error` and no throw; a context missing `generateRaw` resolves `''` without calling anything.
+- [x] `restructureStarter` touches nothing else on the fake context: `chat` is unchanged and `saveChat`, `saveMetadata`, `updateMessageBlock`, `substituteParams`-driven writes and any character field are never written; no event is emitted by this module.
+- [x] The drawer renders exactly one `#uid_starter_input` with the placeholder `Paste a starter in ordinary prose`, one `#uid_starter_restructure`, one `#uid_starter_copy`, one `readOnly` `#uid_starter_output`, and the hint line `Paste into the character's Alternate Greetings.`; rendering twice still yields one of each and a single click still calls the underlying function once.
+- [x] **Restructure** is disabled with an empty/whitespace input and enabled after an `input` event with content; **Copy** is disabled until the output is non-empty.
+- [x] Clicking **Restructure** puts the sanitised text in `#uid_starter_output.value` and unhides it; a rewrite that resolves `''` leaves the output empty and hidden, leaves **Copy** disabled, and produces one error notification.
+- [x] Clicking **Copy** calls `navigator.clipboard.writeText` once with the output value; with `navigator.clipboard` absent or rejecting it selects the output text instead and neither path throws or writes anything.
+- [x] Nothing persists the input: after typing and re-rendering (or re-importing the module), the textarea is empty, and `extensionSettings`, `saveSettingsDebounced`, `chatMetadata` and `localStorage` were never written by either module.
+- [x] `src/starter.js` and `src/ui/settings.js` contain no occurrence of `SillyTavern`, no `innerHTML`, no `jQuery`/`$(`, no `fetch`, and no `merge-attributes`.
+- [x] `style.css` adds only `uid-`prefixed selectors (host classes qualified by a `uid-` ancestor), every colour a `var(--SmartTheme*, <fallback>)`, no `!important`.
+- [x] `npm run check` passes.
+- [x] every new pointer comment resolves (`node tools/check-comments.mjs`).
 
 ## Docs to write/update
 - `docs/modules/starter.md` (new; header block `Owns: —`, `PLAN: §19, §20, §23`, `Depends on: host, prompt, grammar, boundary`) with one heading per pointer comment in `src/starter.js`:

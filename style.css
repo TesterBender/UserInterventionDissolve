@@ -41,3 +41,26 @@
   width: auto;
   white-space: nowrap;
 }
+
+.uid-starter-input,
+.uid-starter-output {
+  width: 100%;
+  box-sizing: border-box;
+  resize: vertical;
+  font-family: inherit;
+  font-size: inherit;
+}
+
+.uid-starter-output {
+  border: 1px solid var(--SmartThemeBorderColor, rgba(145, 145, 145, 0.3));
+  color: var(--SmartThemeEmColor, rgb(145, 145, 145));
+}
+
+.uid-starter-hint {
+  font-size: 0.9em;
+  color: var(--SmartThemeEmColor, rgb(145, 145, 145));
+}
+
+.uid-settings-actions .menu_button + .menu_button {
+  margin-left: 8px;
+}

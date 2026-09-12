@@ -5,11 +5,13 @@ Depends on: host, boundary, preset-template, constants
 
 `src/ui/settings.js` builds the extension's one entry in SillyTavern's Extensions panel. It renders a drawer, installs the reference preset on demand, and reports the reserved tag literal. It stores nothing, configures nothing, and reads no protocol state.
 
-## Four elements, no settings {#four-elements}
+## Five element groups, no settings {#four-elements}
 
-The drawer holds exactly four things: a two-sentence description of what the extension does, a hint naming the manual preset-import route, one "Install reference preset" button, and a read-only status line showing the reserved tag literal. There is no toggle, checkbox, select, slider or text field, and nothing here writes `extensionSettings`.
+The drawer holds exactly five groups: a two-sentence description of what the extension does, a hint naming the manual preset-import route, one "Install reference preset" button, a read-only status line showing the reserved tag literal, and the [starter reformatter](#starter-group). There is no toggle, checkbox, select, slider or persisted text field, and nothing here writes `extensionSettings`.
 
-That is not minimalism for its own sake. PLAN §23's host requirements are behaviours — "enforce a hard external-character boundary", "merge external text into manuscript-bearing context" — not options; the protocol names no choice the host may hand to the collaborator, so there is nothing to configure. The extension behaves identically whether or not this drawer was ever opened (decision `docs/decisions/0002-structure-from-intercede.md`, user ruling: one surface, aesthetic reference only). The bar for a fifth element is a PLAN section that requires it, not a feature that would be convenient.
+That is not minimalism for its own sake. PLAN §23's host requirements are behaviours — "enforce a hard external-character boundary", "merge external text into manuscript-bearing context" — not options; the protocol names no choice the host may hand to the collaborator, so there is nothing to configure. The extension behaves identically whether or not this drawer was ever opened (decision `docs/decisions/0002-structure-from-intercede.md`, user ruling: one surface, aesthetic reference only). The bar for another element is a PLAN section that requires it, not a feature that would be convenient.
+
+The starter reformatter is the one group that cleared that bar: PLAN §19 asks for a prepared seed at cold start, and the group exists to produce one. It is still not settings creep, because it configures nothing and stores nothing — its two textareas are never read from or written to `extensionSettings`, `chatMetadata` or `localStorage`, nothing about it survives a re-render, and the extension behaves identically whether or not it was ever used.
 
 ## Where the drawer attaches {#container}
 
@@ -42,3 +44,13 @@ The literal is recomputed per call and never cached, because the persona can cha
 ## Notifications {#notifications}
 
 One module-local helper calls `globalThis.toastr?.[kind](message, title, options)`. The verified call form is `toastr.<success|error|info|warning>(message, title, options)` with both trailing arguments optional, and `toastr` is a page global loaded by a plain `<script>` tag, so on a real install it is always there (`docs/api/sillytavern.md#toastr`). The optional-chained guard and the `console` fallback are kept anyway: a jsdom test renders the drawer with no page globals at all, and a notification helper that throws would turn a cosmetic absence into a failed install.
+
+## Starter reformatter {#starter-group}
+
+The fifth group is five controls: a `textarea` for a starter written in ordinary prose, a **Restructure** button, a **Copy** button, a `readOnly` `textarea` holding the result, and a one-line hint reading `Paste into the character's Alternate Greetings.` The output is a textarea rather than a rendered block so the text stays selectable and scrollable; it is assigned with `.value` and never parsed as HTML, and it stays `hidden` until a rewrite returns something.
+
+Enablement is recomputed in one place, `updateStarterControls()`, and nowhere else. **Restructure** is `disabled` while the input is empty or whitespace and while a rewrite is in flight — only `disabled` changes, the label never does, so the button does not flicker between two words. **Copy** is `disabled` while the output is empty. The only triggers are the `input` event on the input textarea and the completion of a rewrite; there is no CHAT_CHANGED wiring and no event subscription for this group.
+
+Both handlers are thin wrappers over `src/starter.js` (`docs/modules/starter.md#rewrite-request`). Restructure disables, awaits `restructureStarter(input.value, ctx)`, fills and unhides the output on a non-empty result, notifies an error on an empty one, and re-enables in a `finally`. Copy calls `navigator.clipboard.writeText` — a browser API, not an ST API — and when the clipboard is absent or rejects, falls back to selecting the output text and saying so, so the collaborator can always finish the copy by hand.
+
+Nothing in this group persists. The input textarea is empty every time the drawer is built; that is the specification, not an omission, and `renderSettings` stays idempotent because of it. The extension also never writes the greeting itself: no `merge-attributes` call, no `characters` read, no `CHARACTER_EDITED` emit. The verified alternate-greetings write path exists and is deliberately unused (user ruling, 2026-09-12) — moving the text is the collaborator's own act in SillyTavern's character editor.

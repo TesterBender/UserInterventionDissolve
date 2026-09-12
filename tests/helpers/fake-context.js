@@ -51,6 +51,7 @@ function defaultContext() {
     saveSettingsDebounced: vi.fn(),
     extensionSettings: {},
     substituteParams: vi.fn((s) => s),
+    generateRaw: vi.fn(async () => ''),
     stopGeneration: vi.fn(),
     updateMessageBlock: vi.fn(),
   };
