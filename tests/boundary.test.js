@@ -322,15 +322,11 @@ describe('suspendBoundary', () => {
     expect(after.stop).toEqual([LITERAL]);
   });
 
-  it('suppresses the stream-side stop and restores it on resume', () => {
+  it('does not gate the stream-side stop', () => {
     const ctx = installMara();
     onGenerationStarted('normal', {}, false);
 
-    const resume = suspendBoundary();
-    onStreamToken('He waits.\n\nMara: steps in.');
-    expect(ctx.stopGeneration).not.toHaveBeenCalled();
-
-    resume();
+    suspendBoundary();
     onStreamToken('He waits.\n\nMara: steps in.');
     expect(ctx.stopGeneration).toHaveBeenCalledTimes(1);
   });

@@ -98,7 +98,6 @@ export function onTextCompletionSettings(body) {
 // stream-fallback: for backends that ignore stop strings, once per generation → docs/modules/boundary.md#stream-fallback
 // barge-in: the stop is a trigger for external authorship, never a gate → docs/modules/boundary.md#barge-in
 export function onStreamToken(text) {
-  if (suspendDepth > 0) return;
   if (SKIPPED_TYPES.includes(currentType) || stoppedThisGeneration) return;
   const ctx = getCtx();
   const literal = reservedLiteral(ctx);

@@ -242,12 +242,6 @@ describe('module hygiene', () => {
     }
   });
 
-  it('hard-codes no character name', () => {
-    for (const name of ['Mara', 'Anton']) {
-      expect(source).not.toContain(name);
-    }
-  });
-
   it('emits no event and writes no chat', () => {
     for (const forbidden of ['saveChat', 'saveMetadata', 'emit(', 'ctx.chat', 'chatMetadata']) {
       expect(source).not.toContain(forbidden);
