@@ -242,6 +242,34 @@ notes: `/trigger [group-member] [await=true]` is the slash-command equivalent of
 status: unverified
 notes: `groupId` exists (`st-context.js:123`) but the group generation loop is not covered above. Intercede refused group chats outright (`Intercede:src/transaction.js:213`). Treat as out of scope until a brief needs it.
 
+## UI {#ui}
+
+### Extension settings container {#settings-container}
+status: verified
+checked: 1.18.0 @ 8172dcd on 2026-09-12
+evidence: `public/index.html:5760` — `<div id="extensions_settings" class="flex1 wide50p">`; `public/index.html:5778` — `<div id="extensions_settings2" class="flex1 wide50p">`.
+notes: Both are the two flex columns of the Extensions drawer, pre-populated only with built-in `<div id="*_container">` slots (assets, TTS, RVC, websearch, QR, caption, translate, idle, summarize, etc.) — no source-tree evidence of a documented "third-party appends to column 2" convention, but nothing distinguishes the columns structurally/CSS-wise beyond visual balancing, so either is a valid append target. `extensions_settings2 ?? extensions_settings` (`Intercede:src/ui/settings.js:143`) is a safe fallback order: prefers the (usually less full) second column, degrades to the first if ST ever ships without it, and both exist unconditionally in 1.18.0's markup so the null case is theoretical on this version.
+
+### Inline drawer markup {#inline-drawer}
+status: verified
+checked: 1.18.0 @ 8172dcd on 2026-09-12
+evidence: `public/scripts/extensions/caption/settings.html:1-7` —
+```html
+<div class="inline-drawer">
+    <div class="inline-drawer-toggle inline-drawer-header">
+        <b data-i18n="Image Captioning">Image Captioning</b>
+        <div class="inline-drawer-icon fa-solid fa-circle-chevron-down down"></div>
+    </div>
+    <div class="inline-drawer-content">
+```
+notes: `.inline-drawer` / `.inline-drawer-toggle.inline-drawer-header` / `.inline-drawer-icon` / `.inline-drawer-content` is ST's own reusable drawer skeleton (used by built-ins, not Intercede-local styling). Toggle behaviour is wired globally and delegated: `public/script.js:12131` — `$(document).on('click', '.inline-drawer-toggle', async function (e) {` — toggles the icon classes (`down`/`up`, `fa-circle-chevron-down`/`-up`) and `slideToggle()`s the sibling `.inline-drawer-content`. A third-party extension only needs to emit this exact class markup; no per-instance JS registration required.
+
+### toastr {#toastr}
+status: verified
+checked: 1.18.0 @ 8172dcd on 2026-09-12
+evidence: `public/index.html:8195` — `<script src="lib/toastr.min.js"></script>` (plain `<script>` tag, not a module import) — `public/scripts/extensions/assets/index.js:107` — `toastr.error('Go to the characters menu to delete a character.', 'Character deletion not supported');` — `:305` — `toastr.info('Click the flashing button...', 'Trying to install a custom extension?', { timeOut: 10_000 });`.
+notes: Loaded as a page global (`lib/toastr.min.js` via `<script>`, not bundled per-module), so `globalThis.toastr`/`window.toastr` is available to any third-party extension script without an import. Call form used throughout ST: `toastr.<success|error|info|warning>(message, title, options)` — `title` and `options` optional; `options` is a plain object (e.g. `{ timeOut: 10000 }`). Matches the guarded-fallback shape in `Intercede:src/utils.js:85-92` (`globalThis.toastr?.[kind](message, TOAST_TITLE, { timeOut, ...options })` with a `console` fallback when the global is missing).
+
 ## Presets and prompt delivery {#presets}
 
 ### Preset storage and payload shape {#preset-storage}
