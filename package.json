@@ -1,0 +1,21 @@
+{
+  "name": "user-intervention-dissolve",
+  "version": "0.0.0",
+  "private": true,
+  "description": "SillyTavern extension implementing the Collaborative Manuscript Protocol with hidden interaction boundaries (PLAN.txt).",
+  "type": "module",
+  "scripts": {
+    "lint": "eslint .",
+    "test": "vitest --run",
+    "test:watch": "vitest",
+    "check:comments": "node tools/check-comments.mjs index.js src/**/*.js tools/*.mjs style.css",
+    "check:docs": "node tools/check-docs.mjs",
+    "check": "npm run lint && npm test && npm run check:comments && npm run check:docs"
+  },
+  "devDependencies": {
+    "@eslint/js": "^9.0.0",
+    "eslint": "^9.0.0",
+    "jsdom": "^25.0.0",
+    "vitest": "^3.2.4"
+  }
+}
