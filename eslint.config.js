@@ -8,7 +8,7 @@ const browserGlobals = {
 const nodeGlobals = { process: 'readonly', Buffer: 'readonly', URL: 'readonly' };
 
 export default [
-  { ignores: ['node_modules/**', 'docs/**'] },
+  { ignores: ['node_modules/**', 'docs/**', '.claude/**', 'presets/**'] },
   js.configs.recommended,
   {
     files: ['**/*.js', '**/*.mjs'],
