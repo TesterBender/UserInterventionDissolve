@@ -1,5 +1,5 @@
 # Brief 0007 — canonical state: per-chat frozen spans + mutable frontier
-Status: implemented
+Status: done
 Complexity: high
 PLAN sections: §4 (the "canonical history" layer — the persistent conditioning surface actually shown to the model, which must preserve fiction and agency while discarding collaboration topology; this brief builds the container for it), §11 (the live cycle names "canonical history" and "mutable frontier" as the two things every later step reads and writes), §12 (normalization happens every request, freezing only when the frontier reaches its transport target — so the frontier must be a single mutable string, not a list of turns), §16 first half (freezing is append-only; old frozen spans are not re-cut, because re-cutting disturbs demonstrations, invalidates cache prefixes and rewrites transport statistics)
 Invariants touched: INV-4 (this brief provides the single mutable frontier that §12 reconstruction reads), INV-6 (append-only frozen list, refusal to append a span that ends mid-block), INV-10 (the stored structure is the only model-visible input, so live interaction topology has no representation in it)
