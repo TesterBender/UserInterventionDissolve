@@ -25,13 +25,12 @@ A few formatting rules govern the narrative.
 
 Text is set in blocks separated by a blank line. Each block is tagged or it is narration.
 
-A tagged block opens with a tag and a colon. What follows belongs to that figure alone — speech, action, choice, intent. A tag need not be a person's name; it marks one discrete figure, or one group moving as a single body:
+A tagged block opens with a tag and a colon. What follows belongs to that figure alone — speech, action, choice, intent, attention, private interpretation. A tag need not be a person's name; it marks one discrete figure, or one group moving as a single body. A figure not yet named is tagged by how the page knows them, and takes a name once the story grants one:
 
     Idris: sets the cup down. "No."
     The tall one: laughs before she has decided to.
     Guards: lower their spears together.
     The dog: refuses the doorway.
-    The fire in the stairwell: takes the banister and keeps going.
 
 Narration between tags carries the world rather than the will: light, distance, elapsed time, the settling of what was already chosen. It integrates; it does not decide for anyone.
 
@@ -42,7 +41,7 @@ A group tag stands for those still anonymous within it; once someone is drawn ou
 The story closes when the story does.
 ```
 
-**Note on the escalation ladder.** The examples run: proper name → epithet → collective → non-human agent → an impersonal force treated as one body with a will. The last rung is deliberately included but is the one place the list pushes against the sentence that follows it ("narration carries the world rather than the will"); the reconciliation is that a force earns a tag only when it is being written as a single acting figure rather than as ambient world. This is the sharpest open question below; if the user rejects it, the implementer drops that one line and nothing else changes.
+**Note on the ladder.** The examples run: proper name → a figure the page has not yet named → collective → non-human animate agent, and stop there. Environmental forces (fire, weather, tide) are deliberately **not** taggable: neutral narrative buffers must exist and must stay identifiable, so anything that is world rather than will belongs to narration (§5; the `grammar` parser's tag/buffer split depends on it). The implementer must not add such a rung.
 
 ### Draft — `CONTINUATION_CONTROL`
 PLAN §13's own preferred wording, taken verbatim so the constant is traceable:
@@ -62,6 +61,8 @@ The continuation string's delivery is already settled elsewhere and is not re-de
 - Any injection, registration, or `setExtensionPrompt` call. No `index.js` change, no manifest change, no event subscription.
 - A settings UI, a toggle to enable/disable the prompt, a per-chat override, a "prompt strength" control, or any configurability (`docs/decisions/0001-prompt-level-grammar.md`).
 - Naming the external character, reading `{{user}}`/`name1`, or embedding any macro. The only name in the text is the invented `Idris` inside an example line.
+- A tag-styling convention (bold, italics, code) in either the text or the parser. The header stays bare `Tag:` until a later brief resolves the parse and stop-string consequences (Question 1).
+- An environmental-force rung in the ladder, or any wording that lets world-material be tagged (see the note above).
 - Lint, validation, or any code that checks manuscript text against this prompt. Semantics are prompt-level by decision 0001; §20 lint stays advisory and belongs to a later brief.
 - Shipping an actual seed span as data. §19 guidance is documentation in this brief; whether the extension ships an example seed is a question for the user (below).
 - Any wording that exposes or gestures at the assembly mechanics (§27): no seam, no "write from here", no "span", "chunk", "freeze", "context", "history", "prompt", "token".
@@ -87,7 +88,9 @@ The continuation string's delivery is already settled elsewhere and is not re-de
 - [ ] `MANUSCRIPT_SYSTEM_PROMPT` contains none of these as whole words, case-insensitive: `edge`, `boundary`, `continue`, `generation`, `turn`, `reply`, `respond`, `user`, `model`, `reasoning`, `thinking`, `privileged`.
 - [ ] `MANUSCRIPT_SYSTEM_PROMPT` additionally contains none of: `assistant`, `chat`, `message`, `prompt`, `token`, `span`, `chunk`, `freeze`, `summarize`, `recap`.
 - [ ] `MANUSCRIPT_SYSTEM_PROMPT` contains no `{{` macro delimiter and no occurrence of `Mara`. The only personal name it contains is the invented example name in the tag ladder; a test asserts the set of capitalised non-sentence-initial words is exactly the approved example set.
-- [ ] The tag ladder is present as 5–7 consecutive indented lines each matching `/^\s+[^\n:]{1,40}: .+$/`, and it includes at least one collective tag and at least one non-personal tag (§7, INV-9 — tags identify a discrete entity or action-aligned group).
+- [ ] The tag ladder is present as 4–6 consecutive indented lines each matching `/^\s+[^\n:]{1,40}: .+$/`, includes at least one collective tag and at least one non-personal tag, and contains no environmental-force tag (§5, §7, INV-9).
+- [ ] The tag-contents sentence lists, at minimum, speech, action, choice, intent, attention and private interpretation (§5's tag contents including interiority).
+- [ ] `MANUSCRIPT_SYSTEM_PROMPT` states that an unnamed figure is tagged by how the page knows them and takes a name once the story grants one.
 - [ ] `MANUSCRIPT_SYSTEM_PROMPT` contains the four grammar commitments, asserted by substring/keyword tests the implementer writes against the approved wording: blank-line block separation, one-figure ownership of a tagged block, narration-integrates-rather-than-decides, and group-tags-stand-only-for-the-anonymous (§5, §7, INV-1, INV-9).
 - [ ] `MANUSCRIPT_SYSTEM_PROMPT` is at most 220 words, counted as matches of `/[A-Za-z'’]+/g` (punctuation and dashes are not words).
 - [ ] `src/prompt.js` exports exactly two names and declares no function.
@@ -97,22 +100,19 @@ The continuation string's delivery is already settled elsewhere and is not re-de
 
 ## Docs to write/update
 - `docs/modules/prompt.md#grammar-text` — what the system prompt frames and what it deliberately leaves unsaid; why it is craft framing plus a short rule list rather than a rule list alone (§5–§7, §20's legalese caveat, decision 0001).
-- `docs/modules/prompt.md#tag-ladder` — why the examples escalate from a personal name to a collective to a non-human agent, and that the point is the tag's purpose (identifying a discrete entity or action-aligned group) rather than personhood (§7, INV-9).
+- `docs/modules/prompt.md#tag-ladder` — why the examples escalate from a personal name through an unnamed figure and a collective to a non-human agent, why they stop before environmental forces (buffers must remain identifiable and parseable), and that the point is the tag's purpose — identifying a discrete entity or action-aligned group — rather than personhood (§5, §7, INV-9).
 - `docs/modules/prompt.md#says-nothing-of-mechanics` — why the text names no real character and describes nothing about how the page is assembled (§8, §27; INV-2 stays a code-side boundary).
 - `docs/modules/prompt.md#continuation-control` — why the string is neutral, why it is one frozen constant, and that no module may recompose it (§13, INV-5).
 - `docs/modules/prompt.md#seed-guidance` — §19's checklist restated for whoever writes the seed: continuous prose, tag/buffer alternation, independent characters, the external figure appearing naturally and away from cut points, dense tag runs, durable commitments, anonymous agents, unresolved continuation, no handoff, no closure; and that the seed, not the prompt, is where §22's causal forward motion and the anti-conclusion habit are actually demonstrated.
 - `docs/modules/prompt.md#delivery` — the three delivery options verbatim from this brief, marked as an unresolved user decision, with the `setExtensionPrompt` verification gap named.
 
 ## Questions for the user
-1. **Forces as tags.** The ladder's last rung, `The fire in the stairwell: takes the banister and keeps going.`, treats an impersonal force as a figure with a will — which sits in tension with "narration carries the world rather than the will". Keep it (a force may be tagged when written as one acting body), or stop the ladder at the non-human animate agent (`The dog:`)?
+1. **Tag styling.** You are open to styling the tag (bold/italic/code) to suit the figure. The draft keeps the header bare `Tag:` for now, because the header is what `grammar` parses at block start and what `boundary` uses verbatim as the stop string for the externally owned figure (`docs/protocol/host-mapping.md#s8-boundary`): if tags may be written `**Name:**` or `` `Name:` ``, the parser needs an agreed set of allowed wrappers and the stop string must cover each variant or stop working. Options: (a) bare `Tag:` only; (b) bare, plus a fixed short list of wrappers the parser strips; (c) styling only *inside* the block body, never on the header. Which?
 2. **The one proper name.** The ladder opens with an invented personal name, `Idris`, so the escalation has a baseline. Acceptable, or should the text contain no personal name at all (epithets and collectives only)? Substitute name welcome.
-3. **Ladder length and rungs.** Five rungs: name → epithet → collective → animal → force. Want a sixth (a role such as `The clerk:`, or a larger collective such as `The crowd on the stairs:`), or fewer?
-4. **Block delimiter.** The draft states the delimiter as a blank line (PLAN §5's "ordinarily"). Confirm blank line, or name another.
-5. **Tag syntax.** `Tag: text` on the same line, header at the very start of the block. Confirm, or specify an alternative (e.g. `Tag —`, a newline after the colon).
-6. **Interiority inside tags.** The draft trims tag contents to "speech, action, choice, intent" for length; PLAN §5 also lists interiority and character-specific interpretation. Restore the fuller list, or leave it implied?
-7. **Aggregates.** The draft treats a group tag as a legibility device standing for the still-anonymous, and never names or bans `Everyone:`, per decision 0001 and your "flavor text, not a rule". Confirm.
-8. **The closing clause.** `The story closes when the story does.` is the only surviving no-conclusion nudge, phrased as craft. Keep it, or cut it entirely?
-9. **Continuation string wording.** Currently PLAN §13's sentence verbatim — which is itself somewhat on the nose ("do not recap, restart, summarize, or force resolution"). Reduce it to a single quiet sentence (e.g. `Continue the manuscript from the current endpoint.`), or keep §13's wording?
-10. **Seed span.** Does the extension ship an example seed span as data (and if so, whose prose?), or is the seed entirely user-supplied with only the §19 checklist documented? The brief currently assumes the latter — which also makes the seed the only place §22's causal forward motion is demonstrated.
-11. **Delivery.** Extension-injected via `setExtensionPrompt` (blocked on verification), user pastes into their preset's system prompt, or both? The brief ships text only until you choose.
-12. **Length and register.** The draft is ~216 words and leans literary ("willing to be strange"). Right register, or plainer?
+3. **Ladder rungs.** Four rungs: name → a figure not yet named → collective → animal. Want a fifth (a role such as `The clerk:`, or a larger collective such as `The crowd on the stairs:`)?
+4. **Aggregates.** The draft treats a group tag as a legibility device standing for the still-anonymous, and never names or bans `Everyone:`, per decision 0001 and your "flavor text, not a rule". Confirm.
+5. **The closing clause.** `The story closes when the story does.` is the only surviving no-conclusion nudge, phrased as craft. Keep it, or cut it entirely?
+6. **Continuation string wording.** Currently PLAN §13's sentence verbatim — which is itself somewhat on the nose ("do not recap, restart, summarize, or force resolution"). Reduce it to a single quiet sentence (e.g. `Continue the manuscript from the current endpoint.`), or keep §13's wording?
+7. **Seed span.** Does the extension ship an example seed span as data (and if so, whose prose?), or is the seed entirely user-supplied with only the §19 checklist documented? The brief currently assumes the latter — which also makes the seed the only place §22's causal forward motion is demonstrated.
+8. **Delivery.** Extension-injected via `setExtensionPrompt` (blocked on verification), user pastes into their preset's system prompt, or both? The brief ships text only until you choose.
+9. **Length and register.** The draft is ~217 words and leans literary ("willing to be strange"). Right register, or plainer?
