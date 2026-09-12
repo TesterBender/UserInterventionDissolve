@@ -6,10 +6,16 @@ import { getCtx } from './host.js';
 import { MANUSCRIPT_SYSTEM_PROMPT } from './prompt.js';
 
 // frozen-instruction: one constant, reworded only by a new brief → docs/modules/starter.md#rewrite-request
-export const REWRITE_INSTRUCTION = '[OOC: Below are notes for an opening scene. Write that scene as it would stand on the page: a tagged block wherever a figure speaks, acts or intends, narration carrying the world between them. Stay inside what the notes establish, and let the scene end where the notes end.]';
+export const REWRITE_INSTRUCTION = '[OOC: The content above is unoptimised for the creative writing task you have been set. Bring it in line with the practice laid out for you, so that it reads as the manuscript does.]';
+
+// content-wrapper: starter text framed as <content> before the instruction → docs/modules/starter.md#rewrite-request
+const CONTENT_OPEN = '<content>\n';
+const CONTENT_CLOSE = '\n</content>\n\n';
 
 const OOC_LINE = /^\[OOC:[^\]]*\]$/;
 const FENCE_LINE = /^[ \t]*`{3,}[^\s`]*[ \t]*$/;
+const CONTENT_OPEN_LINE = /^<content>$/;
+const CONTENT_CLOSE_LINE = /^<\/content>$/;
 
 // reserved-drop: block-initial literal only, never a mid-block mention → docs/modules/starter.md#sanitise
 function dropReservedBlocks(text, literal) {
@@ -27,14 +33,18 @@ export function buildRewriteRequest(starterText, literal) {
   const body = dropReservedBlocks(String(starterText ?? '').trim(), literal);
   return {
     systemPrompt: MANUSCRIPT_SYSTEM_PROMPT,
-    prompt: body === '' ? REWRITE_INSTRUCTION : `${REWRITE_INSTRUCTION}\n\n${body}`,
+    prompt: `${CONTENT_OPEN}${body}${CONTENT_CLOSE}${REWRITE_INSTRUCTION}`,
   };
 }
 
-// sanitise: OOC echo, fences, reserved blocks; grammar does the parsing → docs/modules/starter.md#sanitise
+// sanitise: OOC echo, content echo, fences, reserved blocks → docs/modules/starter.md#sanitise
 export function sanitiseRewrite(text, literal) {
   let lines = String(text ?? '').split(/\r?\n/);
-  const disposable = (line) => line.trim() === '' || OOC_LINE.test(line.trim()) || FENCE_LINE.test(line);
+  const disposable = (line) => {
+    const trimmed = line.trim();
+    return trimmed === '' || OOC_LINE.test(trimmed) || FENCE_LINE.test(line) ||
+      CONTENT_OPEN_LINE.test(trimmed) || CONTENT_CLOSE_LINE.test(trimmed);
+  };
   while (lines.length > 0 && disposable(lines[0])) lines.shift();
   while (lines.length > 0 && disposable(lines[lines.length - 1])) lines.pop();
   lines = lines.filter((line) => !FENCE_LINE.test(line));

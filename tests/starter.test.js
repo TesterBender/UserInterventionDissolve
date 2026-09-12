@@ -23,17 +23,25 @@ function ctxWith({ name1 = 'Mara', generateRaw } = {}) {
 }
 
 describe('buildRewriteRequest', () => {
-  it('carries MANUSCRIPT_SYSTEM_PROMPT by identity and the instruction then one blank line', () => {
+  it('carries MANUSCRIPT_SYSTEM_PROMPT by identity and wraps the starter in <content> before the instruction', () => {
     const { systemPrompt, prompt } = buildRewriteRequest('  a starter.  ', 'Nobody:');
     expect(Object.is(systemPrompt, MANUSCRIPT_SYSTEM_PROMPT)).toBe(true);
-    expect(prompt.startsWith(REWRITE_INSTRUCTION)).toBe(true);
-    expect(prompt).toBe(`${REWRITE_INSTRUCTION}\n\na starter.`);
+    expect(prompt).toBe(`<content>\na starter.\n</content>\n\n${REWRITE_INSTRUCTION}`);
     expect(prompt).not.toContain('{{');
   });
 
-  it('yields the instruction alone, with no trailing blank line, for empty input', () => {
-    expect(buildRewriteRequest('   \n\n ', 'Mara:').prompt).toBe(REWRITE_INSTRUCTION);
-    expect(buildRewriteRequest('', 'Mara:').prompt).toBe(REWRITE_INSTRUCTION);
+  it('assembles <content>, the trimmed starter, </content>, a blank line, then the instruction, and nothing else', () => {
+    const { prompt } = buildRewriteRequest('  a starter.  ', 'Nobody:');
+    expect(prompt.startsWith('<content>\n')).toBe(true);
+    expect(prompt).toContain('\n</content>\n\n');
+    expect(prompt.endsWith(REWRITE_INSTRUCTION)).toBe(true);
+    expect(prompt.indexOf('a starter.')).toBeLessThan(prompt.indexOf('</content>'));
+    expect(prompt.indexOf('</content>')).toBeLessThan(prompt.indexOf(REWRITE_INSTRUCTION));
+  });
+
+  it('wraps an empty starter in an empty <content> block', () => {
+    expect(buildRewriteRequest('   \n\n ', 'Mara:').prompt).toBe(`<content>\n\n</content>\n\n${REWRITE_INSTRUCTION}`);
+    expect(buildRewriteRequest('', 'Mara:').prompt).toBe(`<content>\n\n</content>\n\n${REWRITE_INSTRUCTION}`);
   });
 
   it('drops a block beginning with the reserved literal but keeps a mid-block mention', () => {
@@ -47,14 +55,14 @@ describe('buildRewriteRequest', () => {
 
   it('embeds the starter unchanged when nothing is reserved', () => {
     for (const literal of ['', null, undefined]) {
-      expect(buildRewriteRequest(STARTER, literal).prompt).toBe(`${REWRITE_INSTRUCTION}\n\n${STARTER}`);
+      expect(buildRewriteRequest(STARTER, literal).prompt).toBe(`<content>\n${STARTER}\n</content>\n\n${REWRITE_INSTRUCTION}`);
     }
   });
 });
 
 describe('REWRITE_INSTRUCTION says nothing of mechanics', () => {
   it('equals the shipped replacement string byte-for-byte', () => {
-    expect(REWRITE_INSTRUCTION).toBe('[OOC: Below are notes for an opening scene. Write that scene as it would stand on the page: a tagged block wherever a figure speaks, acts or intends, narration carrying the world between them. Stay inside what the notes establish, and let the scene end where the notes end.]');
+    expect(REWRITE_INSTRUCTION).toBe('[OOC: The content above is unoptimised for the creative writing task you have been set. Bring it in line with the practice laid out for you, so that it reads as the manuscript does.]');
   });
 
   const WHOLE_WORDS = [
@@ -67,7 +75,7 @@ describe('REWRITE_INSTRUCTION says nothing of mechanics', () => {
   });
 
   const SUBSTRINGS = [
-    'assistant', 'chat', 'message', 'prompt', 'token', 'span', 'chunk',
+    'assistant', 'chat', 'message', 'prompt', 'system', 'token', 'span', 'chunk',
     'freeze', 'summarize', 'recap', 'bold', 'italic', 'markdown',
   ];
 
@@ -97,7 +105,12 @@ describe('REWRITE_INSTRUCTION says nothing of mechanics', () => {
 
 describe('sanitiseRewrite', () => {
   it('removes a leading and a trailing OOC echo', () => {
-    const text = `[OOC: Below are notes for an opening scene.]\nAnton: "Here."\n[OOC: done]`;
+    const text = `[OOC: The content above is unoptimised for the creative writing task.]\nAnton: "Here."\n[OOC: done]`;
+    expect(sanitiseRewrite(text, 'Mara:')).toBe('Anton: "Here."');
+  });
+
+  it('removes a leading and a trailing <content> wrapper echo', () => {
+    const text = '<content>\nAnton: "Here."\n</content>';
     expect(sanitiseRewrite(text, 'Mara:')).toBe('Anton: "Here."');
   });
 

@@ -87,8 +87,8 @@ User report: the notes-for-a-scene wording still trips the filter ("It still doe
 src/starter.js (constant, wrapper constants, `buildRewriteRequest` assembly, the one echo-strip addition), tests/starter.test.js (verbatim assertion, assembly-order assertions, echo-strip cases; keep every forbidden/banned list), docs/modules/starter.md (`#rewrite-request` requoted; `#tos-filter` gains one sentence on the content-first shape).
 
 ### Acceptance
-- [ ] `REWRITE_INSTRUCTION` equals the bracketed line verbatim.
-- [ ] `prompt` starts with `<content>\n`, contains the trimmed starter, then `\n</content>\n\n`, then the instruction, nothing else.
-- [ ] Existing forbidden-word and banned-word tests pass; `prompt`/`system` do not appear in the instruction.
-- [ ] `sanitiseRewrite` strips a `<content>…</content>` echo and still strips `[OOC: …]` echoes and fences.
-- [ ] `npm run check` passes.
+- [x] `REWRITE_INSTRUCTION` equals the bracketed line verbatim.
+- [x] `prompt` starts with `<content>\n`, contains the trimmed starter, then `\n</content>\n\n`, then the instruction, nothing else.
+- [x] Existing forbidden-word and banned-word tests pass; `prompt`/`system` do not appear in the instruction.
+- [x] `sanitiseRewrite` strips a `<content>…</content>` echo and still strips `[OOC: …]` echoes and fences.
+- [x] `npm run check` passes.
