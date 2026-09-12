@@ -1,5 +1,5 @@
 # Brief 0022 — Swipe/regenerate-aware derivation
-Status: implemented
+Status: done
 Complexity: high
 PLAN sections: §12 (normalisation happens every request; the frontier is reconstructed so only the single continuation seam currently needed at the edge remains), §11 (the live cycle is manuscript → continuation control → generation; a regeneration replaces the last model output rather than following it)
 Invariants touched: INV-4, INV-10
