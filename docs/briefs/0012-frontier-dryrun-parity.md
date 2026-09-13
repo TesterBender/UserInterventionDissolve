@@ -1,5 +1,5 @@
 # Brief 0012 — `frontier`: dryRun parity for the token-count preview
-Status: deferred (awaiting user decision, see Verification result below)
+Status: declined (user decision 2026-09-13: token-preview parity not worth the fragility; the sent request is correct)
 Complexity: high
 PLAN sections: §12 (normalisation happens on every request; the model-visible manuscript is the reconstruction, so any preview of "what will be sent" that shows the raw live history is showing something that will never exist), §13 (the single continuation-control turn is part of that reconstruction and therefore part of its token cost)
 Invariants touched: INV-4, INV-5 (neither is *established* here — brief 0010 establishes both for the request that is actually sent; this brief only makes SillyTavern's dry-run token preview agree with it)
