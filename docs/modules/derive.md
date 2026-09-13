@@ -57,9 +57,17 @@ There is deliberately no memoisation, no dirty flag and no "derive only when the
 
 ## Transformation rule {#transformation-rule}
 
-`toManuscriptBlock(text, literal)` trims the input and prefixes the reserved literal, unless the text already opens with that same tag. Everything past the first block header is passed through byte-identical: the tag-header regex is anchored at the start of the string (`docs/modules/grammar.md#tag-header`), so prefixing the whole trimmed text prefixes exactly the first block, and every later blank-line-separated block keeps its own bytes, its own separator and its own punctuation. Derivation does not split, merge, re-wrap, re-punctuate or re-tag anything.
+`toManuscriptBlock(text, literal)` trims the input and prefixes the reserved literal **followed by a newline**, unless the text already opens with that same tag. Everything past the header is passed through byte-identical: the tag-header regex is anchored at the start of the string (`docs/modules/grammar.md#tag-header`), so prefixing the whole trimmed text heads exactly the contribution, and every blank-line-separated paragraph inside it keeps its own bytes, its own separator and its own punctuation. Derivation does not split, merge, re-wrap, re-punctuate or re-tag anything.
 
-"Already opens with that tag" is decided by `parseTagHeader` and compared case- and space-insensitively (`trim().toLowerCase()` on both sides), so `Mara: …`, `mara: …` and `Mara : …` are all recognised and left alone — the tag is never doubled.
+"Already opens with that tag" is decided by `parseTagHeader` and compared case- and space-insensitively (`trim().toLowerCase()` on both sides), so `Mara: …`, `mara: …`, `Mara : …` and `Mara:\n…` are all recognised and left alone — the tag is never doubled.
+
+## Own-line header {#own-line-header}
+
+The header sits on its own line — `` `${literal}\n${trimmed}` `` — because a header opens an **agency span** that persists across paragraphs until the next header (`docs/modules/grammar.md#spans`, `PLAN-addendum-agency-spans.md` §2). A multi-paragraph turn from the collaborator is one contribution by one owner, and the own-line form says exactly that: one header, then however many paragraphs the passage needs. The inline form `Mara: she stands.` would head only the first paragraph and leave the rest looking like a separate, unowned passage, which is precisely the paragraph-as-ownership-unit reading the addendum removes. PLAN §9 asks that the collaborator's input be merged into the manuscript as manuscript text; nothing in §9 asks for it to be chopped into per-paragraph commitments.
+
+Both header forms are recognised by the "already opens with that tag" short-circuit, because `parseTagHeader` matches `Mara:\ntext` and `Mara: text` alike (`TAG_HEADER`'s lookahead admits a newline). A collaborator who types either form gets their text back byte-identical; only an unheaded turn gains a header.
+
+`sourceStart` is still `null` for a block that gained a header, for the reason given in [Derivation rule](#derivation-rule): the derived block now contains characters — the literal and the newline — that are not in `mes`, so no honest offset into the message exists. The newline changes nothing about that rule, and the segment loop is unchanged.
 
 A first block that carries a *different* actor's tag (`Anton: he looks up.`) is still prefixed, producing `Mara: Anton: he looks up.` That is the character-specific reading of §10, not a bug: the composer is the external character's authoring surface and nothing else, so every send is that character's block. The manuscript grammar is upheld by the collaborator, not policed in code (`docs/protocol/invariants.md#enforcement-model`); there is no validation, correction or rejection path here.
 

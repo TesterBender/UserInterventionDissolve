@@ -155,7 +155,7 @@ describe('interceptGeneration', () => {
     await interceptGeneration(chat, 4096, vi.fn(), 'normal', ctx);
 
     expect(chat.map((m) => m.mes)).toEqual([
-      'Mara: she opens the door.\n\nThe hall is cold.',
+      'Mara:\nshe opens the door.\n\nThe hall is cold.',
       CONTINUATION_CONTROL,
     ]);
   });

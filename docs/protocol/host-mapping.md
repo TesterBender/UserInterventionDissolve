@@ -34,6 +34,8 @@ SillyTavern's own `chat[]` remains the user-facing view and is left honest: the 
 
 There is no event that lets an extension rewrite or cancel the composer text before it becomes a chat message (`#pre-send-hook`). Capture is implicit in derivation: the collaborator types Mara's block in the normal composer, it lands in `chat[]` as a user message, and **nothing happens at send** — no handler runs, no marker is written, no id is assigned early. The message is transformed into a tagged manuscript block at request time by `toManuscriptBlock` (`docs/modules/derive.md#transformation-rule`) inside the derivation (`docs/modules/derive.md#derivation-rule`), so a turn the collaborator later edits is re-tagged from its current text. The user turn as such never reaches the model, because the reconstruction is total. The visible chat stays a faithful log.
 
+The tag is written as an **own-line header**, so a multi-paragraph turn enters the manuscript as one agency span under one owner rather than as a first tagged paragraph followed by unowned ones (`docs/modules/derive.md#own-line-header`, `docs/modules/grammar.md#spans`).
+
 INV-3 holds because the model-visible history is rebuilt from canonical state, never from `chat[]`. Editing authority (§10) is an edit of the frontier in canonical state via the extension UI; it does not go through the composer.
 
 ## §12 — Frontier reconstruction {#s12-frontier}

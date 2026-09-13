@@ -4,9 +4,9 @@ import path from 'node:path';
 import { countWords, selectCut, maybeFreeze, noticeFrozenEdit, FROZEN_EDIT_NOTICE } from '../src/freeze.js';
 import { createState, pushFrozen } from '../src/state.js';
 import { deriveFrontier } from '../src/derive.js';
-import { isTrailingBlockComplete, parseManuscript } from '../src/grammar.js';
+import { isTrailingBlockComplete, parseManuscript, groupSpans } from '../src/grammar.js';
 import { installFakeContext, uninstall } from './helpers/fake-context.js';
-import { METADATA_KEY, FREEZE_MIN_WORDS, FREEZE_MAX_WORDS, FREEZE_DENSE_RADIUS } from '../src/constants.js';
+import { METADATA_KEY, FREEZE_MIN_WORDS, FREEZE_MAX_WORDS } from '../src/constants.js';
 
 const LITERAL = 'Mara:';
 const ABSENT = 'Zed:';
@@ -72,50 +72,71 @@ describe('selectCut refusals', () => {
     expect(selectCut(buf(5000), LITERAL, { min: 10, max: 20 })).toBeNull();
   });
 
-  it('returns null when every boundary is adjacent to or dense with reserved blocks', () => {
-    const text = manuscript([
-      buf(100), buf(100), tag('Mara', 100), buf(100), buf(100), tag('Mara', 100),
-    ]);
-
-    expect(selectCut(text, LITERAL, { min: 100, max: 600 })).toBeNull();
+  it('returns null when every boundary is inside or adjacent to a reserved span', () => {
+    const opts = { min: 100, max: 600 };
+    expect(selectCut(manuscript([tag('Mara', 100), buf(100), buf(100)]), LITERAL, opts)).toBeNull();
+    expect(selectCut(manuscript([buf(100), tag('Mara', 100), buf(100)]), LITERAL, opts)).toBeNull();
   });
 });
 
 describe('hard rules', () => {
   const text = manuscript([
     buf(100), buf(100), buf(100), tag('Mara', 100), buf(100),
-    buf(100), buf(100), buf(100), buf(100), buf(100),
+    tag('Anton', 100), buf(100), tag('Bela', 100), buf(100), buf(100),
   ]);
 
-  it('never cuts immediately before or immediately after a reserved block', () => {
+  it('never cuts inside, immediately before or immediately after a reserved span', () => {
     const blocks = parseManuscript(text);
+    const forbidden = [2, 3, 4];
     for (let seed = 0; seed < 50; seed += 1) {
-      const cut = selectCut(text, LITERAL, { min: 250, max: 650, jitterSeed: seed });
+      const cut = selectCut(text, LITERAL, { min: 250, max: 950, jitterSeed: seed });
       expect(cut).not.toBeNull();
-      expect(cut.blockIndex).not.toBe(2);
-      expect(cut.blockIndex).not.toBe(3);
+      for (const i of forbidden) expect(cut.blockIndex).not.toBe(i);
       expect(blocks[cut.blockIndex].raw.startsWith(LITERAL)).toBe(false);
       expect(blocks[cut.blockIndex + 1].raw.startsWith(LITERAL)).toBe(false);
     }
   });
 
-  it('rejects an otherwise perfect boundary with a reserved block inside the dense radius', () => {
-    const dense = manuscript([
-      buf(100), buf(100), buf(100), buf(100), buf(100),
+  it('never cuts inside a long multi-block external span, at any seed', () => {
+    const long = manuscript([
+      buf(100), buf(100), tag('Anton', 100), buf(100), buf(100),
       tag('Mara', 100), buf(100), buf(100), buf(100), buf(100),
+      buf(100), tag('Bela', 100), buf(100), tag('Cyn', 100), buf(100),
+      tag('Dov', 100), buf(100), buf(100), buf(100), buf(100),
     ]);
-    const opts = { min: 350, max: 900 };
-    const seed = seedWhere(dense, ABSENT, opts, (cut) => cut.target === 400);
-    expect(seed).not.toBeNull();
+    const forbidden = [4, 5, 6, 7, 8, 9, 10];
 
-    expect(selectCut(dense, ABSENT, { ...opts, jitterSeed: seed }).blockIndex).toBe(3);
-
-    const cut = selectCut(dense, LITERAL, { ...opts, jitterSeed: seed });
-    expect(cut.blockIndex).toBe(7);
-    expect(FREEZE_DENSE_RADIUS).toBe(2);
-    for (let j = cut.blockIndex - (FREEZE_DENSE_RADIUS - 1); j <= cut.blockIndex + FREEZE_DENSE_RADIUS; j += 1) {
-      expect(j).not.toBe(5);
+    for (let seed = 0; seed < 200; seed += 1) {
+      const cut = selectCut(long, LITERAL, { min: 150, max: 2000, jitterSeed: seed });
+      expect(cut).not.toBeNull();
+      for (const i of forbidden) expect(cut.blockIndex).not.toBe(i);
     }
+  });
+
+  // no-dense-run: rule (b) is deleted; (a) alone carries INV-7 → docs/modules/freeze.md#no-dense-run
+  it('still finds a cut in budget when the reserved header appears every third block', () => {
+    const parts = [];
+    for (let i = 0; i < 140; i += 1) {
+      if (i % 3 === 0) parts.push(tag('Mara', 60));
+      else if (i % 3 === 1) parts.push(tag('Anton', 60));
+      else parts.push(buf(60, `p${i}w`));
+    }
+    const text = manuscript(parts);
+    const blocks = parseManuscript(text);
+
+    for (let seed = 0; seed < 25; seed += 1) {
+      const cut = selectCut(text, LITERAL, { jitterSeed: seed });
+      expect(cut).not.toBeNull();
+      expect(cut.overrun).toBe(false);
+      expect(cut.words).toBeGreaterThanOrEqual(FREEZE_MIN_WORDS);
+      expect(cut.words).toBeLessThanOrEqual(FREEZE_MAX_WORDS);
+      expect(blocks[cut.blockIndex].raw.startsWith(LITERAL)).toBe(false);
+      expect(blocks[cut.blockIndex + 1].raw.startsWith(LITERAL)).toBe(false);
+    }
+  });
+
+  it('names no dense-run radius at all', () => {
+    expect(SOURCE).not.toMatch(/DENSE|dense/);
   });
 
   it('treats only a block that starts with the literal as reserved', () => {
@@ -144,17 +165,47 @@ describe('hard rules', () => {
 });
 
 describe('soft preferences', () => {
-  it('prefers a buffer as the next block over avoiding a scene seam', () => {
+  function neutral(n) {
+    return `∅: ${buf(n - 1)}`;
+  }
+
+  it('prefers a neutral span start over a character span start and over a mid-span gap', () => {
     const text = manuscript([
-      buf(100), buf(100), buf(100), tag('Anton', 100), 'THE NEXT MORNING', buf(100),
+      buf(100), buf(100), tag('Anton', 100), buf(100), neutral(100), buf(100),
     ]);
-    const opts = { min: 250, max: 401 };
-    const seed = seedWhere(text, LITERAL, opts, (cut) => cut.target <= 349);
+    const opts = { min: 150, max: 500 };
+    const seed = seedWhere(text, LITERAL, opts, (cut) => cut.target <= 250);
     expect(seed).not.toBeNull();
 
     const cut = selectCut(text, LITERAL, { ...opts, jitterSeed: seed });
-    expect(Math.abs(300 - cut.target)).toBeLessThan(Math.abs(400 - cut.target));
+    expect(Math.abs(200 - cut.target)).toBeLessThan(Math.abs(400 - cut.target));
     expect(cut.blockIndex).toBe(3);
+  });
+
+  it('prefers a character span start over a mid-span gap when no neutral start is in budget', () => {
+    const text = manuscript([
+      buf(100), buf(100), tag('Anton', 100), buf(100), buf(100), buf(100),
+    ]);
+    const opts = { min: 150, max: 500 };
+    const seed = seedWhere(text, LITERAL, opts, (cut) => cut.target >= 420);
+    expect(seed).not.toBeNull();
+
+    const cut = selectCut(text, LITERAL, { ...opts, jitterSeed: seed });
+    expect(Math.abs(200 - cut.target)).toBeGreaterThan(Math.abs(400 - cut.target));
+    expect(cut.blockIndex).toBe(1);
+  });
+
+  it('still returns a mid-span paragraph gap when no span start is in budget', () => {
+    const text = manuscript([buf(100), buf(100), buf(100), buf(100), buf(100), buf(100)]);
+    const spans = groupSpans(parseManuscript(text));
+    expect(spans).toHaveLength(1);
+
+    for (let seed = 0; seed < 40; seed += 1) {
+      const cut = selectCut(text, LITERAL, { min: 150, max: 500, jitterSeed: seed });
+      expect(cut).not.toBeNull();
+      expect(spans[0].blockIndices[0]).not.toBe(cut.blockIndex + 1);
+      expect(Math.abs(cut.words - cut.target)).toBeLessThanOrEqual(50);
+    }
   });
 
   const probes = [
@@ -168,25 +219,35 @@ describe('soft preferences', () => {
   ];
 
   it.each(probes)('scene-opening heuristic: %s', (probe, isSeam) => {
-    const text = manuscript([buf(200), probe, tag('Anton', 60), buf(60), buf(60)]);
+    const text = manuscript([buf(200), probe, buf(60), buf(60)]);
     const opts = { min: 150, max: 300 };
-    const seed = seedWhere(text, LITERAL, opts, (cut) => cut.target <= 229);
+    const seed = seedWhere(text, LITERAL, opts, (cut) => cut.target <= 199);
     expect(seed).not.toBeNull();
 
     const cut = selectCut(text, LITERAL, { ...opts, jitterSeed: seed });
-    expect(cut.blockIndex).toBe(isSeam ? 2 : 0);
+    expect(cut.blockIndex).toBe(isSeam ? 1 : 0);
   });
 
-  it('never treats a tag block as a scene opening', () => {
+  it('never treats a span-opening tag block as a scene opening', () => {
     const text = manuscript([
-      buf(200), 'Anton: he waits.', tag('Bela', 60), buf(60), buf(60),
+      buf(100), 'Anton: He Waits.', buf(100).replace(/\.$/, ''), 'Bela: She Nods.', buf(100),
     ]);
-    const opts = { min: 150, max: 250 };
-    const seed = seedWhere(text, LITERAL, opts, (cut) => cut.target <= 201);
+    const opts = { min: 100, max: 250 };
+    const seed = seedWhere(text, LITERAL, opts, (cut) => cut.target <= 150);
     expect(seed).not.toBeNull();
 
-    const cut = selectCut(text, LITERAL, { ...opts, jitterSeed: seed });
-    expect(cut.blockIndex).toBe(0);
+    expect(selectCut(text, LITERAL, { ...opts, jitterSeed: seed }).blockIndex).toBe(0);
+  });
+
+  it('never treats a span-opening neutral block as a scene opening', () => {
+    const text = manuscript([
+      buf(100), '∅: Rain Falls.', buf(100).replace(/\.$/, ''), '∅: Wind Rises.', buf(100),
+    ]);
+    const opts = { min: 100, max: 250 };
+    const seed = seedWhere(text, LITERAL, opts, (cut) => cut.target <= 150);
+    expect(seed).not.toBeNull();
+
+    expect(selectCut(text, LITERAL, { ...opts, jitterSeed: seed }).blockIndex).toBe(0);
   });
 });
 
@@ -335,11 +396,9 @@ describe('maybeFreeze', () => {
   });
 
   it('refuses a cut that falls inside a transformed user block and moves nothing', () => {
-    const blocks = [];
-    for (let i = 0; i < 6; i += 1) blocks.push(buf(100));
     const chat = [
       assistant(manuscript([buf(100), buf(100)]), 'a'),
-      user(manuscript(blocks), 'b'),
+      user(manuscript([buf(100), buf(100), tag('Anton', 100), buf(100), buf(100), buf(100)]), 'b'),
     ];
     const state = createState();
     const derived = deriveFrontier(chat, state, LITERAL);
@@ -527,7 +586,9 @@ describe('defaults', () => {
   it('freezes inside the 3,000–4,200 word window on a real-sized manuscript', () => {
     const blocks = [];
     for (let i = 0; i < 60; i += 1) {
-      blocks.push(i === 2 || i === 55 ? tag('Mara', 100) : buf(100, `b${i}w`));
+      if (i === 2 || i === 55) blocks.push(tag('Mara', 100));
+      else if (i % 6 === 0) blocks.push(tag('Anton', 100));
+      else blocks.push(buf(100, `b${i}w`));
     }
     const text = manuscript(blocks);
 
@@ -546,6 +607,5 @@ describe('defaults', () => {
   it('exposes the three freeze constants', () => {
     expect(FREEZE_MIN_WORDS).toBe(3000);
     expect(FREEZE_MAX_WORDS).toBe(4200);
-    expect(FREEZE_DENSE_RADIUS).toBe(2);
   });
 });

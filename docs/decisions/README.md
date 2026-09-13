@@ -26,3 +26,4 @@ One paragraph.
 - [0002 — structure from Intercede](0002-structure-from-intercede.md)
 - [0003 — duplication-filter wording](0003-duplication-filter-wording.md)
 - [0004 — the mutable frontier is derived, not accumulated](0004-derived-frontier.md)
+- [0005 — agency spans in code](0005-agency-spans.md)

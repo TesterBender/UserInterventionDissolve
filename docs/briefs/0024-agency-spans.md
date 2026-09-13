@@ -1,5 +1,5 @@
 # Brief 0024 — carry the agency-span grammar in code
-Status: draft
+Status: implemented
 Complexity: high
 PLAN sections: §5 (a manuscript is atomic blocks separated by a blank line; a block is a tag block or a buffer block; the compiler never freezes through the middle of a complete block), §9 (the collaborator's input is transformed into manuscript text and merged after the model-generated material, never left as a user turn), §17 (transport cuts may correlate with low-salience structure — mid-passage buffer boundaries, ordinary non-climactic transitions — and must avoid immediately before/after the external character, dense external runs, scene openings and closures), plus `PLAN-addendum-agency-spans.md` §2 (a character header opens a span that persists across paragraphs), §3 (the application recognises headers only where ownership protection needs it and never judges prose as character vs neutral), §9 (the host may recognise `∅:` structurally for safe cut selection; it must never manufacture a neutral buffer), §10 (lint stays advisory — not implemented), §12 (transport must not become aligned with every agency transition), §14 (no state machine deciding when narration enters or leaves neutral scope)
 Invariants touched: INV-1 (commitment occurs through ownership-safe tag blocks — "block" now reads as "span", `docs/protocol/invariants.md#agency-spans`), INV-7 (transport cuts avoid the external character — the avoided unit becomes the external character's *span*, not a single block)
@@ -75,16 +75,16 @@ Per "Docs to write/update" below.
 - (empty — no SillyTavern API is involved.)
 
 ## Acceptance
-- [ ] `groupSpans` groups own-line headers, legacy inline headers and `∅:` correctly, marks only `∅:` spans `neutral`, gives a leading header-less run `header: null`, and returns `[]` for `[]`.
-- [ ] `TAG_HEADER` in `src/grammar.js` is byte-identical to its pre-brief form; `parseManuscript`, `parseTagHeader`, `findTagLiteral`, `isTrailingBlockComplete`, `lastCompleteBoundary` and `truncateToLastCompleteBlock` are unchanged.
-- [ ] `toManuscriptBlock('sets the cup down.', 'Mara:')` is `'Mara:\nsets the cup down.'`; a two-paragraph input yields one block whose text after the first newline is byte-identical to the trimmed input; `'Mara:\nshe waits.'` and `'Mara: she waits.'` are both returned unchanged; an empty literal still yields the untagged trimmed text.
-- [ ] `src/derive.js` contains no occurrence of the old `` `${literal} ` `` space-joined form.
-- [ ] A frontier containing a six-block span opened by the reserved literal yields no cut with `blockIndex` inside that span or immediately before/after it, for every `jitterSeed` in a swept range.
-- [ ] With a `∅:` span start and a character span start both in budget and neither a scene seam, the `∅:` boundary is chosen; with only non-neutral span starts in budget, a span start is chosen over a mid-span gap; with no span start in budget, a mid-span paragraph gap inside a non-external span is returned rather than `null`.
-- [ ] `isSceneOpening` returns `false` for a `∅:` opening block and for a tag-header opening block; the `SCENE_SEPARATOR`, all-caps and Title-Case cases from brief 0011 still pass.
-- [ ] The INV-6 (never cut at an incomplete trailing block), overrun, determinism-under-seed, verbatim-remainder and INV-10 cases in `tests/freeze.test.js` still pass unmodified in substance.
-- [ ] `npm run check` passes.
-- [ ] every new pointer comment resolves (`node tools/check-comments.mjs`).
+- [x] `groupSpans` groups own-line headers, legacy inline headers and `∅:` correctly, marks only `∅:` spans `neutral`, gives a leading header-less run `header: null`, and returns `[]` for `[]`.
+- [x] `TAG_HEADER` in `src/grammar.js` is byte-identical to its pre-brief form; `parseManuscript`, `parseTagHeader`, `findTagLiteral`, `isTrailingBlockComplete`, `lastCompleteBoundary` and `truncateToLastCompleteBlock` are unchanged.
+- [x] `toManuscriptBlock('sets the cup down.', 'Mara:')` is `'Mara:\nsets the cup down.'`; a two-paragraph input yields one block whose text after the first newline is byte-identical to the trimmed input; `'Mara:\nshe waits.'` and `'Mara: she waits.'` are both returned unchanged; an empty literal still yields the untagged trimmed text.
+- [x] `src/derive.js` contains no occurrence of the old `` `${literal} ` `` space-joined form.
+- [x] A frontier containing a six-block span opened by the reserved literal yields no cut with `blockIndex` inside that span or immediately before/after it, for every `jitterSeed` in a swept range.
+- [x] With a `∅:` span start and a character span start both in budget and neither a scene seam, the `∅:` boundary is chosen; with only non-neutral span starts in budget, a span start is chosen over a mid-span gap; with no span start in budget, a mid-span paragraph gap inside a non-external span is returned rather than `null`.
+- [x] `isSceneOpening` returns `false` for a `∅:` opening block and for a tag-header opening block; the `SCENE_SEPARATOR`, all-caps and Title-Case cases from brief 0011 still pass.
+- [x] The INV-6 (never cut at an incomplete trailing block), overrun, determinism-under-seed, verbatim-remainder and INV-10 cases in `tests/freeze.test.js` still pass unmodified in substance.
+- [x] `npm run check` passes.
+- [x] every new pointer comment resolves (`node tools/check-comments.mjs`).
 
 ## Docs to write/update
 - `docs/modules/grammar.md` — new `## Spans {#spans}`: a header opens a span that persists across paragraphs until the next header; both accepted header forms and why the legacy inline form is still accepted; `∅:` needs its own regex because `TAG_HEADER`'s first-character class excludes U+2205; the returned shape; and the explicit statement that `groupSpans` performs no content judgement (addendum §3, §14) — it reports where headers are, nothing about what the prose means. Keep `## Actor classification` as it stands.
@@ -93,3 +93,19 @@ Per "Docs to write/update" below.
 - `docs/protocol/host-mapping.md#s9-capture` — one added line: the collaborator's captured input is tagged with an own-line header, so a multi-paragraph contribution enters the manuscript as one agency span.
 - `docs/decisions/0005-agency-spans.md` (new, template in `docs/decisions/README.md`) — Decision: what moved into code (span grouping, own-line tagging, span-aware cut selection) and what stays prompt-level (when to open a span, when `∅:` is warranted, whether a neutral passage is misused); Alternatives rejected: an owner state machine (addendum §14), a neutral-buffer lint (addendum §10), making span boundaries the transport unit (addendum §12), deleting `classifyActor` in this brief; Consequences: `∅:` is a pinned literal in `src/grammar.js`, cuts can no longer land inside a long external span so freezes may be postponed more often, and old chats keep parsing because the inline header form is still accepted.
 - `docs/decisions/README.md` — one line added to the Records list.
+
+## Amendment 1 (orchestrator, 2026-09-13) — dense-run rule removed by user decision
+
+Live finding: with the span-aware rules in place, hard rule (b) starves freezing. A probe with the collaborator's header every third block returned `null` at any length, and every fourth block reached its first cut only past 7,005 words — a contradiction of PLAN §18, which requires dense external-character activity to move or postpone a cut, never to prevent one.
+
+User decision: rule (b) "should not exist — too heavy-handed and not that important for steering generation." It is therefore **deleted**, not tiered:
+
+- `FREEZE_DENSE_RADIUS` is removed from `src/constants.js` and from every use and test.
+- Hard rule (a) stands as specified above (never inside, immediately before or immediately after the external character's span — INV-7), and is now the only hard rule.
+- The (c) preference ladder and the (d) scene-opening preference are unchanged.
+- `docs/modules/freeze.md#no-dense-run` records why §17's "dense runs" avoidance is deliberately not implemented, and `docs/decisions/0005-agency-spans.md` carries one sentence to the same effect.
+- A starvation test (140 blocks, reserved header every third block) asserts a cut lands within `[FREEZE_MIN_WORDS, FREEZE_MAX_WORDS]` with (a) + (c) + (d) alone.
+
+This amendment extends the file allowlist to `src/constants.js`.
+
+- [x] the dense-run rule, its constant and its tests are gone; the starvation case cuts in budget.

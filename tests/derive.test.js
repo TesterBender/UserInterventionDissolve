@@ -8,8 +8,8 @@ import { ensureMessageId, assignIds, deriveFrontier, toManuscriptBlock } from '.
 const LITERAL = 'Mara:';
 
 describe('toManuscriptBlock', () => {
-  it('prefixes the reserved literal with a single space', () => {
-    expect(toManuscriptBlock('sets the cup down. "No."', LITERAL)).toBe('Mara: sets the cup down. "No."');
+  it('prefixes the reserved literal as an own-line header', () => {
+    expect(toManuscriptBlock('sets the cup down. "No."', LITERAL)).toBe('Mara:\nsets the cup down. "No."');
   });
 
   it('leaves an already-tagged block byte-identical', () => {
@@ -22,18 +22,38 @@ describe('toManuscriptBlock', () => {
     expect(toManuscriptBlock('Mara : sets the cup down.', LITERAL)).toBe('Mara : sets the cup down.');
   });
 
+  it('leaves both header forms alone and never doubles the tag', () => {
+    expect(toManuscriptBlock('Mara:\nshe waits.', LITERAL)).toBe('Mara:\nshe waits.');
+    expect(toManuscriptBlock('Mara: she waits.', LITERAL)).toBe('Mara: she waits.');
+  });
+
+  it('makes a multi-paragraph message one headed contribution, paragraphs byte-identical', () => {
+    const input = 'She pushed open the door.\n\nCold air moved into the hallway.\n\n"Anton?"';
+    const out = toManuscriptBlock(input, LITERAL);
+
+    expect(out).toBe(`Mara:\n${input}`);
+    expect(out.slice(out.indexOf('\n') + 1)).toBe(input);
+    expect(out.split('\n')[0]).toBe('Mara:');
+  });
+
+  it('does not appear as the old space-joined form anywhere in the module', () => {
+    const source = fs.readFileSync(path.join(process.cwd(), 'src/derive.js'), 'utf8');
+    expect(source).toContain('`${literal}\\n${trimmed}`');
+    expect(source).not.toContain('`${literal} ${trimmed}`');
+  });
+
   it('leaves a tagged two-block input untouched, second block included', () => {
     const text = 'Mara: she stands.\n\nThe room settles.';
     expect(toManuscriptBlock(text, LITERAL)).toBe(text);
   });
 
-  it('prefixes an untagged two-block input on the first block only', () => {
+  it('heads an untagged two-block input once, above the first block', () => {
     expect(toManuscriptBlock('she stands.\n\nThe room settles.', LITERAL))
-      .toBe('Mara: she stands.\n\nThe room settles.');
+      .toBe('Mara:\nshe stands.\n\nThe room settles.');
   });
 
   it('prefixes a block tagged with a different actor', () => {
-    expect(toManuscriptBlock('Anton: he looks up.', LITERAL)).toBe('Mara: Anton: he looks up.');
+    expect(toManuscriptBlock('Anton: he looks up.', LITERAL)).toBe('Mara:\nAnton: he looks up.');
   });
 
   it('returns the empty string for empty, blank, undefined and non-string input', () => {
@@ -127,10 +147,10 @@ describe('deriveFrontier', () => {
 
     const { text, segments } = deriveFrontier(chat, emptyState(), LITERAL);
 
-    expect(text).toBe(`Mara: Mara opens the door.${BLOCK_DELIMITER}The hall is cold.`);
+    expect(text).toBe(`Mara:\nMara opens the door.${BLOCK_DELIMITER}The hall is cold.`);
     expect(text).not.toContain('SYSTEM');
     expect(segments).toHaveLength(2);
-    expect(text.slice(segments[0].start, segments[0].end)).toBe('Mara: Mara opens the door.');
+    expect(text.slice(segments[0].start, segments[0].end)).toBe('Mara:\nMara opens the door.');
     expect(text.slice(segments[1].start, segments[1].end)).toBe('The hall is cold.');
     expect(segments.map((segment) => segment.id)).toEqual([null, null]);
   });
@@ -160,7 +180,7 @@ describe('deriveFrontier', () => {
     const chat = [makeMessage({ name: 'Mara', mes: ' she waits. ' })];
     const { text, segments } = deriveFrontier(chat, emptyState(), LITERAL);
 
-    expect(text).toBe('Mara: she waits.');
+    expect(text).toBe('Mara:\nshe waits.');
     expect(segments[0].sourceStart).toBeNull();
   });
 

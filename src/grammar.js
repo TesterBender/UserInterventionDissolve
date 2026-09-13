@@ -4,6 +4,9 @@ const DELIMITER = /\r?\n(?:[ \t]*\r?\n)+/g;
 // tag-header: any name-then-colon at block start is a tag → docs/modules/grammar.md#tag-header
 const TAG_HEADER = /^(?!["“”'‘’«»])([\p{L}\p{N}][\p{L}\p{N} '’\-.]{0,39}):(?=\s|$)/u;
 
+// neutral-header: U+2205 is outside TAG_HEADER's first-character class → docs/modules/grammar.md#spans
+const NEUTRAL_HEADER = /^∅:(?=\s|$)/u;
+
 // block-completeness: terminal punctuation plus balanced double quotes → docs/modules/grammar.md#block-completeness
 const TERMINAL = /[.!?…]["”'’)\]*]*$/;
 
@@ -61,6 +64,29 @@ export function parseManuscript(text) {
     });
   }
   return blocks;
+}
+
+// agency-spans: a header opens a span; every other block joins it → docs/modules/grammar.md#spans
+export function groupSpans(blocks) {
+  const spans = [];
+  blocks.forEach((block, index) => {
+    const neutral = NEUTRAL_HEADER.test(block.raw);
+    const opens = neutral || block.kind === 'tag';
+    if (!opens && spans.length > 0) {
+      const current = spans[spans.length - 1];
+      current.end = block.end;
+      current.blockIndices.push(index);
+      return;
+    }
+    spans.push({
+      header: neutral ? '∅' : block.actor,
+      neutral,
+      start: block.start,
+      end: block.end,
+      blockIndices: [index],
+    });
+  });
+  return spans;
 }
 
 // actor-classification: individual vs aggregate against a caller-supplied set → docs/modules/grammar.md#actor-classification

@@ -3,6 +3,7 @@ import {
   parseManuscript,
   parseTagHeader,
   classifyActor,
+  groupSpans,
   findTagLiteral,
   isTrailingBlockComplete,
   lastCompleteBoundary,
@@ -123,6 +124,76 @@ describe('parseTagHeader', () => {
     const blocks = parseManuscript('12:30 by the clock.\n\nshe said: "no"\n\nHe turned. Anton: left.');
     expect(blocks.map((b) => b.kind)).toEqual(['buffer', 'tag', 'tag']);
     expect(blocks.map((b) => b.actor)).toEqual([null, 'she said', 'He turned. Anton']);
+  });
+});
+
+describe('groupSpans', () => {
+  function spansOf(text) {
+    return groupSpans(parseManuscript(text));
+  }
+
+  it('opens a span on an own-line header and carries it across paragraphs', () => {
+    const text = 'Anton:\nHe set the folder down.\n\nFor several seconds he said nothing.\n\nHe waited.';
+    const spans = spansOf(text);
+
+    expect(spans).toHaveLength(1);
+    expect(spans[0].header).toBe('Anton');
+    expect(spans[0].neutral).toBe(false);
+    expect(spans[0].blockIndices).toEqual([0, 1, 2]);
+    expect(text.slice(spans[0].start, spans[0].end)).toBe(text);
+  });
+
+  it('opens a span on the legacy inline header too', () => {
+    const spans = spansOf('Anton: he set the folder down.\n\nHe waited.');
+
+    expect(spans).toHaveLength(1);
+    expect(spans[0].header).toBe('Anton');
+    expect(spans[0].blockIndices).toEqual([0, 1]);
+  });
+
+  it('opens a neutral span on the reserved neutral header only', () => {
+    const text = 'Anton:\nHe waited.\n\n∅:\nRain worked against the windows.\n\nSomewhere a door shut.';
+    const spans = spansOf(text);
+
+    expect(spans.map((span) => span.header)).toEqual(['Anton', '∅']);
+    expect(spans.map((span) => span.neutral)).toEqual([false, true]);
+    expect(spans[1].blockIndices).toEqual([1, 2]);
+    expect(spansOf('∅ the empty set.\n\nRain fell.').map((span) => span.neutral)).toEqual([false]);
+  });
+
+  it('gives a leading header-less run its own span with a null header', () => {
+    const text = 'Rain fell.\n\nThe street emptied.\n\nAnton:\nHe waited.';
+    const spans = spansOf(text);
+
+    expect(spans).toHaveLength(2);
+    expect(spans[0].header).toBeNull();
+    expect(spans[0].neutral).toBe(false);
+    expect(spans[0].blockIndices).toEqual([0, 1]);
+    expect(spans[1].header).toBe('Anton');
+  });
+
+  it('makes two consecutive header blocks two one-block spans', () => {
+    const spans = spansOf('Anton:\n\nBela: she nods.\n\n∅: rain.');
+
+    expect(spans.map((span) => span.blockIndices)).toEqual([[0], [1], [2]]);
+    expect(spans.map((span) => span.header)).toEqual(['Anton', 'Bela', '∅']);
+  });
+
+  it('covers exactly its own blocks with start and end, and returns [] for []', () => {
+    const text = 'Rain fell.\n\nAnton:\nHe waited.\n\nStill nothing.\n\n∅:\nThe storm moved east.';
+    const blocks = parseManuscript(text);
+    const spans = groupSpans(blocks);
+
+    for (const span of spans) {
+      const first = blocks[span.blockIndices[0]];
+      const last = blocks[span.blockIndices[span.blockIndices.length - 1]];
+      expect(span.start).toBe(first.start);
+      expect(span.end).toBe(last.end);
+      expect(text.slice(span.start, span.end).startsWith(first.raw)).toBe(true);
+      expect(text.slice(span.start, span.end).endsWith(last.raw)).toBe(true);
+    }
+    expect(spans.flatMap((span) => span.blockIndices)).toEqual(blocks.map((_, i) => i));
+    expect(groupSpans([])).toEqual([]);
   });
 });
 

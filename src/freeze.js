@@ -1,7 +1,7 @@
 import { getCtx } from './host.js';
-import { parseManuscript, findTagLiteral } from './grammar.js';
+import { parseManuscript, findTagLiteral, groupSpans } from './grammar.js';
 import { getState, pushFrozen, advanceWatermark } from './state.js';
-import { METADATA_KEY, FREEZE_MIN_WORDS, FREEZE_MAX_WORDS, FREEZE_DENSE_RADIUS } from './constants.js';
+import { METADATA_KEY, FREEZE_MIN_WORDS, FREEZE_MAX_WORDS } from './constants.js';
 
 // sentence-final: copy of grammar's private TERMINAL → docs/modules/freeze.md#salience-heuristics
 const SENTENCE_FINAL = /[.!?…]["”'’)\]*]*$/;
@@ -27,8 +27,8 @@ function jitterOffset(seed, span) {
   return x % (span + 1);
 }
 
-// reserved-blocks: literal at block start only, never the parsed actor → docs/modules/freeze.md#salience-heuristics
-function reservedBlocks(text, literal, blocks) {
+// reserved-spans: literal at the span's first block start, never a parsed actor → docs/modules/freeze.md#salience-heuristics
+function reservedSpans(text, literal, spans) {
   const reserved = new Set();
   if (typeof literal !== 'string') return reserved;
   const actor = literal.replace(/:$/, '');
@@ -39,8 +39,8 @@ function reservedBlocks(text, literal, blocks) {
       .filter((hit) => hit.atBlockStart)
       .map((hit) => hit.index),
   );
-  blocks.forEach((block, i) => {
-    if (starts.has(block.start)) reserved.add(i);
+  spans.forEach((span, k) => {
+    if (starts.has(span.start)) reserved.add(k);
   });
   return reserved;
 }
@@ -61,23 +61,26 @@ function isTitleCase(line) {
 }
 
 // scene-opening: mechanical marker test, never a semantic judgement → docs/modules/freeze.md#salience-heuristics
-function isSceneOpening(block) {
+function isSceneOpening(block, opensSpan) {
   const first = block.raw.split(/\r?\n/)[0].trim();
   if (SCENE_SEPARATOR.test(first)) return true;
-  if (block.kind === 'tag') return false;
+  if (opensSpan) return false;
   if (countWords(block.raw) > 6) return false;
   return isAllCaps(first) || isTitleCase(first);
 }
 
-// soft-preferences: buffer next outranks scene-seam avoidance → docs/modules/freeze.md#salience-heuristics
-function preferred(inBudget, blocks, cumWords, target) {
-  const bufferNext = (i) => blocks[i + 1].kind === 'buffer';
+// soft-preferences: neutral span start, then any span start, then scene-seam avoidance → docs/modules/freeze.md#salience-heuristics
+function preferred(inBudget, blocks, spans, spanOf, cumWords, target) {
+  const spanStart = (i) => spans[spanOf[i + 1]].blockIndices[0] === i + 1;
+  const neutralStart = (i) => spanStart(i) && spans[spanOf[i + 1]].neutral;
   const sceneSeam = (i) =>
-    SENTENCE_FINAL.test(blocks[i].raw.replace(/\s+$/, '')) && isSceneOpening(blocks[i + 1]);
+    SENTENCE_FINAL.test(blocks[i].raw.replace(/\s+$/, '')) && isSceneOpening(blocks[i + 1], spanStart(i));
 
   const tiers = [
-    inBudget.filter((i) => bufferNext(i) && !sceneSeam(i)),
-    inBudget.filter((i) => bufferNext(i)),
+    inBudget.filter((i) => neutralStart(i) && !sceneSeam(i)),
+    inBudget.filter((i) => neutralStart(i)),
+    inBudget.filter((i) => spanStart(i) && !sceneSeam(i)),
+    inBudget.filter((i) => spanStart(i)),
     inBudget.filter((i) => !sceneSeam(i)),
     inBudget,
   ];
@@ -103,19 +106,16 @@ export function selectCut(frontierText, literal, opts = {}) {
   if (blocks.length < 2) return null;
 
   const cumWords = blocks.map((block) => countWords(frontierText.slice(0, block.end)));
-  const reserved = reservedBlocks(frontierText, literal, blocks);
+  const spans = groupSpans(blocks);
+  const spanOf = [];
+  spans.forEach((span, k) => span.blockIndices.forEach((i) => { spanOf[i] = k; }));
+  const reserved = reservedSpans(frontierText, literal, spans);
 
   const safe = [];
   for (let i = 0; i <= blocks.length - 2; i += 1) {
     if (!blocks[i].complete) continue;
     if (cumWords[i] < min) continue;
-    if (reserved.has(i) || reserved.has(i + 1)) continue;
-
-    let dense = false;
-    for (let j = i - (FREEZE_DENSE_RADIUS - 1); j <= i + FREEZE_DENSE_RADIUS; j += 1) {
-      if (reserved.has(j)) dense = true;
-    }
-    if (dense) continue;
+    if (reserved.has(spanOf[i]) || reserved.has(spanOf[i + 1])) continue;
 
     safe.push(i);
   }
@@ -126,7 +126,7 @@ export function selectCut(frontierText, literal, opts = {}) {
 
   // overrun: first safe boundary past max, preferences not applied → docs/modules/freeze.md#overrun
   const inBudget = safe.filter((i) => cumWords[i] <= max);
-  const chosen = inBudget.length === 0 ? safe[0] : preferred(inBudget, blocks, cumWords, target);
+  const chosen = inBudget.length === 0 ? safe[0] : preferred(inBudget, blocks, spans, spanOf, cumWords, target);
 
   return {
     blockIndex: chosen,

@@ -72,3 +72,26 @@ The test is textual because no finish reason is available: generation is streame
 This is the codebase's single definition of completeness. `freeze` and `recovery` call `isTrailingBlockComplete` / `lastCompleteBoundary` / `truncateToLastCompleteBlock` rather than re-deriving a rule (§14, INV-6, INV-8): two definitions would eventually disagree, and the disagreement would show up as a cut inside a block or a rollback that keeps a half-sentence.
 
 `lastCompleteBoundary` returns the end offset of the last complete block, or `0` when no block is complete, so `truncateToLastCompleteBlock` can never return a partial block or a dangling delimiter.
+
+## Spans {#spans}
+
+A manuscript's paragraphs are not its ownership units. A header opens an **agency span** that persists across as many ordinary prose paragraphs as the passage needs, until the next header opens the next span (`PLAN-addendum-agency-spans.md` §2). `groupSpans(blocks)` takes exactly what `parseManuscript` returns and reports where those spans begin and end; it reads nothing else and is pure.
+
+Two header forms open a span, and both are accepted for the same reason the tag rule is confident rather than clever:
+
+- the own-line form, a bare `<tag>:` on the block's first line with the passage below it — `TAG_HEADER`'s `(?=\s|$)` lookahead already admits a newline, so the block parses as `kind: 'tag'` with the same actor it would have had inline;
+- the legacy inline form, `<tag>: sets the cup down.`, which is what every chat written before spans existed contains. Dropping it would make old manuscripts re-group, so it stays.
+
+The neutral header `∅:` (U+2205) needs its own test, `NEUTRAL_HEADER`, because `TAG_HEADER`'s first-character class is `[\p{L}\p{N}]` and `∅` is neither a letter nor a digit: a `∅:` block parses as `kind: 'buffer'` and would otherwise join the span in front of it. The literal is pinned; it is model-facing manuscript notation taught by the prompt, never something code inserts, suggests or repairs (addendum §5, §9).
+
+Every block that is not a header block **joins the current span**. A run of header-less blocks before the first header is its own span with `header: null` — the ordinary shape of a manuscript that opens on narration.
+
+The returned shape, in document order:
+
+```js
+[{ header, neutral, start, end, blockIndices }]
+```
+
+`header` is the parsed `actor` for a tag span, the string `'∅'` for a neutral span and `null` for a leading header-less run. `neutral` is `true` only for a `∅:` span. `start` is the first block's `start` and `end` the last block's `end`, so `text.slice(span.start, span.end)` covers exactly that span's blocks together with the delimiters between them. `blockIndices` is the ascending list of indices into the `blocks` array that was passed in. An empty `blocks` array yields `[]`.
+
+`groupSpans` makes **no content judgement of any kind**. It does not decide whether prose is character narration or neutral narration, and contains no state machine that opens or closes a span on its own (addendum §3, §14). The two classifications it reports are "this block carries a header" and, for the caller, "this span's first block starts with the reserved literal" — which is `freeze`'s test, computed through `findTagLiteral`, not through `header` (`docs/modules/freeze.md#salience-heuristics`). Whether a neutral passage is warranted, or a character span has run too long, is a writing judgement the prompt elicits and the model performs.

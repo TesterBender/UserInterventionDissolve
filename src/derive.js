@@ -1,7 +1,9 @@
 import { METADATA_KEY, BLOCK_DELIMITER } from './constants.js';
 import { parseTagHeader } from './grammar.js';
 
-// transformation-rule: tag the first block only, rest byte-identical → docs/modules/derive.md#transformation-rule
+// own-line-header: one header, one span, paragraphs below it verbatim → docs/modules/derive.md#own-line-header
+// own-line-header: one header, one span, paragraphs below it verbatim → docs/modules/derive.md#own-line-header
+// transformation-rule: head the contribution, paragraphs byte-identical → docs/modules/derive.md#transformation-rule
 // reserved-literal: borrowed from boundary, empty name writes no tag → docs/modules/derive.md#reserved-literal
 export function toManuscriptBlock(text, literal) {
   if (typeof text !== 'string') return '';
@@ -13,7 +15,7 @@ export function toManuscriptBlock(text, literal) {
   const header = parseTagHeader(trimmed);
   if (header !== null && header.actor.trim().toLowerCase() === actor.trim().toLowerCase()) return trimmed;
 
-  return `${literal} ${trimmed}`;
+  return `${literal}\n${trimmed}`;
 }
 
 // message-ids: random and meaningless, spread past sibling markers → docs/modules/derive.md#message-ids

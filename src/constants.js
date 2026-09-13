@@ -36,5 +36,3 @@ export const FREEZE_MIN_WORDS = 3000;
 // freeze-max-words: advisory ceiling; a cut past it is an overrun → docs/modules/freeze.md#overrun
 export const FREEZE_MAX_WORDS = 4200;
 
-// freeze-dense-radius: blocks scanned either side for reserved-literal runs → docs/modules/freeze.md#salience-heuristics
-export const FREEZE_DENSE_RADIUS = 2;
