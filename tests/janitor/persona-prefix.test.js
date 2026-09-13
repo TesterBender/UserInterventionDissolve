@@ -1,6 +1,5 @@
 import { describe, it, expect, beforeEach, afterEach, vi } from 'vitest';
 import { classifyMessages } from '../../janitor/history.js';
-import { assignIdentities } from '../../janitor/identity.js';
 import { BLOCK_DELIMITER } from '../../src/constants.js';
 import {
   CHAT_ID,
@@ -19,8 +18,8 @@ import {
 const LITERAL = `${PERSONA}:`;
 
 const ENVELOPE_MAINS = [
-  { position: 0, isMain: true, isBot: true, message: GREETING },
-  { position: 1, isMain: true, isBot: false, message: USER_TURN },
+  { position: 0, id: '103237690204', isMain: true, isBot: true, message: GREETING },
+  { position: 1, id: '103237690391', isMain: true, isBot: false, message: USER_TURN },
 ];
 
 describe('classifyMessages with a persona prefix', () => {
@@ -71,7 +70,7 @@ describe('classifyMessages with a persona prefix', () => {
     expect(injections.map((entry) => entry.content)).toEqual([CUSTOM_PROMPT, PREFIXED_USER_TURN]);
   });
 
-  it('gives a prefixed turn the same identity as the same turn sent bare', () => {
+  it('gives a prefixed turn the envelope id of the entry it consumed', () => {
     const prefixed = classifyMessages(CAPTURED_BODY.messages, ENVELOPE_MAINS, PERSONA).history;
     const bare = classifyMessages(
       [
@@ -82,7 +81,8 @@ describe('classifyMessages with a persona prefix', () => {
       ENVELOPE_MAINS,
       PERSONA,
     ).history;
-    expect(assignIdentities(prefixed)).toEqual(assignIdentities(bare));
+    expect(prefixed.map((entry) => entry.messageId)).toEqual(['103237690204', '103237690391']);
+    expect(prefixed.map((entry) => entry.messageId)).toEqual(bare.map((entry) => entry.messageId));
   });
 });
 

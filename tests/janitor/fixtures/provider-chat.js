@@ -27,9 +27,9 @@ export const PROVIDER_BODY = {
 };
 
 export const ENVELOPE_CHAT_MESSAGES = [
-  { position: 0, isMain: true, isBot: false, message: HISTORY_ONE },
-  { position: 1, isMain: true, isBot: true, message: HISTORY_TWO },
-  { position: 2, isMain: false, isBot: true, message: 'An alternative nobody selected.' },
-  { position: 3, isMain: true, isBot: false, message: HISTORY_THREE },
-  { position: 4, isMain: true, isBot: true, message: HISTORY_FOUR },
+  { position: 0, id: '103237690201', isMain: true, isBot: false, message: HISTORY_ONE },
+  { position: 1, id: '103237690202', isMain: true, isBot: true, message: HISTORY_TWO },
+  { position: 2, id: '103237690203', isMain: false, isBot: true, message: 'An alternative nobody selected.' },
+  { position: 3, id: '103237690204', isMain: true, isBot: false, message: HISTORY_THREE },
+  { position: 4, id: '103237690205', isMain: true, isBot: true, message: HISTORY_FOUR },
 ];

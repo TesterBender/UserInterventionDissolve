@@ -54,12 +54,17 @@ describe('readEnvelope', () => {
     expect(envelope.readEnvelope(data).route).toBe(null);
   });
 
-  it('lists chatMessages by position with isMain and isBot flags', () => {
+  it('lists chatMessages by position with the database id and the isMain and isBot flags', () => {
     expect(envelope.readEnvelope(ALPHA_ENVELOPE).chatMessages).toEqual([
-      { position: 0, isMain: true, isBot: false, message: 'First human turn.' },
-      { position: 1, isMain: true, isBot: true, message: 'First model turn.' },
-      { position: 2, isMain: false, isBot: true, message: 'Discarded alternative.' },
+      { position: 0, id: '103237690204', isMain: true, isBot: false, message: 'First human turn.' },
+      { position: 1, id: '103237690391', isMain: true, isBot: true, message: 'First model turn.' },
+      { position: 2, id: '', isMain: false, isBot: true, message: 'Discarded alternative.' },
     ]);
+  });
+
+  it('records an unusable id as an empty string', () => {
+    const data = { ...ALPHA_ENVELOPE, chatMessages: [{ id: {}, is_main: true, message: 'x' }, { id: Infinity, message: 'y' }] };
+    expect(envelope.readEnvelope(data).chatMessages.map((entry) => entry.id)).toEqual(['', '']);
   });
 });
 

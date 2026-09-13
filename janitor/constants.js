@@ -4,6 +4,9 @@ export const SENTINEL = '//';
 // storage-key: one localStorage entry per Janitor chat id → docs/modules/janitor-adapter.md#stored-state
 export const STORAGE_KEY_PREFIX = 'uid-janitor-v1:';
 
+// janitor-format: this layer's own stored version, not src/'s STATE_VERSION → docs/modules/janitor-adapter.md#stored-state
+export const JANITOR_STATE_FORMAT = 2;
+
 // horizon-budget: host constant, never a setting and never read from Janitor → docs/modules/janitor-adapter.md#horizon-budget
 export const JANITOR_HORIZON_TOKEN_BUDGET = 100_000;
 

@@ -16,8 +16,8 @@ export const ALPHA_ENVELOPE = {
     generation_settings: { prefill_enabled: true, prefill_text: 'Continue:' },
   },
   chatMessages: [
-    { is_bot: false, is_main: true, message: 'First human turn.' },
-    { is_bot: true, is_main: true, message: 'First model turn.' },
+    { id: 103237690204, is_bot: false, is_main: true, message: 'First human turn.' },
+    { id: '103237690391', is_bot: true, is_main: true, message: 'First model turn.' },
     { is_bot: true, is_main: false, message: 'Discarded alternative.' },
   ],
 };

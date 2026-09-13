@@ -12,6 +12,7 @@ import {
   JANITOR_HORIZON_TOKEN_BUDGET,
   JANITOR_HORIZON_HYSTERESIS,
   JANITOR_WORDS_PER_TOKEN,
+  JANITOR_STATE_FORMAT,
 } from '../../janitor/constants.js';
 import { stateKey } from '../../janitor/storage.js';
 import {
@@ -341,6 +342,110 @@ describe('bodies the transform gates out', () => {
     expect(calls[0].config).toBe(config);
     expect(calls[1].config.body).toBe(config.body);
     expect(console.warn).toHaveBeenCalledTimes(1);
+  });
+});
+
+describe('identity across edits, duplicates and regenerates', () => {
+  const OPENING = 'She pushed the door open.';
+  const COMPILED = `${LITERAL}\n${OPENING}`;
+  const compiledSpan = { text: COMPILED, words: countWords(COMPILED), createdAt: 1 };
+
+  function frontierOf(body) {
+    return body.messages.at(-2).content;
+  }
+
+  function occurrences(text, needle) {
+    return text.split(needle).length - 1;
+  }
+
+  it('leaves the second of two byte-identical messages in the frontier when the first is compiled', async () => {
+    const turns = [
+      { role: 'user', content: OPENING, id: 5001 },
+      { role: 'assistant', content: 'The hinge complained.', id: 5002 },
+      { role: 'user', content: OPENING, id: 5003 },
+    ];
+    seed(storedState({ frozen: [compiledSpan], frozenIds: ['5001'] }));
+    const body = await dispatched(turns);
+
+    expect(frontierOf(body)).toContain(COMPILED);
+    expect(occurrences(frontierOf(body), COMPILED)).toBe(1);
+    expect(occurrences(JSON.stringify(body), OPENING)).toBe(2);
+    expect(console.info.mock.calls[0][0]).toContain('drift 0');
+  });
+
+  it('reports a compiled message edited in place and keeps it out of the frontier', async () => {
+    const turns = [
+      { role: 'user', content: 'She kicked the door instead.', id: 5001 },
+      { role: 'assistant', content: 'The hinge complained.', id: 5002 },
+    ];
+    seed(storedState({ frozen: [compiledSpan], frozenIds: ['5001'] }));
+    const body = await dispatched(turns);
+
+    expect(console.info.mock.calls[0][0]).toContain('drift 1');
+    expect(JSON.stringify(body)).not.toContain('She kicked the door instead.');
+    expect(frontierOf(body)).toContain('The hinge complained.');
+  });
+
+  it('reports no drift for the same compiled message left alone', async () => {
+    const turns = [
+      { role: 'user', content: OPENING, id: 5001 },
+      { role: 'assistant', content: 'The hinge complained.', id: 5002 },
+    ];
+    seed(storedState({ frozen: [compiledSpan], frozenIds: ['5001'] }));
+    await dispatched(turns);
+    expect(console.info.mock.calls[0][0]).toContain('drift 0');
+  });
+
+  it('re-sends nothing compiled and drops nothing uncompiled across a regenerate', async () => {
+    const base = [
+      { role: 'user', content: OPENING, id: 5001 },
+      { role: 'user', content: 'And after that?', id: 5003 },
+    ];
+    seed(storedState({ frozen: [compiledSpan], frozenIds: ['5001'] }));
+    const first = await dispatched([...base, { role: 'assistant', content: 'Draft one stood in the doorway.', id: 5004 }]);
+    expect(frontierOf(first)).toContain('Draft one stood in the doorway.');
+
+    const second = await dispatched([...base, { role: 'assistant', content: 'Draft two stood in the doorway.', id: 5005 }]);
+    expect(frontierOf(second)).toContain('Draft two stood in the doorway.');
+    expect(JSON.stringify(second)).not.toContain('Draft one');
+    expect(frontierOf(second)).toContain(`${LITERAL}\nAnd after that?`);
+    expect(occurrences(JSON.stringify(second), 'She pushed the door open.')).toBe(1);
+    expect(stateNow().frozenIds).toEqual(['5001']);
+    expect(console.info.mock.calls.at(-1)[0]).toContain('drift 0');
+  });
+
+  it('stores envelope ids, never a hash identity, in frozenIds and the watermark', async () => {
+    const turns = [
+      { role: 'user', content: OPENING, id: 5001 },
+      { role: 'assistant', content: prose('body', 360), id: 5002 },
+      { role: 'user', content: 'And after that?', id: 5003 },
+      { role: 'assistant', content: 'The last message stands alone by itself.', id: 5004 },
+    ];
+    await dispatched(turns);
+    const state = stateNow();
+
+    expect(state.frozenIds.length).toBeGreaterThan(0);
+    for (const id of state.frozenIds) expect(id).toMatch(/^\d+$/);
+    expect([...state.frozenIds, state.watermark.messageId].every((id) => !String(id).includes('#'))).toBe(true);
+    expect(state.janitorFormat).toBe(JANITOR_STATE_FORMAT);
+  });
+
+  it('compiles nothing when the envelope gives its entries no ids', async () => {
+    const turns = [
+      { role: 'user', content: OPENING },
+      { role: 'assistant', content: prose('body', 360) },
+      { role: 'user', content: 'And after that?' },
+      { role: 'assistant', content: 'The last message stands alone by itself.' },
+    ];
+    const envelope = envelopeFor(turns);
+    for (const entry of envelope.chatMessages) delete entry.id;
+    await window.fetch(ALPHA_URL, jsonPost(JSON.stringify(envelope)));
+    calls.length = 0;
+    events.length = 0;
+    await send(bodyFor(turns));
+
+    expect(events).toEqual(['fetch']);
+    expect(store.has(stateKey(CHAT_ID))).toBe(false);
   });
 });
 
