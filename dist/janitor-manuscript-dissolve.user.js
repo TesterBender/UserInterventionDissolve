@@ -1910,7 +1910,6 @@ function importStateJson(text) {
 const PANEL_LABELS = {
   launcher: 'Manuscript',
   title: 'Manuscript',
-  close: 'Close',
   recompile: 'Recompile',
   exportHeading: 'Export — copy this somewhere safe',
   importHeading: 'Import — paste an export here',

@@ -3,7 +3,7 @@ import fs from 'node:fs';
 import path from 'node:path';
 import url from 'node:url';
 import {
-  statusLines, staticNotes, recompileAvailability, recompileRequestedText, transferResultText, importOutcome, hasSnapshot,
+  statusLines, staticNotes, recompileAvailability, recompileRequestedText, transferResultText, importOutcome,
 } from '../../janitor/panel-text.js';
 
 const ROOT = path.resolve(path.dirname(url.fileURLToPath(import.meta.url)), '../..');
@@ -70,7 +70,6 @@ describe('the status lines', () => {
     expect(statusLines({ ...SNAPSHOT, at: 0 })).toHaveLength(1);
     expect(statusLines({ ...SNAPSHOT, chatId: '' })).toHaveLength(1);
     expect(statusLines(EMPTY)[0]).not.toContain('0');
-    expect(hasSnapshot(SNAPSHOT)).toBe(true);
   });
 });
 

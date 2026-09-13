@@ -2,7 +2,6 @@
 export const PANEL_LABELS = {
   launcher: 'Manuscript',
   title: 'Manuscript',
-  close: 'Close',
   recompile: 'Recompile',
   exportHeading: 'Export — copy this somewhere safe',
   importHeading: 'Import — paste an export here',
@@ -12,7 +11,7 @@ export const PANEL_LABELS = {
 const NOTHING_SEEN = 'No request seen on this page yet. Send a message in this chat and the panel fills in.';
 const RECOMPILE_UNAVAILABLE = 'Nothing to rebuild yet: the panel has not seen a request, so it does not know which chat you are in.';
 
-export function hasSnapshot(status) {
+function hasSnapshot(status) {
   return status.at !== 0 && status.chatId !== '';
 }
 
