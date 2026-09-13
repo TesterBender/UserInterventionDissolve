@@ -1,5 +1,5 @@
 # Brief 0037 — Janitor derivation-time rollback and boundary records
-Status: implemented
+Status: done
 Complexity: high  (owns INV-8 on this host, adds a state field to the format brief 0036 pins, changes the order of the request pipeline and touches three `janitor/` modules plus the report line)
 PLAN sections: §14 (four termination outcomes; an incomplete trailing block is transport debris and is rolled back to the last complete block, while a deliberate handoff at the reserved literal is not), §8 (the reserved literal is bare and a boundary is an occurrence at a block start — the trim keys on that and nothing else), §10 (manuscript-wide editing inside the mutable frontier: the trim is applied on every derivation, so the text the frontier sees is always the trimmed text), §23 (this host cannot edit stored history, so every repair the ST host performs at receipt happens at the next request build), §27 (transport debris must never become a fictional event, and nothing about the trim may reach the model as narration)
 Invariants touched: INV-8 (this is the Janitor host's implementation of it), INV-2 (the derivation-time literal trim is the last line of defence when no stop string was honoured and no stream cut happened)
