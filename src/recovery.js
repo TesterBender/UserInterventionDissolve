@@ -66,7 +66,11 @@ export async function onMessageReceived(index, type, ctx = getCtx()) {
 
   // freeze-after-receipt: one attempt per receipt, on a fresh derivation → docs/modules/recovery.md#freeze-hookup
   const state = getState(ctx);
-  const result = compileUnit(state, deriveFrontier(ctx.chat, state, literal), literal, {});
+  const derived = deriveFrontier(ctx.chat, state, literal);
+  // last-message-clamp: the trailing segment's start, so a swipe cannot resend a compiled draft → docs/modules/freeze.md#last-message-clamp
+  const result = derived.segments.length < 2
+    ? null
+    : compileUnit(state, derived, literal, { maxFrozenEnd: derived.segments.at(-1).start });
 
   await ctx.saveChat();
   if (result !== null) await save(ctx);

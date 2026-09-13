@@ -31,6 +31,8 @@ The exclusion is decided before the `frozenIds` and watermark rules and is indep
 
 It is an **option rather than something derivation works out for itself**, because the only in-band evidence would be the interceptor's per-request `chat` copy, and that copy cannot be mapped onto canonical state: `coreChat` is built as fresh objects from `chat.filter(...)` (`docs/api/sillytavern.md#generate-interceptor`) and whether those objects carry the `extra` namespace the ids live in is not verified. Derivation therefore keeps reading the live `ctx.chat` and takes the scope as a pure argument from the one caller that knows the generation type (`docs/modules/frontier.md#interceptor-body`), which is what keeps the function a pure function of `(chat, state, literal, options)` and INV-10 mechanically testable.
 
+The exclusion is only the **request-side half** of swipe safety: it can keep the replaced draft out of this derivation, but it cannot retract text that an earlier receipt already compiled into `state.units` or `state.frozen`. The receipt-side half is the last-message clamp (`docs/modules/freeze.md#last-message-clamp`, `docs/modules/recovery.md#freeze-hookup`).
+
 ST does **not** blank the swiped message's `mes` while the swipe is in flight — the "..." is a UI state, and `clearMessageData` strips `extra` and the generation timers, not the text (`docs/api/sillytavern.md#swipe-scope`) — so the exclusion is load-bearing, not a formality. Because it drops the last *considered* message, it lands on the same message ST's own `coreChat.pop()` lands on: both operate on the history with `is_system` entries already filtered out.
 
 ## Why per-message, not positional {#per-message}

@@ -7,6 +7,8 @@ import { CONTINUATION_CONTROL } from '../src/prompt.js';
 import { buildHistory, applyToRequestChat, shouldReconstruct, regeneratesLastMessage } from '../src/frontier.js';
 import { interceptGeneration } from '../src/frontier-host.js';
 import { armSolo, consumeSoloFlag, resolveSoloControl } from '../src/solo.js';
+import { onMessageReceived } from '../src/recovery.js';
+import { createState } from '../src/state.js';
 
 const NAMES = { name1: 'Mara', name2: 'Narrator' };
 const MESSAGE_FIELDS = ['name', 'is_user', 'is_system', 'mes', 'extra'];
@@ -515,6 +517,47 @@ describe('the one-shot solo variant', () => {
     for (const span of canonicalAfter.frozen) expect(span.text).not.toContain('stays out of the writing');
     expect(ctx.saveMetadata).not.toHaveBeenCalled();
     expect(ctx.saveChat).not.toHaveBeenCalled();
+  });
+});
+
+describe('interceptGeneration after a swipe of the newest message', () => {
+  function words(n, label) {
+    const parts = [];
+    for (let i = 0; i < n; i += 1) parts.push(`${label}${i}`);
+    return `${parts.join(' ')}.`;
+  }
+
+  function manyBlocks(n, label) {
+    const parts = [];
+    for (let i = 0; i < n; i += 1) parts.push(words(100, `${label}p${i}w`));
+    return parts.join(BLOCK_DELIMITER);
+  }
+
+  // last-message-clamp: nothing of the replaced draft was ever compiled → docs/modules/frontier.md#interceptor-body
+  it('dispatches no text from the replaced draft and no stale slice of the new one', async () => {
+    const chatEntries = [];
+    for (let i = 0; i < 29; i += 1) chatEntries.push(makeAssistantMessage({ mes: words(100, `b${i}w`) }));
+    chatEntries.push(makeAssistantMessage({ mes: manyBlocks(8, 'draft') }));
+    const ctx = installFakeContext({ name1: 'Mara', name2: 'Narrator', chat: chatEntries, chatMetadata: { [METADATA_KEY]: createState() } });
+
+    await onMessageReceived(ctx.chat.length - 1, 'normal', ctx);
+
+    const newDraft = 'Alpha beta gamma delta epsilon.';
+    ctx.chat[ctx.chat.length - 1].mes = newDraft;
+
+    const swiped = [];
+    await interceptGeneration(swiped, 4096, vi.fn(), 'swipe', ctx);
+    const swipedText = swiped.map((m) => m.mes).join(BLOCK_DELIMITER);
+    expect(swipedText).not.toContain('draftp0w0');
+    expect(swipedText).not.toContain('draftp');
+    expect(swipedText).not.toContain(newDraft);
+    expect(swipedText).toContain('b0w0');
+
+    const next = [];
+    await interceptGeneration(next, 4096, vi.fn(), 'normal', ctx);
+    const nextText = next.map((m) => m.mes).join(BLOCK_DELIMITER);
+    expect(nextText).toContain(newDraft);
+    expect(nextText).not.toContain('draftp');
   });
 });
 
