@@ -1,6 +1,13 @@
 import { describe, it, expect, beforeEach, vi } from 'vitest';
 import { ALPHA_ENVELOPE_JSON, ALPHA_URL, PROXY_URL } from './fixtures/alpha-envelope.js';
 import { CHAT_COMPLETION_JSON } from './fixtures/chat-completion.js';
+import {
+  transcript,
+  chunksOfSize,
+  jsonCompletion,
+  PROSE_DELTAS,
+  BOUNDARY_DELTAS,
+} from './fixtures/sse-transcripts.js';
 
 const UPSTREAM_URL = 'https://relay.example.com/v1/chat/completions?stream=1';
 
@@ -118,10 +125,10 @@ describe('pass-through with a no-op transform', () => {
 });
 
 describe('re-serialise only when the transform reports a change', () => {
-  it('dispatches JSON.stringify(data) when the transform returns truthy', async () => {
+  it('dispatches JSON.stringify(data) when the plan reports a change', async () => {
     shell.installTransport((data) => {
       data.messages[0].content = 'rewritten';
-      return true;
+      return { modified: true };
     });
     await bindRoute();
     const config = jsonPost(CHAT_COMPLETION_JSON);
@@ -145,7 +152,7 @@ describe('re-serialise only when the transform reports a change', () => {
   });
 
   it('preserves the rest of the caller\'s config when it re-serialises', async () => {
-    shell.installTransport(() => true);
+    shell.installTransport(() => ({ modified: true }));
     await bindRoute();
     const signal = { aborted: false };
     const config = { ...jsonPost(CHAT_COMPLETION_JSON), signal, credentials: 'include' };
@@ -214,6 +221,107 @@ describe('response wrapper', () => {
   });
 });
 
+describe('the boundary filter on the wrapped response', () => {
+  const PLAN = { modified: false, literal: 'Mara:', stopSent: true, routeKey: 'relay.example.com/v1/chat/completions|gpt-test' };
+
+  function planWith(completions) {
+    return { ...PLAN, onCompletion: (completion) => completions.push(completion) };
+  }
+
+  it('delivers a transcript with no literal byte for byte and reports the completion once', async () => {
+    const completions = [];
+    shell.installTransport(() => planWith(completions));
+    await bindRoute();
+    const frames = transcript(PROSE_DELTAS);
+    nextResponse = () => streamingResponse(chunksOfSize(frames, 17));
+
+    const response = await window.fetch(PROXY_URL, jsonPost(CHAT_COMPLETION_JSON));
+    expect(await response.text()).toBe(frames.join(''));
+    expect(completions).toEqual([{ boundaryHit: false, text: PROSE_DELTAS.join('') }]);
+  });
+
+  it('cuts at the literal, synthesises the terminal frames and cancels upstream', async () => {
+    const completions = [];
+    shell.installTransport(() => planWith(completions));
+    await bindRoute();
+    let cancelled = false;
+    const frames = transcript(BOUNDARY_DELTAS);
+    nextResponse = () => {
+      const response = streamingResponse(frames);
+      const body = response.body;
+      const reader = body.getReader.bind(body);
+      response.body.getReader = () => {
+        const inner = reader();
+        return { read: () => inner.read(), cancel: (reason) => { cancelled = true; return inner.cancel(reason); } };
+      };
+      return response;
+    };
+
+    const response = await window.fetch(PROXY_URL, jsonPost(CHAT_COMPLETION_JSON));
+    const delivered = await response.text();
+
+    expect(delivered).not.toContain('Mara:');
+    expect(delivered.trimEnd().endsWith('data: [DONE]')).toBe(true);
+    expect(delivered).toContain('"finish_reason":"stop"');
+    expect(cancelled).toBe(true);
+    expect(completions).toEqual([{ boundaryHit: true, text: `${PROSE_DELTAS.join('')}\n\n` }]);
+  });
+
+  it('reports no completion for a pass-through response', async () => {
+    const completions = [];
+    shell.installTransport(() => false);
+    await bindRoute();
+    nextResponse = () => streamingResponse(transcript(BOUNDARY_DELTAS));
+    const response = await window.fetch(PROXY_URL, jsonPost(CHAT_COMPLETION_JSON));
+    expect(await response.text()).toBe(transcript(BOUNDARY_DELTAS).join(''));
+    expect(completions).toEqual([]);
+  });
+});
+
+describe('the non-streaming JSON completion', () => {
+  const PLAN = { modified: false, literal: 'Mara:', stopSent: true, routeKey: 'route|gpt-test' };
+
+  function jsonResponse(body) {
+    return new Response(body, { status: 200, headers: { 'content-type': 'application/json' } });
+  }
+
+  it('delivers a body carrying a block-start literal trimmed', async () => {
+    const completions = [];
+    shell.installTransport(() => ({ ...PLAN, onCompletion: (completion) => completions.push(completion) }));
+    await bindRoute();
+    nextResponse = () => jsonResponse(jsonCompletion('Keeper:\nThe lamp turned.\n\nMara:\nShe left.'));
+
+    const response = await window.fetch(PROXY_URL, jsonPost(CHAT_COMPLETION_JSON));
+    const delivered = JSON.parse(await response.text());
+    expect(delivered.choices[0].message.content).toBe('Keeper:\nThe lamp turned.');
+    expect(delivered.model).toBe('gpt-test');
+    expect(completions).toEqual([{ boundaryHit: true, text: 'Keeper:\nThe lamp turned.' }]);
+  });
+
+  it('delivers a body with no literal byte for byte', async () => {
+    const completions = [];
+    shell.installTransport(() => ({ ...PLAN, onCompletion: (completion) => completions.push(completion) }));
+    await bindRoute();
+    const body = jsonCompletion('Keeper:\nThe lamp turned.');
+    nextResponse = () => jsonResponse(body);
+
+    const response = await window.fetch(PROXY_URL, jsonPost(CHAT_COMPLETION_JSON));
+    expect(await response.text()).toBe(body);
+    expect(completions).toEqual([{ boundaryHit: false, text: 'Keeper:\nThe lamp turned.' }]);
+  });
+
+  it('delivers a body it cannot read unchanged and reports nothing', async () => {
+    const completions = [];
+    shell.installTransport(() => ({ ...PLAN, onCompletion: (completion) => completions.push(completion) }));
+    await bindRoute();
+    nextResponse = () => jsonResponse('{"error":{"message":"upstream said no"}}');
+
+    const response = await window.fetch(PROXY_URL, jsonPost(CHAT_COMPLETION_JSON));
+    expect(await response.text()).toBe('{"error":{"message":"upstream said no"}}');
+    expect(completions).toEqual([]);
+  });
+});
+
 describe('boot capture', () => {
   it('warns exactly once about a non-native fetch and installs anyway', async () => {
     shell.installTransport(() => false);
@@ -227,7 +335,7 @@ describe('boot capture', () => {
   it('captures fetch once, so a second install is a no-op', async () => {
     shell.installTransport(() => false);
     const wrapper = window.fetch;
-    shell.installTransport(() => true);
+    shell.installTransport(() => ({ modified: true }));
     expect(window.fetch).toBe(wrapper);
     expect(console.warn).toHaveBeenCalledTimes(1);
   });

@@ -12,6 +12,7 @@ import {
   JANITOR_LEAD_IN,
 } from './constants.js';
 import { loadJanitorState, saveJanitorState } from './storage.js';
+import { stopRouteKey, isStopRejected } from './stop-routes.js';
 import { classifyMessages, toStShape, fromStShape } from './history.js';
 import { matchWatermark, classifyDrift, prefixIdentity } from './identity.js';
 import { rollbackHistory } from './rollback.js';
@@ -65,6 +66,23 @@ function resolvePendingBoundary(state, entries) {
     state.boundaries.push(successor.messageId);
   }
   return true;
+}
+
+// boundary-evidence: the cut, or an empty tail on a request that carried stop → docs/modules/janitor-adapter.md#boundary-evidence
+function endedAtBoundary(completion, stopSent) {
+  if (completion.boundaryHit) return true;
+  return stopSent && (completion.text === '' || completion.text.endsWith(BLOCK_DELIMITER));
+}
+
+// completion-marker: reload, mark or clear, save only on a change → docs/modules/janitor-adapter.md#boundary-evidence
+function recordCompletion(chatId, messageId, stopSent, completion) {
+  const marker = endedAtBoundary(completion, stopSent) ? messageId : '';
+  const state = loadJanitorState(chatId);
+  const pending = typeof state.pendingBoundaryAfter === 'string' ? state.pendingBoundaryAfter : '';
+  if (pending === marker) return;
+
+  state.pendingBoundaryAfter = marker;
+  saveJanitorState(chatId, state);
 }
 
 // request-pipeline: gate, classify, resolve, roll back, derive, freeze, reconstruct, stop → docs/modules/janitor-adapter.md#request-pipeline
@@ -133,14 +151,25 @@ export function transformRequest(data, context) {
   if (outgoing[1]?.role === 'assistant') outgoing.splice(1, 0, { role: 'user', content: JANITOR_LEAD_IN });
   adapter.messagesContainer.messages = outgoing;
 
-  applyStopStrings(adapter.requestContainer, literal, 'chat');
+  // learned-route: a route that refused the parameter relies on the stream cut → docs/modules/janitor-adapter.md#stop-array
+  const routeKey = stopRouteKey(context.url, adapter.modelName);
+  const stopSent = !isStopRejected(routeKey);
+  if (stopSent) applyStopStrings(adapter.requestContainer, literal, 'chat');
 
   // request-report: one line, the only sign of life until the panel → docs/modules/janitor-adapter.md#request-report
   console.info(
     `${LOG_PREFIX} finals ${state.frozen.length}, units ${state.units.length}, `
       + `frontier ${countWords(derived.text)} words, froze ${froze ? 'yes' : 'no'}, `
       + `drift ${drift.editedCompiledIndexes.length}, boundary ${state.boundaries.length}, `
-      + `rollback ${rollbacks}`,
+      + `rollback ${rollbacks}, stop ${stopSent ? 'sent' : 'skipped'}`,
   );
-  return true;
+
+  const lastAlignedId = aligned.length === 0 ? '' : aligned[aligned.length - 1].messageId;
+  return {
+    modified: true,
+    literal,
+    stopSent,
+    routeKey,
+    onCompletion: (completion) => recordCompletion(context.chatId, lastAlignedId, stopSent, completion),
+  };
 }

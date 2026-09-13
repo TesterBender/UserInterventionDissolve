@@ -4,6 +4,9 @@ export const SENTINEL = '//';
 // storage-key: one localStorage entry per Janitor chat id → docs/modules/janitor-adapter.md#stored-state
 export const STORAGE_KEY_PREFIX = 'uid-janitor-v1:';
 
+// stop-routes-key: its own entry, never a chat key, never per chat → docs/modules/janitor-transport.md#stop-rejection-learning
+export const JANITOR_STOP_ROUTES_KEY = 'uid-janitor-stop-rejected-v1';
+
 // janitor-format: this layer's own stored version, not src/'s STATE_VERSION → docs/modules/janitor-adapter.md#stored-state
 export const JANITOR_STATE_FORMAT = 2;
 

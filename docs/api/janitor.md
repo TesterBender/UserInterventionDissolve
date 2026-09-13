@@ -91,6 +91,22 @@ status: answered — captured 2026-09-13
 
 Janitor's total context size setting is 128,000 tokens (user report). The script's horizon budget of 100,000 tokens (brief 0033) sits under it with room for the assembled system message and a full-length response (the response cap is ~19k characters). The name of the field in `generation_settings` and whether Janitor trims by tokens or by messages are still open.
 
+## Terminal frames are synthesised on a stream cut
+
+status: assumed — decided 2026-09-14, unverified
+
+Assumption: Janitor's SSE parser needs the dialect's terminal frames, so a stream that is simply closed early reads as a failed generation. The script therefore never closes the body silently. When it cuts at the reserved literal it emits, in order: at most one `data:` frame carrying the text before the cut as `choices[0].delta.content`, then a frame whose `choices[0]` is `{index: 0, delta: {}, finish_reason: "stop"}`, then `data: [DONE]`. Both synthesised frames copy `id`, `object`, `created` and `model` from the last upstream frame and add no field upstream did not send (`docs/modules/janitor-transport.md#response-wrapper`).
+
+Symptom if wrong: Janitor rejects the synthesised frames and the turn shows as an error instead of a short message. The recorded fallback is then to let upstream run to completion while forwarding nothing after the cut, which costs the tokens of a generation nobody reads.
+
+## Reasoning routes reject the `stop` parameter with a 4xx naming it
+
+status: assumed — decided 2026-09-14, unverified
+
+Assumption: some provider routes — the reasoning models in particular — answer a request carrying `stop` with a 4xx whose body names the parameter, rather than ignoring it. Evidence is indirect: the optimizer carries per-route rejected-parameter learning for exactly this class of refusal (`TamperContainment/TamperMonkeyJanAI.txt` L1586–1670), and the plan names `stop` as the parameter that gets refused. The script matches the body against `/\bstop(?:_sequences)?\b/i` and files the route under `host+path|model`, one way and TTL-free (`docs/modules/janitor-transport.md#stop-rejection-learning`).
+
+Symptom if wrong: a route learned in error silently loses its stop string and relies on the stream cut for the boundary. That is the same enforcement point the genuinely refusing routes use, so no invariant is lost; the generation simply runs to its own end and the tokens past the boundary are wasted.
+
 ## Open
 
 No answers are invented for these; nothing in phase 2 depends on any of them.
@@ -98,7 +114,8 @@ No answers are invented for these; nothing in phase 2 depends on any of them.
 - The `generation_settings` field name for the 128k context window and its truncation unit (tokens or messages). Related, captured 2026-09-13: the *response*-length setting is in characters, capped at 20,000, landing near 19k characters in practice — an output ceiling, not the history window.
 - Whether Janitor's composer stores the sentinel literal `//` verbatim.
 - The Anthropic path: `/v1/messages` with a top-level `system`, or a converted chat body.
-- Behaviour on a completion that ends at a stop sequence, and on an early stream close with no terminal frames.
+- Behaviour on a completion that ends at a stop sequence, and on an early stream close with no terminal frames. Still uncaptured; handled by decision rather than by waiting — the terminal frames are synthesised ([Terminal frames are synthesised on a stream cut](#terminal-frames-are-synthesised-on-a-stream-cut)).
+- The body shape when Janitor's streaming toggle is off. Only the plain chat-completions JSON shape (`choices[0].message.content`) is rewritten; any other shape is delivered unchanged (`docs/modules/janitor-transport.md#response-wrapper`).
 - The exact shapes and positions of injected turns, and whether the envelope's `chatMessages` omits them.
 - Whether only a configured reverse proxy or custom key makes the browser dispatch the provider request at all (router traffic is believed server-side and invisible).
 - The exact text of Janitor's default custom prompt.

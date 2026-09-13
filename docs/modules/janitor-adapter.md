@@ -169,7 +169,7 @@ The human-visible Janitor log keeps the debris. Nothing here edits, deletes or r
 
 A generation that stopped at the reserved literal stopped deliberately, and PLAN §14 keeps it: it is a handoff, not debris. Recording that fact needs the generated message's identity, and at the moment the generation ends that identity does not exist — the id is Janitor's database key, assigned when Janitor stores the row, and the script only learns it from the *next* `/generateAlpha` envelope ([Envelope-id identity](#envelope-id-identity)).
 
-So state carries one marker, `pendingBoundaryAfter`: the envelope id of the **last aligned message of the request that produced the generation**, i.e. the predecessor of the message that is about to be stored. The response side writes it (brief 0038); the next derivation resolves it at step 4b:
+So state carries one marker, `pendingBoundaryAfter`: the envelope id of the **last aligned message of the request that produced the generation**, i.e. the predecessor of the message that is about to be stored. The response side writes it; the next derivation resolves it at step 4b:
 
 - find the kept entry whose `messageId` equals the marker;
 - if that entry exists, the entry **directly after** it exists, has `role === 'assistant'` and a non-empty `messageId`, append that id to `state.boundaries` (never a duplicate, never `''`);
@@ -180,6 +180,21 @@ Either way the marker is cleared to `''`. It is never carried across two derivat
 `boundaries` holds envelope id strings and grows append-only; membership exempts a message from **both** rollback steps, not only from the incomplete-block step. A message recorded as a boundary stop already had its literal removed on the way in, and re-running the trim on it could only remove text the model meant to keep.
 
 Losing a marker costs one rollback of a deliberate stop: a message that ended at a handoff is trimmed back to its last complete block on the next request, the human-visible log still has the full text, and the model sees a slightly shorter manuscript. It is never a protocol violation — nothing about the boundary reaches the model either way.
+
+### Who writes the marker {#boundary-evidence}
+
+The transform builds an `onCompletion` closure into the plan it returns (`docs/modules/janitor-transport.md#transform-seam`), over the chat id and the `messageId` of the last aligned, sentinel-dropped history entry of that request (`''` when it has none). The shell calls it once when the response body finishes, with `{boundaryHit, text}`. The closure writes `pendingBoundaryAfter` and nothing else: `boundaries[]` is resolved at the next derivation, never here, so there is exactly one writer of the record itself.
+
+State is **reloaded** inside the closure rather than closed over. The generation runs for tens of seconds; another tab may have compiled a unit and saved in the meantime, and writing back a state captured before dispatch would discard that tab's work. The reload costs one `localStorage` read per generation, and the save happens only when the value actually changed.
+
+The evidence rule is pinned. A completion counts as a boundary when **either**
+
+- the stream filter reported `boundaryHit` — the literal was cut out of the response; **or**
+- `stopSent` was true and the forwarded text is empty or ends with a block delimiter — the shape a completion has when the provider itself stopped at the stop string, immediately before a block-start literal. An empty completion is the protocol's normal case at a handoff, not an error (`docs/api/janitor.md#empty-completion-is-stored-as-an-empty-message`, PLAN §14).
+
+Every other completion clears the marker, so it always describes the most recent generation and never an older one.
+
+Both errors are cheap and the rule is tuned to prefer the first. A **false positive** exempts a complete generation from a rollback that would not have changed it — a complete generation ends on a complete block, which the rollback leaves alone. A **false negative** costs one rollback of a deliberate stop, which is the residual cost brief 0037 already records above.
 
 ## System message {#system-message}
 
@@ -235,8 +250,12 @@ Both reasons to want it gone hold. A trailing assistant turn re-creates the shap
 
 `applyStopStrings(requestContainer, literal, 'chat')` is reused unchanged from the SillyTavern host: the reserved literal goes in first and any duplicate of it is removed (`docs/modules/boundary.md#why-first-in-stop-array`). Janitor sends no default `stop` list of its own (`docs/api/janitor.md#janitor-sends-no-default-stop-list`), so the script owns every slot and index 0 survives any provider-side cap on the array.
 
+The literal is written **unless this route has already rejected the parameter**. The step computes `stopRouteKey(context.url, adapter.modelName)` and asks `isStopRejected`; on a learned route `applyStopStrings` is skipped entirely and the plan reports `stopSent: false`, so nothing this script wrote can make the provider refuse the request again (`docs/modules/janitor-transport.md#stop-rejection-learning`). Nothing else changes: there is no retry, no second dispatch and no un-learning.
+
+The boundary is then enforced by the stream cut alone, which is the fallback INV-2 names for backends that ignore stop strings (`docs/protocol/invariants.md#inv-2`). Both enforcement points are the same requirement in two implementations (§23): the generation must not commit the human's character. The stop parameter is cheaper — the provider stops generating — and the stream cut is universal, so a route that has both gets both, and a route that has neither is not reachable on this host at all.
+
 ## Request report {#request-report}
 
-Exactly one `console.info` per transformed request, prefixed with `LOG_PREFIX`: how many final spans and unsealed units the state holds, how many words the frontier carries, whether a unit was compiled this request, how many messages carry text that is no longer the text that was compiled under their id ([Drift](#drift)), how many boundary stops are on record after this request's resolution ([Boundary records](#boundary-records)), and how many messages this request's trim changed ([Derivation-time rollback](#derivation-rollback)). It is operator-facing and never part of the body.
+Exactly one `console.info` per transformed request, prefixed with `LOG_PREFIX`: how many final spans and unsealed units the state holds, how many words the frontier carries, whether a unit was compiled this request, how many messages carry text that is no longer the text that was compiled under their id ([Drift](#drift)), how many boundary stops are on record after this request's resolution ([Boundary records](#boundary-records)), how many messages this request's trim changed ([Derivation-time rollback](#derivation-rollback)), and whether the reserved literal was written into the `stop` field or skipped because this route rejected it — `stop sent` or `stop skipped` ([Stop array](#stop-array)). It is operator-facing and never part of the body.
 
 Until the panel exists it is the only sign of life the script gives, which is why it is one line with the handful of facts that decide whether the protocol is working rather than a debug stream: it has to stay readable in a console Janitor itself writes to.

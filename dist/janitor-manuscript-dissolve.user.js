@@ -15,6 +15,183 @@
 (function () {
 'use strict';
 
+// ---- src/grammar.js ----
+// block-delimiter: blank line is the only block separator, CRLF included → docs/modules/grammar.md#block-delimiter
+const DELIMITER = /\r?\n(?:[ \t]*\r?\n)+/g;
+
+// tag-header: any name-then-colon at block start is a tag → docs/modules/grammar.md#tag-header
+const TAG_HEADER = /^(?!["“”'‘’«»])([\p{L}\p{N}][\p{L}\p{N} '’\-.]{0,39}):(?=\s|$)/u;
+
+// neutral-header: U+2205 is outside TAG_HEADER's first-character class → docs/modules/grammar.md#spans
+const NEUTRAL_HEADER = /^∅:(?=\s|$)/u;
+
+// block-completeness: terminal punctuation plus balanced double quotes → docs/modules/grammar.md#block-completeness
+const TERMINAL = /[.!?…]["”'’)\]*]*$/;
+
+function trimRange(text, start, end) {
+  let s = start;
+  let e = end;
+  while (s < e && /\s/.test(text[s])) s += 1;
+  while (e > s && /\s/.test(text[e - 1])) e -= 1;
+  return { start: s, end: e };
+}
+
+function isBlockComplete(blockText) {
+  const trimmed = blockText.replace(/\s+$/, '');
+  if (!trimmed) return false;
+  if (!TERMINAL.test(trimmed)) return false;
+  return (trimmed.match(/"/g) || []).length % 2 === 0;
+}
+
+function parseTagHeader(blockText) {
+  const match = TAG_HEADER.exec(blockText);
+  if (!match) return null;
+  const body = blockText.slice(match[0].length).replace(/^[ \t]*\r?\n?/, '');
+  return { actor: match[1].trim(), body };
+}
+
+function parseManuscript(text) {
+  const segments = [];
+  let cursor = 0;
+  let match;
+  DELIMITER.lastIndex = 0;
+  while ((match = DELIMITER.exec(text)) !== null) {
+    segments.push({ start: cursor, end: match.index, delimited: true });
+    cursor = match.index + match[0].length;
+  }
+  segments.push({ start: cursor, end: text.length, delimited: false });
+
+  const blocks = [];
+  for (const segment of segments) {
+    const { start, end } = trimRange(text, segment.start, segment.end);
+    if (start === end) continue;
+    const raw = text.slice(start, end);
+    const header = parseTagHeader(raw);
+    blocks.push({
+      kind: header ? 'tag' : 'buffer',
+      actor: header ? header.actor : null,
+      body: header ? header.body : raw,
+      raw,
+      start,
+      end,
+      complete: segment.delimited ? true : isBlockComplete(raw),
+    });
+  }
+  return blocks;
+}
+
+// reserved-opener: the caller's literal opens a span even when no header parses → docs/modules/grammar.md#reserved-spans
+function opensReserved(block, reservedActor) {
+  if (reservedActor === '') return false;
+  return findTagLiteral(block.raw, reservedActor).some((hit) => hit.atBlockStart);
+}
+
+// agency-spans: a header opens a span; every other block joins it → docs/modules/grammar.md#spans
+function groupSpans(blocks, options = {}) {
+  const reservedActor = typeof options.reservedActor === 'string' ? options.reservedActor : '';
+  const spans = [];
+  blocks.forEach((block, index) => {
+    const neutral = NEUTRAL_HEADER.test(block.raw);
+    const reserved = opensReserved(block, reservedActor);
+    const opens = neutral || reserved || block.kind === 'tag';
+    if (!opens && spans.length > 0) {
+      const current = spans[spans.length - 1];
+      current.end = block.end;
+      current.blockIndices.push(index);
+      return;
+    }
+    spans.push({
+      header: reserved ? reservedActor : (neutral ? '∅' : block.actor),
+      neutral,
+      reserved,
+      start: block.start,
+      end: block.end,
+      blockIndices: [index],
+    });
+  });
+  return spans;
+}
+
+// tag-literal-lookup: caller names the actor; grammar knows no character → docs/modules/grammar.md#tag-literal-lookup
+function findTagLiteral(text, actor) {
+  const literal = `${actor}:`;
+  const blockStarts = new Set(parseManuscript(text).map((block) => block.start));
+  const found = [];
+  let index = text.indexOf(literal);
+  while (index !== -1) {
+    found.push({ index, atBlockStart: blockStarts.has(index) });
+    index = text.indexOf(literal, index + 1);
+  }
+  return found;
+}
+
+function isTrailingBlockComplete(text) {
+  const blocks = parseManuscript(text);
+  if (blocks.length === 0) return false;
+  return blocks[blocks.length - 1].complete;
+}
+
+function lastCompleteBoundary(text) {
+  const blocks = parseManuscript(text);
+  for (let i = blocks.length - 1; i >= 0; i -= 1) {
+    if (blocks[i].complete) return blocks[i].end;
+  }
+  return 0;
+}
+
+function truncateToLastCompleteBlock(text) {
+  return text.slice(0, lastCompleteBoundary(text)).replace(/\s+$/, '');
+}
+
+// ---- src/boundary.js ----
+// stop-fields: stop for chat completion, stopping_strings and stop for text → docs/modules/boundary.md#stop-fields
+const STOP_FIELDS = { chat: ['stop'], text: ['stopping_strings', 'stop'] };
+
+// reserved-literal: `${persona}:` bare, recomputed per use, never stored → docs/modules/boundary.md#reserved-literal
+function reservedLiteral(ctx) {
+  let name = '';
+  try {
+    const expanded = ctx.substituteParams('{{user}}');
+    if (typeof expanded === 'string' && expanded !== '{{user}}') name = expanded.trim();
+  } catch {
+    name = '';
+  }
+  if (name === '') name = String(ctx.name1 ?? '').trim();
+  return name === '' ? '' : `${name}:`;
+}
+
+// why-first-in-stop-array: index 0 survives a provider-side cap → docs/modules/boundary.md#why-first-in-stop-array
+function applyStopStrings(body, literal, api) {
+  if (literal === '' || typeof body !== 'object' || body === null) return body;
+  for (const field of STOP_FIELDS[api]) {
+    if (!Array.isArray(body[field])) body[field] = [];
+    const strings = body[field];
+    for (let i = strings.length - 1; i >= 0; i -= 1) {
+      if (strings[i] === literal) strings.splice(i, 1);
+    }
+    strings.unshift(literal);
+  }
+  return body;
+}
+
+// block-start-only: position decides, never the parsed actor → docs/modules/boundary.md#block-start-only
+function findBoundary(text, literal) {
+  if (typeof text !== 'string' || literal === '') return { index: -1, endsAtLiteral: false };
+  const occurrence = findTagLiteral(text, literal.replace(/:$/, '')).find((found) => found.atBlockStart);
+  if (occurrence === undefined) return { index: -1, endsAtLiteral: false };
+  return {
+    index: occurrence.index,
+    endsAtLiteral: text.slice(occurrence.index + literal.length).trim() === '',
+  };
+}
+
+// receipt-trim: cut back to the character before the literal → docs/modules/boundary.md#receipt-trim
+function trimAtBoundary(text, literal) {
+  const { index } = findBoundary(text, literal);
+  if (index === -1) return text;
+  return text.slice(0, index).replace(/\s+$/, '');
+}
+
 // ---- janitor/shape.js ----
 function isObject(value) {
   return typeof value === 'object' && value !== null;
@@ -231,7 +408,230 @@ function isTargetedCompletion(url) {
   return looksLikeCompletionUrl(url);
 }
 
+// ---- janitor/sse.js ----
+// sse-record-separator: a blank line ends a record; nothing shorter → docs/modules/janitor-transport.md#response-wrapper
+const SSE_RECORD_SEPARATOR = /\r?\n\r?\n/;
+
+// data-payload: a record with no data line is not ours to read → docs/modules/janitor-transport.md#response-wrapper
+function dataPayload(raw) {
+  const values = [];
+  for (const line of raw.split('\n')) {
+    const text = line.replace(/\r$/, '');
+    if (text.startsWith('data:')) values.push(text.slice(5).replace(/^ /, ''));
+  }
+  return values.length === 0 ? null : values.join('\n');
+}
+
+// delta-text: one string field contributes; anything else contributes nothing → docs/modules/janitor-transport.md#response-wrapper
+function deltaText(frame) {
+  const content = frame?.choices?.[0]?.delta?.content;
+  return typeof content === 'string' ? content : '';
+}
+
+// partial-literal: the longest proper prefix of the literal the text ends on → docs/modules/janitor-transport.md#response-wrapper
+function partialLiteralLength(text, literal) {
+  const longest = Math.min(literal.length - 1, text.length);
+  for (let length = longest; length > 0; length -= 1) {
+    if (text.endsWith(literal.slice(0, length))) return length;
+  }
+  return 0;
+}
+
+// boundary-filter: forwards upstream bytes until the reserved literal, then cuts → docs/modules/janitor-transport.md#response-wrapper
+function createBoundaryFilter(literal) {
+  const reserved = typeof literal === 'string' ? literal : '';
+  const decoder = new TextDecoder();
+  const encoder = new TextEncoder();
+  let buffer = '';
+  let accumulated = '';
+  let held = [];
+  let lastFrame = null;
+  let boundaryHit = false;
+  let finished = false;
+
+  function synthesised(choice) {
+    const frame = {};
+    for (const field of ['id', 'object', 'created', 'model']) {
+      if (lastFrame?.[field] !== undefined) frame[field] = lastFrame[field];
+    }
+    frame.choices = [choice];
+    return encoder.encode(`data: ${JSON.stringify(frame)}\n\n`);
+  }
+
+  function release(threshold) {
+    const out = [];
+    while (held.length > 0 && held[0].end <= threshold) out.push(encoder.encode(held.shift().raw));
+    return out;
+  }
+
+  // cancel-and-synthesise: held records up to the cut, then the terminal frames → docs/modules/janitor-transport.md#response-wrapper
+  function cut(index) {
+    const out = [];
+    for (const record of held) {
+      if (record.end <= index) {
+        out.push(encoder.encode(record.raw));
+        continue;
+      }
+      const text = accumulated.slice(record.start, Math.max(record.start, index));
+      if (text !== '') out.push(synthesised({ index: 0, delta: { content: text } }));
+      break;
+    }
+    out.push(synthesised({ index: 0, delta: {}, finish_reason: 'stop' }));
+    out.push(encoder.encode('data: [DONE]\n\n'));
+    accumulated = accumulated.slice(0, index);
+    held = [];
+    buffer = '';
+    boundaryHit = true;
+    finished = true;
+    return out;
+  }
+
+  function consume(raw) {
+    const payload = dataPayload(raw);
+    let contribution = '';
+    if (payload !== null && payload !== '[DONE]') {
+      let frame = null;
+      try {
+        frame = JSON.parse(payload);
+      } catch {
+        frame = null;
+      }
+      if (frame !== null) {
+        lastFrame = frame;
+        contribution = deltaText(frame);
+      }
+    }
+    const start = accumulated.length;
+    accumulated += contribution;
+    held.push({ raw, start, end: accumulated.length });
+
+    const found = findBoundary(accumulated, reserved);
+    if (found.index !== -1) return cut(found.index);
+    // deferred-release: hold only what a partial literal could still complete → docs/modules/janitor-transport.md#response-wrapper
+    return release(accumulated.length - partialLiteralLength(accumulated, reserved));
+  }
+
+  return {
+    push(chunk) {
+      if (finished) return [];
+      if (reserved === '') return [chunk];
+      buffer += decoder.decode(chunk, { stream: true });
+      const out = [];
+      for (;;) {
+        const match = SSE_RECORD_SEPARATOR.exec(buffer);
+        if (match === null) return out;
+        const end = match.index + match[0].length;
+        const raw = buffer.slice(0, end);
+        buffer = buffer.slice(end);
+        out.push(...consume(raw));
+        if (finished) return out;
+      }
+    },
+    // flush-incomplete: a trailing partial record is upstream's, forwarded whole → docs/modules/janitor-transport.md#response-wrapper
+    flush() {
+      if (finished || reserved === '') return [];
+      buffer += decoder.decode();
+      const out = release(accumulated.length);
+      if (buffer !== '') out.push(encoder.encode(buffer));
+      buffer = '';
+      return out;
+    },
+    completionText() {
+      return accumulated;
+    },
+    get done() {
+      return finished;
+    },
+    get boundaryHit() {
+      return boundaryHit;
+    },
+  };
+}
+
+// ---- janitor/constants.js ----
+// sentinel-literal: exact match only, consumed by the request transform → docs/modules/janitor-adapter.md#sentinel
+const SENTINEL = '//';
+
+// storage-key: one localStorage entry per Janitor chat id → docs/modules/janitor-adapter.md#stored-state
+const STORAGE_KEY_PREFIX = 'uid-janitor-v1:';
+
+// stop-routes-key: its own entry, never a chat key, never per chat → docs/modules/janitor-transport.md#stop-rejection-learning
+const JANITOR_STOP_ROUTES_KEY = 'uid-janitor-stop-rejected-v1';
+
+// janitor-format: this layer's own stored version, not src/'s STATE_VERSION → docs/modules/janitor-adapter.md#stored-state
+const JANITOR_STATE_FORMAT = 2;
+
+// horizon-budget: host constant, never a setting and never read from Janitor → docs/modules/janitor-adapter.md#horizon-budget
+const JANITOR_HORIZON_TOKEN_BUDGET = 100_000;
+
+// horizon-hysteresis: once over budget, drop to this fraction of it → docs/modules/janitor-adapter.md#transport-horizon
+const JANITOR_HORIZON_HYSTERESIS = 0.8;
+
+// words-per-token: the estimate, no tokenizer and no dependency → docs/modules/janitor-adapter.md#horizon-budget
+const JANITOR_WORDS_PER_TOKEN = 1.4;
+
+// lead-in: pinned user-first turn for providers that demand one → docs/modules/janitor-adapter.md#lead-in
+const JANITOR_LEAD_IN = 'Write the manuscript.';
+
+// ---- janitor/stop-routes.js ----
+let warnedStopRouteWrite = false;
+
+// route-key: the refusal belongs to a provider endpoint and model, not a chat → docs/modules/janitor-transport.md#stop-rejection-learning
+function stopRouteKey(url, model) {
+  let parsed;
+  try {
+    parsed = new URL(String(url ?? ''));
+  } catch {
+    return '';
+  }
+  return `${parsed.host}${parsed.pathname}|${String(model ?? '')}`;
+}
+
+// nothing-learned: an unreadable entry is no entry, never a guess → docs/modules/janitor-transport.md#stop-rejection-learning
+function learnedRoutes(storage) {
+  let raw = null;
+  try {
+    raw = storage.getItem(JANITOR_STOP_ROUTES_KEY);
+  } catch {
+    return [];
+  }
+  if (raw == null) return [];
+
+  let stored = null;
+  try {
+    stored = JSON.parse(raw);
+  } catch {
+    return [];
+  }
+  return Array.isArray(stored) ? stored.filter((key) => typeof key === 'string') : [];
+}
+
+function isStopRejected(key, storage = localStorage) {
+  if (key === '') return false;
+  return learnedRoutes(storage).includes(key);
+}
+
+// one-way-ttl-free: a learned route stays learned for this browser profile → docs/modules/janitor-transport.md#stop-rejection-learning
+function recordStopRejected(key, storage = localStorage) {
+  if (key === '') return;
+  const routes = learnedRoutes(storage);
+  if (routes.includes(key)) return;
+
+  try {
+    storage.setItem(JANITOR_STOP_ROUTES_KEY, JSON.stringify([...routes, key]));
+  } catch (error) {
+    if (warnedStopRouteWrite) return;
+    warnedStopRouteWrite = true;
+    console.warn(`[Manuscript] could not record the stop-rejecting route ${key}: ${error.message}`);
+  }
+}
+
 // ---- janitor/shell.js ----
+// stop-parameter-pattern: the one body test that learns a route → docs/modules/janitor-transport.md#stop-rejection-learning
+const STOP_PARAMETER_PATTERN = /\bstop(?:_sequences)?\b/i;
+
+const warnedStopRoutes = new Set();
+
 let originalFetch = null;
 
 function headerValue(headersInit, name) {
@@ -254,18 +654,59 @@ function shouldInspectRequest(resource, config, bodyText) {
   return !contentType || /(?:application\/json|\+json)/i.test(contentType);
 }
 
-// response-wrapper: fresh stream forwards chunks verbatim; metadata copied on → docs/modules/janitor-transport.md#response-wrapper
-function wrapResponse(response) {
+function copyResponseMetadata(wrapped, response) {
+  for (const property of ['url', 'redirected', 'type']) {
+    Object.defineProperty(wrapped, property, {
+      configurable: true,
+      enumerable: false,
+      value: response[property],
+    });
+  }
+  return wrapped;
+}
+
+// completion-report: one call per delivered body, never for a pass-through → docs/modules/janitor-adapter.md#boundary-records
+function reportCompletion(plan, boundaryHit, text) {
+  if (!plan?.onCompletion) return;
+  try {
+    plan.onCompletion({ boundaryHit, text });
+  } catch {
+    return;
+  }
+}
+
+// response-wrapper: fresh stream, filtered at the reserved literal; metadata copied on → docs/modules/janitor-transport.md#response-wrapper
+function wrapResponse(response, plan) {
   if (!response?.body) return response;
+  const filter = createBoundaryFilter(typeof plan?.literal === 'string' ? plan.literal : '');
   const reader = response.body.getReader();
+  let reported = false;
+  const finish = () => {
+    if (reported) return;
+    reported = true;
+    reportCompletion(plan, filter.boundaryHit, filter.completionText());
+  };
   const stream = new ReadableStream({
+    // pull-until-progress: a chunk that completes no record must not end the pull → docs/modules/janitor-transport.md#response-wrapper
     async pull(controller) {
-      const result = await reader.read();
-      if (result.done) {
-        controller.close();
-        return;
+      for (;;) {
+        const result = await reader.read();
+        if (result.done) {
+          for (const chunk of filter.flush()) controller.enqueue(chunk);
+          controller.close();
+          finish();
+          return;
+        }
+        const chunks = filter.push(result.value);
+        for (const chunk of chunks) controller.enqueue(chunk);
+        if (filter.done) {
+          await reader.cancel();
+          controller.close();
+          finish();
+          return;
+        }
+        if (chunks.length > 0) return;
       }
-      controller.enqueue(result.value);
     },
     cancel(reason) {
       return reader.cancel(reason);
@@ -276,14 +717,63 @@ function wrapResponse(response) {
     statusText: response.statusText,
     headers: response.headers,
   });
-  for (const property of ['url', 'redirected', 'type']) {
-    Object.defineProperty(wrapped, property, {
-      configurable: true,
-      enumerable: false,
-      value: response[property],
-    });
+  return copyResponseMetadata(wrapped, response);
+}
+
+// non-streaming-json: the chat-completions shape only, read through a clone → docs/modules/janitor-transport.md#response-wrapper
+async function deliverJsonCompletion(response, plan) {
+  let parsed = null;
+  try {
+    parsed = JSON.parse(await response.clone().text());
+  } catch {
+    parsed = null;
   }
-  return wrapped;
+  const content = parsed?.choices?.[0]?.message?.content;
+  if (typeof content !== 'string') return response;
+  if (findBoundary(content, plan.literal).index === -1) {
+    reportCompletion(plan, false, content);
+    return response;
+  }
+  parsed.choices[0].message.content = trimAtBoundary(content, plan.literal);
+  reportCompletion(plan, true, parsed.choices[0].message.content);
+  const rewritten = new Response(JSON.stringify(parsed), {
+    status: response.status,
+    statusText: response.statusText,
+    headers: response.headers,
+  });
+  return copyResponseMetadata(rewritten, response);
+}
+
+// stop-rejection: a 4xx that names the parameter retires it on this route → docs/modules/janitor-transport.md#stop-rejection-learning
+async function learnStopRejection(response, plan) {
+  if (response.status < 400 || response.status >= 500) return;
+  if (!plan.stopSent || !plan.routeKey) return;
+  let body = '';
+  try {
+    body = await response.clone().text();
+  } catch {
+    return;
+  }
+  if (!STOP_PARAMETER_PATTERN.test(body)) return;
+  recordStopRejected(plan.routeKey);
+  if (warnedStopRoutes.has(plan.routeKey)) return;
+  warnedStopRoutes.add(plan.routeKey);
+  console.warn(
+    `[Manuscript] ${plan.routeKey} refused the stop parameter; later requests on this route rely on the stream cut.`,
+  );
+}
+
+// deliver: errors untouched, JSON trimmed, everything else filtered on the stream → docs/modules/janitor-transport.md#response-wrapper
+async function deliver(response, plan) {
+  if (response.status >= 400) {
+    await learnStopRejection(response, plan);
+    return wrapResponse(response, null);
+  }
+  const contentType = response.headers.get('content-type') || '';
+  if (typeof plan.literal === 'string' && plan.literal !== '' && /(?:application\/json|\+json)/i.test(contentType)) {
+    return deliverJsonCompletion(response, plan);
+  }
+  return wrapResponse(response, plan);
 }
 
 // boot-capture: one capture per page, native check warns but never refuses → docs/modules/janitor-transport.md#boot-capture
@@ -328,11 +818,12 @@ function installTransport(transform) {
       recordEnvelope(data);
       return originalFetch.call(window, resource, config);
     }
-    // transform-seam: phase-3 boundary; truthy means the body changed → docs/modules/janitor-transport.md#transform-seam
-    const modified = transform(data, { ...currentEnvelope(), url, adapter });
-    if (!modified) return wrapResponse(await originalFetch.call(window, resource, config));
+    // transform-seam: a falsy return passes through; a plan carries the response side → docs/modules/janitor-transport.md#transform-seam
+    const plan = transform(data, { ...currentEnvelope(), url, adapter });
+    if (!plan) return wrapResponse(await originalFetch.call(window, resource, config), null);
+    if (!plan.modified) return deliver(await originalFetch.call(window, resource, config), plan);
     const outgoing = Object.assign({}, config || {}, { body: JSON.stringify(data) });
-    return wrapResponse(await originalFetch.call(window, resource, outgoing));
+    return deliver(await originalFetch.call(window, resource, outgoing), plan);
   };
 }
 
@@ -473,134 +964,6 @@ const SOLO_CONTINUATION_CONTROL = `${CONTINUATION_CONTROL} For this stretch, {{u
 
 // take-stock: opt-in §22 state-reconstruction paragraph, disabled by default → docs/modules/prompt.md#take-stock
 const TAKE_STOCK_PROMPT = 'Before the next stretch, take stock of the room: who is where, what each of them knows and does not know, what is still in motion from earlier, and who has a reason to move now. Let what comes next grow out of that, not out of where the story ought to end up.';
-
-// ---- src/grammar.js ----
-// block-delimiter: blank line is the only block separator, CRLF included → docs/modules/grammar.md#block-delimiter
-const DELIMITER = /\r?\n(?:[ \t]*\r?\n)+/g;
-
-// tag-header: any name-then-colon at block start is a tag → docs/modules/grammar.md#tag-header
-const TAG_HEADER = /^(?!["“”'‘’«»])([\p{L}\p{N}][\p{L}\p{N} '’\-.]{0,39}):(?=\s|$)/u;
-
-// neutral-header: U+2205 is outside TAG_HEADER's first-character class → docs/modules/grammar.md#spans
-const NEUTRAL_HEADER = /^∅:(?=\s|$)/u;
-
-// block-completeness: terminal punctuation plus balanced double quotes → docs/modules/grammar.md#block-completeness
-const TERMINAL = /[.!?…]["”'’)\]*]*$/;
-
-function trimRange(text, start, end) {
-  let s = start;
-  let e = end;
-  while (s < e && /\s/.test(text[s])) s += 1;
-  while (e > s && /\s/.test(text[e - 1])) e -= 1;
-  return { start: s, end: e };
-}
-
-function isBlockComplete(blockText) {
-  const trimmed = blockText.replace(/\s+$/, '');
-  if (!trimmed) return false;
-  if (!TERMINAL.test(trimmed)) return false;
-  return (trimmed.match(/"/g) || []).length % 2 === 0;
-}
-
-function parseTagHeader(blockText) {
-  const match = TAG_HEADER.exec(blockText);
-  if (!match) return null;
-  const body = blockText.slice(match[0].length).replace(/^[ \t]*\r?\n?/, '');
-  return { actor: match[1].trim(), body };
-}
-
-function parseManuscript(text) {
-  const segments = [];
-  let cursor = 0;
-  let match;
-  DELIMITER.lastIndex = 0;
-  while ((match = DELIMITER.exec(text)) !== null) {
-    segments.push({ start: cursor, end: match.index, delimited: true });
-    cursor = match.index + match[0].length;
-  }
-  segments.push({ start: cursor, end: text.length, delimited: false });
-
-  const blocks = [];
-  for (const segment of segments) {
-    const { start, end } = trimRange(text, segment.start, segment.end);
-    if (start === end) continue;
-    const raw = text.slice(start, end);
-    const header = parseTagHeader(raw);
-    blocks.push({
-      kind: header ? 'tag' : 'buffer',
-      actor: header ? header.actor : null,
-      body: header ? header.body : raw,
-      raw,
-      start,
-      end,
-      complete: segment.delimited ? true : isBlockComplete(raw),
-    });
-  }
-  return blocks;
-}
-
-// reserved-opener: the caller's literal opens a span even when no header parses → docs/modules/grammar.md#reserved-spans
-function opensReserved(block, reservedActor) {
-  if (reservedActor === '') return false;
-  return findTagLiteral(block.raw, reservedActor).some((hit) => hit.atBlockStart);
-}
-
-// agency-spans: a header opens a span; every other block joins it → docs/modules/grammar.md#spans
-function groupSpans(blocks, options = {}) {
-  const reservedActor = typeof options.reservedActor === 'string' ? options.reservedActor : '';
-  const spans = [];
-  blocks.forEach((block, index) => {
-    const neutral = NEUTRAL_HEADER.test(block.raw);
-    const reserved = opensReserved(block, reservedActor);
-    const opens = neutral || reserved || block.kind === 'tag';
-    if (!opens && spans.length > 0) {
-      const current = spans[spans.length - 1];
-      current.end = block.end;
-      current.blockIndices.push(index);
-      return;
-    }
-    spans.push({
-      header: reserved ? reservedActor : (neutral ? '∅' : block.actor),
-      neutral,
-      reserved,
-      start: block.start,
-      end: block.end,
-      blockIndices: [index],
-    });
-  });
-  return spans;
-}
-
-// tag-literal-lookup: caller names the actor; grammar knows no character → docs/modules/grammar.md#tag-literal-lookup
-function findTagLiteral(text, actor) {
-  const literal = `${actor}:`;
-  const blockStarts = new Set(parseManuscript(text).map((block) => block.start));
-  const found = [];
-  let index = text.indexOf(literal);
-  while (index !== -1) {
-    found.push({ index, atBlockStart: blockStarts.has(index) });
-    index = text.indexOf(literal, index + 1);
-  }
-  return found;
-}
-
-function isTrailingBlockComplete(text) {
-  const blocks = parseManuscript(text);
-  if (blocks.length === 0) return false;
-  return blocks[blocks.length - 1].complete;
-}
-
-function lastCompleteBoundary(text) {
-  const blocks = parseManuscript(text);
-  for (let i = blocks.length - 1; i >= 0; i -= 1) {
-    if (blocks[i].complete) return blocks[i].end;
-  }
-  return 0;
-}
-
-function truncateToLastCompleteBlock(text) {
-  return text.slice(0, lastCompleteBoundary(text)).replace(/\s+$/, '');
-}
 
 // ---- src/derive.js ----
 // own-line-header: one header, one span, paragraphs below it verbatim → docs/modules/derive.md#own-line-header
@@ -1019,77 +1382,6 @@ function compileUnit(state, derived, literal, opts = {}) {
   };
 }
 
-// ---- src/boundary.js ----
-// stop-fields: stop for chat completion, stopping_strings and stop for text → docs/modules/boundary.md#stop-fields
-const STOP_FIELDS = { chat: ['stop'], text: ['stopping_strings', 'stop'] };
-
-// reserved-literal: `${persona}:` bare, recomputed per use, never stored → docs/modules/boundary.md#reserved-literal
-function reservedLiteral(ctx) {
-  let name = '';
-  try {
-    const expanded = ctx.substituteParams('{{user}}');
-    if (typeof expanded === 'string' && expanded !== '{{user}}') name = expanded.trim();
-  } catch {
-    name = '';
-  }
-  if (name === '') name = String(ctx.name1 ?? '').trim();
-  return name === '' ? '' : `${name}:`;
-}
-
-// why-first-in-stop-array: index 0 survives a provider-side cap → docs/modules/boundary.md#why-first-in-stop-array
-function applyStopStrings(body, literal, api) {
-  if (literal === '' || typeof body !== 'object' || body === null) return body;
-  for (const field of STOP_FIELDS[api]) {
-    if (!Array.isArray(body[field])) body[field] = [];
-    const strings = body[field];
-    for (let i = strings.length - 1; i >= 0; i -= 1) {
-      if (strings[i] === literal) strings.splice(i, 1);
-    }
-    strings.unshift(literal);
-  }
-  return body;
-}
-
-// block-start-only: position decides, never the parsed actor → docs/modules/boundary.md#block-start-only
-function findBoundary(text, literal) {
-  if (typeof text !== 'string' || literal === '') return { index: -1, endsAtLiteral: false };
-  const occurrence = findTagLiteral(text, literal.replace(/:$/, '')).find((found) => found.atBlockStart);
-  if (occurrence === undefined) return { index: -1, endsAtLiteral: false };
-  return {
-    index: occurrence.index,
-    endsAtLiteral: text.slice(occurrence.index + literal.length).trim() === '',
-  };
-}
-
-// receipt-trim: cut back to the character before the literal → docs/modules/boundary.md#receipt-trim
-function trimAtBoundary(text, literal) {
-  const { index } = findBoundary(text, literal);
-  if (index === -1) return text;
-  return text.slice(0, index).replace(/\s+$/, '');
-}
-
-// ---- janitor/constants.js ----
-// sentinel-literal: exact match only, consumed by the request transform → docs/modules/janitor-adapter.md#sentinel
-const SENTINEL = '//';
-
-// storage-key: one localStorage entry per Janitor chat id → docs/modules/janitor-adapter.md#stored-state
-const STORAGE_KEY_PREFIX = 'uid-janitor-v1:';
-
-// janitor-format: this layer's own stored version, not src/'s STATE_VERSION → docs/modules/janitor-adapter.md#stored-state
-const JANITOR_STATE_FORMAT = 2;
-
-// horizon-budget: host constant, never a setting and never read from Janitor → docs/modules/janitor-adapter.md#horizon-budget
-const JANITOR_HORIZON_TOKEN_BUDGET = 100_000;
-
-// horizon-hysteresis: once over budget, drop to this fraction of it → docs/modules/janitor-adapter.md#transport-horizon
-const JANITOR_HORIZON_HYSTERESIS = 0.8;
-
-// words-per-token: the estimate, no tokenizer and no dependency → docs/modules/janitor-adapter.md#horizon-budget
-const JANITOR_WORDS_PER_TOKEN = 1.4;
-
-// lead-in: pinned user-first turn for providers that demand one → docs/modules/janitor-adapter.md#lead-in
-const JANITOR_LEAD_IN = 'Write the manuscript.';
-
 // ---- janitor/storage.js ----
 // janitor-fields: v3 state plus the five fields this layer owns → docs/modules/janitor-adapter.md#stored-state
 function freshState() {
@@ -1345,6 +1637,23 @@ function resolvePendingBoundary(state, entries) {
   return true;
 }
 
+// boundary-evidence: the cut, or an empty tail on a request that carried stop → docs/modules/janitor-adapter.md#boundary-evidence
+function endedAtBoundary(completion, stopSent) {
+  if (completion.boundaryHit) return true;
+  return stopSent && (completion.text === '' || completion.text.endsWith(BLOCK_DELIMITER));
+}
+
+// completion-marker: reload, mark or clear, save only on a change → docs/modules/janitor-adapter.md#boundary-evidence
+function recordCompletion(chatId, messageId, stopSent, completion) {
+  const marker = endedAtBoundary(completion, stopSent) ? messageId : '';
+  const state = loadJanitorState(chatId);
+  const pending = typeof state.pendingBoundaryAfter === 'string' ? state.pendingBoundaryAfter : '';
+  if (pending === marker) return;
+
+  state.pendingBoundaryAfter = marker;
+  saveJanitorState(chatId, state);
+}
+
 // request-pipeline: gate, classify, resolve, roll back, derive, freeze, reconstruct, stop → docs/modules/janitor-adapter.md#request-pipeline
 function transformRequest(data, context) {
   const adapter = context.adapter;
@@ -1411,16 +1720,27 @@ function transformRequest(data, context) {
   if (outgoing[1]?.role === 'assistant') outgoing.splice(1, 0, { role: 'user', content: JANITOR_LEAD_IN });
   adapter.messagesContainer.messages = outgoing;
 
-  applyStopStrings(adapter.requestContainer, literal, 'chat');
+  // learned-route: a route that refused the parameter relies on the stream cut → docs/modules/janitor-adapter.md#stop-array
+  const routeKey = stopRouteKey(context.url, adapter.modelName);
+  const stopSent = !isStopRejected(routeKey);
+  if (stopSent) applyStopStrings(adapter.requestContainer, literal, 'chat');
 
   // request-report: one line, the only sign of life until the panel → docs/modules/janitor-adapter.md#request-report
   console.info(
     `${LOG_PREFIX} finals ${state.frozen.length}, units ${state.units.length}, `
       + `frontier ${countWords(derived.text)} words, froze ${froze ? 'yes' : 'no'}, `
       + `drift ${drift.editedCompiledIndexes.length}, boundary ${state.boundaries.length}, `
-      + `rollback ${rollbacks}`,
+      + `rollback ${rollbacks}, stop ${stopSent ? 'sent' : 'skipped'}`,
   );
-  return true;
+
+  const lastAlignedId = aligned.length === 0 ? '' : aligned[aligned.length - 1].messageId;
+  return {
+    modified: true,
+    literal,
+    stopSent,
+    routeKey,
+    onCompletion: (completion) => recordCompletion(context.chatId, lastAlignedId, stopSent, completion),
+  };
 }
 
 // ---- janitor/main.js ----

@@ -1,5 +1,5 @@
 # Brief 0038 — Janitor stream-side boundary suppression and per-route `stop` rejection learning
-Status: draft
+Status: implemented
 Complexity: high  (owns INV-2 on the response side of this host, rewrites provider frames for the first time, widens the shell's transform seam, adds a second storage key, and rebuilds the committed bundle)
 PLAN sections: §8 (the hard boundary is the bare reserved literal at a block start; when the backend has no usable stop-string support the boundary must be enforced on the stream instead), §14 (the generation ends at the handoff and an empty completion is the correct record of it — no filler is synthesised into the manuscript), §23 (a host supplies behaviours, not APIs: the stop parameter and the stream cut are two implementations of the same §23 requirement), §27 (nothing the rewriter emits may make the transport legible to the reader or the model)
 Invariants touched: INV-2 (the stream cut is the fallback the invariant names for backends that ignore stop strings), INV-8 (the rewriter decides whether a generation ended deliberately, which is what exempts it from brief 0037's rollback)
@@ -91,17 +91,17 @@ None blocks this brief. Three open items in `docs/api/janitor.md#open` touch it 
 Do not launch `st-api-verifier`; it verifies SillyTavern only.
 
 ## Acceptance
-- [ ] For a recorded SSE transcript with no literal, the bytes the caller reads equal the upstream bytes concatenated, for three different chunkings including a mid-frame split.
-- [ ] For a transcript whose deltas reach a block-start literal, the caller receives the text before it, a frame with `finish_reason: 'stop'`, and `data: [DONE]`; no part of the literal is ever forwarded, including when it is split across frames; the upstream reader was cancelled.
-- [ ] A mid-paragraph occurrence of the literal is forwarded unchanged and records no boundary; an empty literal disables the filter.
-- [ ] A suppressed generation writes `pendingBoundaryAfter` = the last aligned entry's `messageId`; an ordinary completion clears it; the marker is written exactly once per completion.
-- [ ] A 4xx naming the parameter after a request that sent `stop` records the route; the next request on that same `host+path+model` dispatches with no `stop` written by the script, while another route still gets `stop[0] === literal`; a 4xx not naming it, and a 5xx, record nothing; no request is retried.
-- [ ] Three consecutive turns, the first ending in a stream-suppressed boundary, still produce a byte-identical `[final, control]` prefix.
-- [ ] A non-streaming JSON completion carrying a block-start literal is delivered trimmed; one without it is delivered byte-identically.
-- [ ] `src/**` is byte-identical; no file under `janitor/` or `tests/janitor/` references `SillyTavern`.
-- [ ] `npm run build:janitor` regenerates `dist/janitor-manuscript-dissolve.user.js`, the committed file matches a fresh build, and it parses via `new Function`.
-- [ ] `npm run check` passes
-- [ ] every new pointer comment resolves (`node tools/check-comments.mjs`)
+- [x] For a recorded SSE transcript with no literal, the bytes the caller reads equal the upstream bytes concatenated, for three different chunkings including a mid-frame split.
+- [x] For a transcript whose deltas reach a block-start literal, the caller receives the text before it, a frame with `finish_reason: 'stop'`, and `data: [DONE]`; no part of the literal is ever forwarded, including when it is split across frames; the upstream reader was cancelled.
+- [x] A mid-paragraph occurrence of the literal is forwarded unchanged and records no boundary; an empty literal disables the filter.
+- [x] A suppressed generation writes `pendingBoundaryAfter` = the last aligned entry's `messageId`; an ordinary completion clears it; the marker is written exactly once per completion.
+- [x] A 4xx naming the parameter after a request that sent `stop` records the route; the next request on that same `host+path+model` dispatches with no `stop` written by the script, while another route still gets `stop[0] === literal`; a 4xx not naming it, and a 5xx, record nothing; no request is retried.
+- [x] Three consecutive turns, the first ending in a stream-suppressed boundary, still produce a byte-identical `[final, control]` prefix.
+- [x] A non-streaming JSON completion carrying a block-start literal is delivered trimmed; one without it is delivered byte-identically.
+- [x] `src/**` is byte-identical; no file under `janitor/` or `tests/janitor/` references `SillyTavern`.
+- [x] `npm run build:janitor` regenerates `dist/janitor-manuscript-dissolve.user.js`, the committed file matches a fresh build, and it parses via `new Function`.
+- [x] `npm run check` passes
+- [x] every new pointer comment resolves (`node tools/check-comments.mjs`)
 
 ## Docs to write/update
 - `docs/modules/janitor-transport.md#response-wrapper` — amend: the wrapper is no longer a verbatim forwarder when a plan carries a literal; the framing rule, the deferred release of a partial literal and why it is bounded by the literal's length; that everything unparsed is forwarded verbatim; the cancel-and-synthesise path and the recorded fallback; and the pass-through property that the tests encode (forwarded bytes equal upstream bytes when no literal appears).

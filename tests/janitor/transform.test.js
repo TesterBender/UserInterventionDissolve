@@ -28,6 +28,7 @@ import {
   bodyFor,
   storedState,
 } from './fixtures/manuscript-turns.js';
+import { transcript, PROSE_DELTAS, BOUNDARY_DELTAS } from './fixtures/sse-transcripts.js';
 
 const ROOT = resolve(dirname(fileURLToPath(import.meta.url)), '..', '..');
 const LITERAL = `${PERSONA}:`;
@@ -37,9 +38,21 @@ let calls;
 let events;
 let shell;
 let store;
+let nextResponse;
+let lastPlan;
 
 function jsonPost(body) {
   return { method: 'POST', headers: { 'content-type': 'application/json' }, body };
+}
+
+function streamed(frames) {
+  const stream = new ReadableStream({
+    start(controller) {
+      for (const frame of frames) controller.enqueue(new TextEncoder().encode(frame));
+      controller.close();
+    },
+  });
+  return new Response(stream, { status: 200, headers: { 'content-type': 'text/event-stream' } });
 }
 
 async function bind(turns, options) {
@@ -81,16 +94,21 @@ beforeEach(async () => {
     removeItem: (key) => store.delete(key),
   });
   window.history.pushState({}, '', `/chats/${CHAT_ID}`);
+  lastPlan = null;
+  nextResponse = () => new Response('{}', { status: 200, headers: { 'content-type': 'application/json' } });
   window.fetch = async (resource, config) => {
     events.push('fetch');
     calls.push({ resource, config });
-    return new Response('{}', { status: 200, headers: { 'content-type': 'application/json' } });
+    return nextResponse();
   };
   vi.spyOn(console, 'warn').mockImplementation(() => {});
   vi.spyOn(console, 'info').mockImplementation(() => {});
   shell = await import('../../janitor/shell.js');
   const transform = await import('../../janitor/transform.js');
-  shell.installTransport(transform.transformRequest);
+  shell.installTransport((data, context) => {
+    lastPlan = transform.transformRequest(data, context);
+    return lastPlan;
+  });
   console.warn.mockClear();
 });
 
@@ -621,6 +639,148 @@ describe('three consecutive transforms across a recorded boundary', () => {
     expect(pairsOf(third).slice(0, two.length)).toEqual(two);
     expect(stateNow().boundaries).toEqual(['7002']);
     expect(JSON.stringify(third)).toContain('She reached for the');
+  });
+});
+
+describe('the stream boundary and the pending marker', () => {
+  const opening = [{ role: 'user', content: 'She pushed the door open.', id: 9001 }];
+  const answered = [...opening, { role: 'assistant', content: 'Keeper:\nThe lamp turned once.', id: 9002 }];
+
+  async function sendAndRead(body) {
+    const response = await window.fetch(PROXY_URL, jsonPost(JSON.stringify(body)));
+    await response.text();
+    return calls.at(-1);
+  }
+
+  it('writes the last aligned id when the stream was cut, and the next request records the boundary', async () => {
+    await bind(opening);
+    nextResponse = () => streamed(transcript(BOUNDARY_DELTAS));
+    await sendAndRead(bodyFor(opening));
+
+    expect(stateNow().pendingBoundaryAfter).toBe('9001');
+    expect(stateNow().boundaries).toEqual([]);
+
+    nextResponse = () => new Response('{}', { status: 200, headers: { 'content-type': 'application/json' } });
+    await dispatched(answered);
+    expect(stateNow().boundaries).toEqual(['9002']);
+    expect(stateNow().pendingBoundaryAfter).toBe('');
+  });
+
+  it('writes the marker when the provider itself stopped and the completion is empty', async () => {
+    await bind(opening);
+    nextResponse = () => streamed([...transcript([])]);
+    await sendAndRead(bodyFor(opening));
+    expect(stateNow().pendingBoundaryAfter).toBe('9001');
+  });
+
+  it('writes nothing for an ordinary completion and clears a marker another tab left', async () => {
+    await bind(opening);
+    nextResponse = () => streamed(transcript(PROSE_DELTAS));
+    await sendAndRead(bodyFor(opening));
+    expect(store.has(stateKey(CHAT_ID))).toBe(false);
+
+    seed(storedState({ pendingBoundaryAfter: '9001' }));
+    lastPlan.onCompletion({ boundaryHit: false, text: 'Keeper:\nThe lamp turned once.' });
+    expect(stateNow().pendingBoundaryAfter).toBe('');
+  });
+
+  it('reports the completion exactly once per response', async () => {
+    await bind(opening);
+    nextResponse = () => streamed(transcript(BOUNDARY_DELTAS));
+    const response = await window.fetch(PROXY_URL, jsonPost(JSON.stringify(bodyFor(opening))));
+
+    const seen = [];
+    lastPlan.onCompletion = (completion) => seen.push(completion);
+    await response.text();
+    await response.text().catch(() => '');
+
+    expect(seen).toHaveLength(1);
+    expect(seen[0].boundaryHit).toBe(true);
+  });
+});
+
+describe('three turns across a stream-suppressed boundary', () => {
+  const seeded = { text: prose('opening', 40), words: 40 * 12, createdAt: 1 };
+  const stopped = `${prose('body', 360)}\n\nShe reached for the`;
+  const opening = [{ role: 'user', content: 'She pushed the door open.', id: 7001 }];
+  const turnTwo = [...opening, { role: 'assistant', content: stopped, id: 7002 }];
+  const turnThree = [...turnTwo, { role: 'user', content: 'And after that?', id: 7003 }, { role: 'assistant', content: prose('second', 120), id: 7004 }];
+
+  function pairsOf(body) {
+    return body.messages.slice(2, -2);
+  }
+
+  it('keeps every surviving pair byte-identical and exempts the stopped message', async () => {
+    seed(storedState({ frozen: [seeded] }));
+    await bind(opening);
+    nextResponse = () => streamed(transcript(BOUNDARY_DELTAS));
+    const response = await window.fetch(PROXY_URL, jsonPost(JSON.stringify(bodyFor(opening))));
+    await response.text();
+    const first = JSON.parse(calls.at(-1).config.body);
+
+    nextResponse = () => new Response('{}', { status: 200, headers: { 'content-type': 'application/json' } });
+    const second = await dispatched(turnTwo);
+    const third = await dispatched(turnThree);
+
+    expect(stateNow().boundaries).toEqual(['7002']);
+    expect(JSON.stringify(third)).toContain('She reached for the');
+    expect(second.messages[0].content).toBe(first.messages[0].content);
+    const one = pairsOf(first);
+    const two = pairsOf(second);
+    expect(one.length).toBeGreaterThanOrEqual(2);
+    expect(two.slice(0, one.length)).toEqual(one);
+    expect(pairsOf(third).slice(0, two.length)).toEqual(two);
+  });
+});
+
+describe('a route that rejects the stop parameter', () => {
+  const turns = [
+    { role: 'user', content: 'She pushed the door open.', id: 9101 },
+    { role: 'assistant', content: 'Keeper:\nThe lamp turned once.', id: 9102 },
+  ];
+
+  function refusal(status, message) {
+    return () => new Response(JSON.stringify({ error: { message } }), {
+      status,
+      headers: { 'content-type': 'application/json' },
+    });
+  }
+
+  it('learns the route from a 4xx naming the parameter and omits stop on the next request', async () => {
+    await bind(turns);
+    nextResponse = refusal(400, 'Unsupported parameter: stop is not supported with this model.');
+    const refused = await send(bodyFor(turns));
+
+    expect(calls).toHaveLength(1);
+    expect(JSON.parse(refused.config.body).stop[0]).toBe(LITERAL);
+    expect(console.info.mock.calls.at(-1)[0]).toContain('stop sent');
+
+    nextResponse = () => new Response('{}', { status: 200, headers: { 'content-type': 'application/json' } });
+    const next = JSON.parse((await send(bodyFor(turns))).config.body);
+    expect('stop' in next).toBe(false);
+    expect(console.info.mock.calls.at(-1)[0]).toContain('stop skipped');
+  });
+
+  it('still writes the literal on another model', async () => {
+    await bind(turns);
+    nextResponse = refusal(400, 'Unsupported parameter: stop');
+    await send(bodyFor(turns));
+
+    nextResponse = () => new Response('{}', { status: 200, headers: { 'content-type': 'application/json' } });
+    const other = { ...bodyFor(turns), model: 'gpt-other' };
+    expect(JSON.parse((await send(other)).config.body).stop[0]).toBe(LITERAL);
+  });
+
+  it('learns nothing from a 4xx that does not name the parameter, or from a 5xx', async () => {
+    await bind(turns);
+    nextResponse = refusal(400, 'Your credit balance is too low.');
+    await send(bodyFor(turns));
+    nextResponse = refusal(500, 'Unsupported parameter: stop');
+    await send(bodyFor(turns));
+
+    nextResponse = () => new Response('{}', { status: 200, headers: { 'content-type': 'application/json' } });
+    expect(JSON.parse((await send(bodyFor(turns))).config.body).stop[0]).toBe(LITERAL);
+    expect(calls).toHaveLength(3);
   });
 });
 
