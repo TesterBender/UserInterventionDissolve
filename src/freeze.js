@@ -1,7 +1,14 @@
 import { getCtx } from './host.js';
 import { parseManuscript, groupSpans } from './grammar.js';
-import { getState, pushFrozen, advanceWatermark } from './state.js';
-import { METADATA_KEY, FREEZE_MIN_WORDS, FREEZE_MAX_WORDS } from './constants.js';
+import { getState, canPushSpan, pushUnit, sealUnits, advanceWatermark } from './state.js';
+import {
+  METADATA_KEY,
+  LOG_PREFIX,
+  FREEZE_MIN_WORDS,
+  FREEZE_MAX_WORDS,
+  FINAL_MIN_WORDS,
+  FINAL_MAX_WORDS,
+} from './constants.js';
 
 // sentence-final: copy of grammar's private TERMINAL → docs/modules/freeze.md#salience-heuristics
 const SENTENCE_FINAL = /[.!?…]["”'’)\]*]*$/;
@@ -124,8 +131,31 @@ export function selectCut(frontierText, literal, opts = {}) {
   };
 }
 
-// freeze-apply: cut offset mapped onto a message, remainder re-derived → docs/modules/freeze.md#watermark-mapping
-export function maybeFreeze(state, derived, literal, opts = {}) {
+// units-words: the unsealed tier's running total, the only seal input → docs/modules/freeze.md#seal-policy
+function unitsWords(state) {
+  return state.units.reduce((total, unit) => total + unit.words, 0);
+}
+
+// stall-warning: one warn per state whose units cannot be sealed → docs/modules/freeze.md#seal-policy
+const stalled = new WeakSet();
+
+function warnStalled(state) {
+  if (stalled.has(state)) return;
+  stalled.add(state);
+  console.warn(`${LOG_PREFIX} compilation stalled: the compiled units cannot be sealed`);
+}
+
+// seal-record: one entry per seal, none when the push was refused → docs/modules/freeze.md#seal-policy
+function seal(state, seals) {
+  const frozenIndex = sealUnits(state);
+  if (typeof frozenIndex !== 'number') return;
+
+  seals.push({ frozenIndex, words: state.frozen[frozenIndex].words });
+}
+
+// compile-unit: cut offset mapped onto a message → docs/modules/freeze.md#watermark-mapping
+// seal-policy: the unit is sealed into a final span around the push → docs/modules/freeze.md#seal-policy
+export function compileUnit(state, derived, literal, opts = {}) {
   const cut = selectCut(derived.text, literal, opts);
   if (cut === null) return null;
 
@@ -147,17 +177,36 @@ export function maybeFreeze(state, derived, literal, opts = {}) {
     offset = segment.sourceStart + (cut.frozenEnd - segment.start);
   }
 
-  // push-refusal: a refused span leaves the state byte-identical → docs/modules/freeze.md#overrun
-  if (!pushFrozen(state, { text: derived.text.slice(0, cut.frozenEnd), words: cut.words })) return null;
+  // push-refusal: a span canPushSpan rejects leaves the state byte-identical → docs/modules/freeze.md#overrun
+  const text = derived.text.slice(0, cut.frozenEnd);
+  if (!canPushSpan(text)) return null;
+
+  const seals = [];
+  // ceiling-guard: a combination above the ceiling is never created → docs/modules/freeze.md#seal-policy
+  if (state.units.length > 0 && unitsWords(state) + cut.words > FINAL_MAX_WORDS) {
+    seal(state, seals);
+    // ceiling-stall: a refused seal stops the push, state byte-identical → docs/modules/freeze.md#seal-policy
+    if (seals.length === 0) {
+      warnStalled(state);
+      return null;
+    }
+  }
+
+  pushUnit(state, { text, words: cut.words });
   advanceWatermark(state, { messageId, offset, consumedIds });
+  const unitIndex = state.units.length - 1;
+
+  // seal-policy: seal once one more unit could no longer fit under the ceiling → docs/modules/freeze.md#seal-policy
+  if (unitsWords(state) >= FINAL_MIN_WORDS && unitsWords(state) + FREEZE_MAX_WORDS > FINAL_MAX_WORDS) seal(state, seals);
 
   return {
-    frozenIndex: state.frozen.length - 1,
+    unitIndex,
     words: cut.words,
     target: cut.target,
     overrun: cut.overrun,
     blockIndex: cut.blockIndex,
     watermark: { messageId, offset },
+    seals,
   };
 }
 

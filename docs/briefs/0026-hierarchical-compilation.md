@@ -1,5 +1,5 @@
 # Brief 0026 — Hierarchical compilation: Tier-1 units, sealed final spans, interleaved continuations
-Status: draft
+Status: implemented
 Complexity: high
 PLAN sections: §12 (the mutable frontier is reconstructed every request so earlier live seams cannot survive), §13 (continuation control is a neutral host constant; frozen history uses one byte-identical string), §16 (freezing is append-only, old spans are not re-cut; 3,000–4,200 words with jitter is an advisory transport target the compiler may overrun for a better boundary), §17 (cuts may correlate with low-salience structure, never with authorship or high-salience fiction). Governing spec for this brief: `PLAN-addendum-hierarchical-compilation.md` (§1–§16), read in full.
 Invariants touched: INV-4, INV-5, INV-6, INV-7, INV-10
@@ -71,20 +71,20 @@ Compilation becomes two-tier. A cut at the existing 3,000–4,200-word target no
 - (empty)
 
 ## Acceptance
-- [ ] `createState()` is `{ version: 3, frozen: [], units: [], frozenIds: [], watermark }`; a stored v2 object is upgraded in place — same object identity, `frozen` entries byte-identical, `units` added as `[]`, `version` 3 — and a `version: 1` or `version: 99` object still warns once and is replaced.
-- [ ] `compileUnit` on a fresh state pushes to `state.units` and leaves `state.frozen` empty; `frozenIds`/`watermark` advance exactly as `maybeFreeze` did (existing watermark-mapping and partial-refusal tests pass unchanged against the new name).
-- [ ] Seal policy table: one 3.5k unit → not sealed; 3.5k + 3.8k → sealed as one 7.3k final (`frozen.length === 1`, `units` empty, final text equals the two unit texts joined by `BLOCK_DELIMITER`, final `words` equals the sum and equals `countWords` of the joined text); a further 3.4k unit starts a new unit set and is not sealed.
-- [ ] Ceiling guard: units holding a single 5.9k overrun unit followed by a 4.2k unit seals the 5.9k alone and leaves `units = [4.2k]`; no final of 10.1k is ever produced.
-- [ ] Over a long synthetic run (≥ 40k words of manuscript compiled through repeated `compileUnit` calls) no entry in `state.frozen` exceeds `FINAL_MAX_WORDS`, and every entry except a lone-overrun seal is ≥ `FINAL_MIN_WORDS`.
-- [ ] Append-only identity: snapshot `state.frozen` as JSON before further cuts/seals and assert every previously existing entry is byte-identical afterwards, and that `frozen` only ever grows.
-- [ ] `buildHistory` shape: two finals + two units + hot text ⇒ `[A(final0), U(canonical), A(final1), U(canonical), A(units+hot), U(edge)]`, strictly alternating, every historical control byte-identical to `CONTINUATION_CONTROL`, and the frontier message equal to `unit0 + BLOCK_DELIMITER + unit1 + BLOCK_DELIMITER + hot`.
-- [ ] `buildHistory` omits the frontier message when units and hot text are all blank and then does not append a second user turn (finals-only state ends with exactly one canonical control after the last final; the solo variant is not emitted in that case).
-- [ ] Prefix stability: building twice from the same `state.frozen` with different `units`/`frontier` yields byte-identical first `2n` messages; appending a new final leaves the first `2n` messages unchanged (monotonic prefix growth, addendum §8/§11).
-- [ ] INV-10: identical state + identical chat produce deep-equal arrays across calls, and two different live interaction histories that compile to the same state produce identical arrays.
-- [ ] `recompile` over a long chat yields sealed finals plus trailing units in `state.units`, seals nothing after the loop, and its summary line is byte-identical to today's format.
-- [ ] `recovery.onMessageReceived` still saves metadata exactly when a compile happened, including when that compile also sealed.
-- [ ] `npm run check` passes
-- [ ] every new pointer comment resolves (`node tools/check-comments.mjs`)
+- [x] `createState()` is `{ version: 3, frozen: [], units: [], frozenIds: [], watermark }`; a stored v2 object is upgraded in place — same object identity, `frozen` entries byte-identical, `units` added as `[]`, `version` 3 — and a `version: 1` or `version: 99` object still warns once and is replaced.
+- [x] `compileUnit` on a fresh state pushes to `state.units` and leaves `state.frozen` empty; `frozenIds`/`watermark` advance exactly as `maybeFreeze` did (existing watermark-mapping and partial-refusal tests pass unchanged against the new name).
+- [x] Seal policy table: one 3.5k unit → not sealed; 3.5k + 3.8k → sealed as one 7.3k final (`frozen.length === 1`, `units` empty, final text equals the two unit texts joined by `BLOCK_DELIMITER`, final `words` equals the sum and equals `countWords` of the joined text); a further 3.4k unit starts a new unit set and is not sealed.
+- [x] Ceiling guard: units holding a single 5.9k overrun unit followed by a 4.2k unit seals the 5.9k alone and leaves `units = [4.2k]`; no final of 10.1k is ever produced.
+- [x] Over a long synthetic run (≥ 40k words of manuscript compiled through repeated `compileUnit` calls) no entry in `state.frozen` exceeds `FINAL_MAX_WORDS`, and every entry except a lone-overrun seal is ≥ `FINAL_MIN_WORDS`.
+- [x] Append-only identity: snapshot `state.frozen` as JSON before further cuts/seals and assert every previously existing entry is byte-identical afterwards, and that `frozen` only ever grows.
+- [x] `buildHistory` shape: two finals + two units + hot text ⇒ `[A(final0), U(canonical), A(final1), U(canonical), A(units+hot), U(edge)]`, strictly alternating, every historical control byte-identical to `CONTINUATION_CONTROL`, and the frontier message equal to `unit0 + BLOCK_DELIMITER + unit1 + BLOCK_DELIMITER + hot`.
+- [x] `buildHistory` omits the frontier message when units and hot text are all blank and then does not append a second user turn (finals-only state ends with exactly one canonical control after the last final; the solo variant is not emitted in that case).
+- [x] Prefix stability: building twice from the same `state.frozen` with different `units`/`frontier` yields byte-identical first `2n` messages; appending a new final leaves the first `2n` messages unchanged (monotonic prefix growth, addendum §8/§11).
+- [x] INV-10: identical state + identical chat produce deep-equal arrays across calls, and two different live interaction histories that compile to the same state produce identical arrays.
+- [x] `recompile` over a long chat yields sealed finals plus trailing units in `state.units`, seals nothing after the loop, and its summary line is byte-identical to today's format.
+- [x] `recovery.onMessageReceived` still saves metadata exactly when a compile happened, including when that compile also sealed.
+- [x] `npm run check` passes
+- [x] every new pointer comment resolves (`node tools/check-comments.mjs`)
 
 ## Docs to write/update
 - `docs/modules/state.md#shape` — v3 shape, `frozen` = final spans vs `units` = Tier-1 units; `#unknown-version` — the v2→v3 in-place upgrade and why v2 spans stay final; new headings for `pushUnit`, `sealUnits`, `canPushSpan` (mechanism only, no policy numbers).
@@ -94,3 +94,12 @@ Compilation becomes two-tier. A cut at the existing 3,000–4,200-word target no
 - `docs/modules/recompile.md#loop` / `#summary` — why no post-loop seal exists and why the summary still counts finals only.
 - `docs/protocol/host-mapping.md#s12-frontier` — rewrite the reconstruction bullet for the tiered shape and the monotonic prefix; `#s16-freeze` — rewrite for two tiers: `selectCut` → unit → seal → final span, "compiled once, remembered" now covering units as well as finals.
 - `docs/decisions/0006-hierarchical-compilation.md` (+ entry in `docs/decisions/README.md`) — the policy numbers and arithmetic, why units are cleared on seal rather than kept as references (addendum §9 permits either; a retained copy duplicates the span bytes in `chatMetadata` with no consumer and no test that can observe it), why there is no jitter on `FINAL_MIN_WORDS`, and the continuation-between-finals fix (back-to-back assistant spans were relying on the host to keep them distinct).
+
+## Amendment 1 (orchestrator, 2026-09-13)
+
+`sealUnits` must honour `pushFrozen`'s boolean: when the push is refused it leaves `state.units` untouched and returns `false`, so no text is lost and no caller can read a `frozen` entry that was never created. `compileUnit`'s seal step handles a `false` seal by recording no entry in `seals`.
+
+Revised after re-audit (INV-6, addendum §16.4): when the **ceiling guard** is the seal that was refused, `compileUnit` **stalls** — it does not push the new unit, does not advance the watermark, returns `null` with the state byte-identical, and warns once per state object (`console.warn` with `LOG_PREFIX`). Pushing anyway would build the over-ceiling combination the guard exists to prevent, and the post-push clause would then seal it as one oversized final. The ceiling therefore holds under any state, including an unsealable unit set.
+
+- [x] `sealUnits` returns `false` and keeps the units when `pushFrozen` refuses; `compileUnit` records no seal
+- [x] a refused ceiling-guard seal yields `null` with no new unit, `units`, `frozen`, `frozenIds` and `watermark` unchanged, and one warning per state

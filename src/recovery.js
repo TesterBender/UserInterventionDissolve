@@ -4,7 +4,7 @@ import { isTrailingBlockComplete, truncateToLastCompleteBlock } from './grammar.
 import { reservedLiteral, findBoundary, trimAtBoundary } from './boundary.js';
 import { assignIds, deriveFrontier } from './derive.js';
 import { getState, save } from './state.js';
-import { maybeFreeze } from './freeze.js';
+import { compileUnit } from './freeze.js';
 
 // duplicated-eligibility: same list as boundary, wired independently → docs/modules/recovery.md#ordering
 const SKIPPED_RECEIPT_TYPES = ['quiet', 'impersonate', 'first_message'];
@@ -66,7 +66,7 @@ export async function onMessageReceived(index, type, ctx = getCtx()) {
 
   // freeze-after-receipt: one attempt per receipt, on a fresh derivation → docs/modules/recovery.md#freeze-hookup
   const state = getState(ctx);
-  const result = maybeFreeze(state, deriveFrontier(ctx.chat, state, literal), literal, {});
+  const result = compileUnit(state, deriveFrontier(ctx.chat, state, literal), literal, {});
 
   await ctx.saveChat();
   if (result !== null) await save(ctx);

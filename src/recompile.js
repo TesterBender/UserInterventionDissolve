@@ -3,7 +3,7 @@ import { METADATA_KEY } from './constants.js';
 import { reservedLiteral } from './boundary.js';
 import { assignIds, deriveFrontier } from './derive.js';
 import { createState, save } from './state.js';
-import { maybeFreeze } from './freeze.js';
+import { compileUnit } from './freeze.js';
 
 // loop-bound: hard stop, the state already guarantees termination → docs/modules/recompile.md#loop
 const MAX_PASSES = 1000;
@@ -21,7 +21,7 @@ export async function recompile(ctx = getCtx()) {
   const literal = reservedLiteral(ctx);
   for (let pass = 0; pass < MAX_PASSES; pass += 1) {
     // live-rules: empty options, so the current target and salience rules apply → docs/modules/recompile.md#loop
-    if (maybeFreeze(state, deriveFrontier(ctx.chat, state, literal), literal, {}) === null) break;
+    if (compileUnit(state, deriveFrontier(ctx.chat, state, literal), literal, {}) === null) break;
   }
 
   // save-once: the reset itself is persisted even when nothing froze → docs/modules/recompile.md#save

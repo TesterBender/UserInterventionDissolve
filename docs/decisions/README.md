@@ -27,3 +27,4 @@ One paragraph.
 - [0003 — duplication-filter wording](0003-duplication-filter-wording.md)
 - [0004 — the mutable frontier is derived, not accumulated](0004-derived-frontier.md)
 - [0005 — agency spans in code](0005-agency-spans.md)
+- [0006 — hierarchical compilation: units, sealing and the final ceiling](0006-hierarchical-compilation.md)

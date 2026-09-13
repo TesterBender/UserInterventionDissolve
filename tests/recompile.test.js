@@ -2,7 +2,7 @@ import { describe, it, expect, vi, afterEach } from 'vitest';
 import { recompile, formatRecompileSummary } from '../src/recompile.js';
 import { createState } from '../src/state.js';
 import { installFakeContext, uninstall, makeAssistantMessage, makeMessage } from './helpers/fake-context.js';
-import { METADATA_KEY, FREEZE_MIN_WORDS } from '../src/constants.js';
+import { METADATA_KEY, FREEZE_MIN_WORDS, FINAL_MIN_WORDS, FINAL_MAX_WORDS } from '../src/constants.js';
 
 function buf(n, label = 'w') {
   const parts = [];
@@ -14,9 +14,9 @@ function block(actor, words, label) {
   return `${actor}: ${buf(words - 1, label)}`;
 }
 
-function longChat() {
+function longChat(messages = 20) {
   const chat = [];
-  for (let i = 0; i < 20; i += 1) {
+  for (let i = 0; i < messages; i += 1) {
     chat.push(makeAssistantMessage({ mes: block('Anton', 400, `m${i}w`) }));
   }
   return chat;
@@ -67,15 +67,34 @@ describe('recompile resets canonical state', () => {
 });
 
 describe('recompile rebuilds spans from the chat as it stands', () => {
-  it('freezes an 8,000-word chat into at least two spans and terminates', async () => {
+  it('compiles an 8,000-word chat into a sealed final and terminates', async () => {
     const ctx = installFakeContext({ chat: longChat() });
 
     const result = await recompile(ctx);
     const state = ctx.chatMetadata[METADATA_KEY];
-    expect(result.spans).toBeGreaterThanOrEqual(2);
+    expect(result.spans).toBeGreaterThanOrEqual(1);
     expect(state.frozen).toHaveLength(result.spans);
     expect(result.words).toBe(state.frozen.reduce((t, s) => t + s.words, 0));
-    for (const span of state.frozen) expect(span.words).toBeGreaterThanOrEqual(FREEZE_MIN_WORDS);
+    for (const span of state.frozen) {
+      expect(span.words).toBeGreaterThanOrEqual(FREEZE_MIN_WORDS);
+      expect(span.words).toBeGreaterThanOrEqual(FINAL_MIN_WORDS);
+      expect(span.words).toBeLessThanOrEqual(FINAL_MAX_WORDS);
+    }
+  });
+
+  it('leaves the trailing units unsealed and seals nothing after the loop', async () => {
+    const ctx = installFakeContext({ chat: longChat(30) });
+
+    const result = await recompile(ctx);
+    const state = ctx.chatMetadata[METADATA_KEY];
+
+    expect(state.frozen).toHaveLength(result.spans);
+    expect(state.frozen.length).toBeGreaterThanOrEqual(1);
+    expect(state.units.length).toBeGreaterThanOrEqual(1);
+    const trailing = state.units.reduce((total, unit) => total + unit.words, 0);
+    expect(trailing).toBeLessThan(FINAL_MIN_WORDS);
+    expect(result.words).toBe(state.frozen.reduce((t, s) => t + s.words, 0));
+    expect(JSON.stringify(state.frozen)).not.toContain(state.units[0].text);
   });
 
   it('is idempotent: a second run on an unchanged chat gives the same spans', async () => {
@@ -109,7 +128,7 @@ describe('recompile rebuilds spans from the chat as it stands', () => {
   it('reads the context through getContext when called with no argument', async () => {
     const ctx = installFakeContext({ chat: longChat() });
     const result = await recompile();
-    expect(result.spans).toBeGreaterThanOrEqual(2);
+    expect(result.spans).toBeGreaterThanOrEqual(1);
     expect(ctx.saveMetadata).toHaveBeenCalledTimes(1);
   });
 

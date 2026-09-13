@@ -179,6 +179,7 @@ describe('onMessageReceived — receipt', () => {
     const idAfterFirst = message.extra[METADATA_KEY].id;
     const frontierAfterFirst = frontierOf(ctx);
     const frozenAfterFirst = JSON.parse(JSON.stringify(state.frozen));
+    const unitsAfterFirst = JSON.parse(JSON.stringify(state.units));
 
     const second = await onMessageReceived(0, 'normal');
 
@@ -187,6 +188,7 @@ describe('onMessageReceived — receipt', () => {
     expect(message.extra[METADATA_KEY].id).toBe(idAfterFirst);
     expect(frontierOf(ctx)).toBe(frontierAfterFirst);
     expect(state.frozen).toEqual(frozenAfterFirst);
+    expect(state.units).toEqual(unitsAfterFirst);
     expect(ctx.saveChat).toHaveBeenCalledTimes(2);
   });
 
@@ -292,6 +294,7 @@ describe('onMessageReceived — freeze hook-up', () => {
 
     await onMessageReceived(0, 'normal');
 
+    expect(state.units).toEqual([]);
     expect(state.frozen).toEqual([]);
     expect(state.frozenIds).toEqual([]);
     expect(state.watermark).toEqual({ messageId: null, offset: 0 });
@@ -299,7 +302,7 @@ describe('onMessageReceived — freeze hook-up', () => {
     expect(ctx.saveChat).toHaveBeenCalledTimes(1);
   });
 
-  it('freezes once against the derived frontier and saves metadata', async () => {
+  it('compiles one unit against the derived frontier and saves metadata', async () => {
     const ctx = installFakeContext({ name1: 'Mara' });
     const state = seed(ctx);
     for (let i = 0; i < 60; i += 1) {
@@ -308,17 +311,18 @@ describe('onMessageReceived — freeze hook-up', () => {
 
     await onMessageReceived(ctx.chat.length - 1, 'normal');
 
-    expect(state.frozen).toHaveLength(1);
-    expect(state.frozen[0].words).toBeGreaterThanOrEqual(3000);
+    expect(state.units).toHaveLength(1);
+    expect(state.frozen).toEqual([]);
+    expect(state.units[0].words).toBeGreaterThanOrEqual(3000);
     expect(state.frozenIds.length).toBeGreaterThan(0);
     expect(ctx.saveMetadata).toHaveBeenCalledTimes(1);
 
     const remainder = deriveFrontier(ctx.chat, state, '').text;
-    expect(state.frozen[0].text.endsWith(remainder)).toBe(false);
-    expect(remainder).not.toContain(state.frozen[0].text);
+    expect(state.units[0].text.endsWith(remainder)).toBe(false);
+    expect(remainder).not.toContain(state.units[0].text);
   });
 
-  it('attempts a freeze once per receipt only', async () => {
+  it('attempts a compile once per receipt only', async () => {
     const ctx = installFakeContext({ name1: 'Mara' });
     const state = seed(ctx);
     for (let i = 0; i < 60; i += 1) {
@@ -328,7 +332,22 @@ describe('onMessageReceived — freeze hook-up', () => {
     await onMessageReceived(ctx.chat.length - 1, 'normal');
     await onMessageReceived(ctx.chat.length - 1, 'normal');
 
+    expect(state.units).toHaveLength(1);
+    expect(ctx.saveMetadata).toHaveBeenCalledTimes(1);
+  });
+
+  it('saves metadata once for a receipt whose compile also seals a final span', async () => {
+    const ctx = installFakeContext({ name1: 'Mara' });
+    const state = seed(ctx);
+    state.units.push({ text: words(10, 'seed'), words: 5000, createdAt: 1 });
+    for (let i = 0; i < 60; i += 1) {
+      ctx.chat.push(makeAssistantMessage({ mes: words(100, `b${i}w`) }));
+    }
+
+    await onMessageReceived(ctx.chat.length - 1, 'normal');
+
     expect(state.frozen).toHaveLength(1);
+    expect(state.units).toEqual([]);
     expect(ctx.saveMetadata).toHaveBeenCalledTimes(1);
   });
 });
@@ -426,6 +445,6 @@ describe('source hygiene', () => {
     expect(SOURCE).not.toContain('lastAppend');
     expect(SOURCE).not.toContain('appendedText');
     expect(SOURCE).not.toContain('saveMetadata');
-    expect(SOURCE.match(/maybeFreeze\(/g)).toHaveLength(1);
+    expect(SOURCE.match(/compileUnit\(/g)).toHaveLength(1);
   });
 });

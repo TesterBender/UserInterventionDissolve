@@ -2,7 +2,7 @@ import { describe, it, expect, vi, afterEach, beforeEach } from 'vitest';
 import fs from 'node:fs';
 import path from 'node:path';
 import { installFakeContext, uninstall, makeMessage, makeAssistantMessage } from './helpers/fake-context.js';
-import { METADATA_KEY, INTERCEPTOR_GLOBAL } from '../src/constants.js';
+import { METADATA_KEY, INTERCEPTOR_GLOBAL, BLOCK_DELIMITER } from '../src/constants.js';
 import { CONTINUATION_CONTROL } from '../src/prompt.js';
 import { buildHistory, applyToRequestChat, shouldReconstruct, regeneratesLastMessage, interceptGeneration } from '../src/frontier.js';
 import { armSolo, consumeSoloFlag, resolveSoloControl } from '../src/solo.js';
@@ -10,8 +10,8 @@ import { armSolo, consumeSoloFlag, resolveSoloControl } from '../src/solo.js';
 const NAMES = { name1: 'Mara', name2: 'Narrator' };
 const MESSAGE_FIELDS = ['name', 'is_user', 'is_system', 'mes', 'extra'];
 
-function makeState({ frozen = [], frozenIds = [], watermark = { messageId: null, offset: 0 } } = {}) {
-  return { version: 2, frozen, frozenIds, watermark };
+function makeState({ frozen = [], units = [], frozenIds = [], watermark = { messageId: null, offset: 0 } } = {}) {
+  return { version: 3, frozen, units, frozenIds, watermark };
 }
 
 function installWithState(state, chat = []) {
@@ -25,32 +25,87 @@ afterEach(() => {
 });
 
 describe('buildHistory', () => {
-  it('returns frozen spans, the frontier and one continuation turn, in order', () => {
+  it('puts a canonical control after every final span and one frontier message at the end', () => {
     const state = makeState({
       frozen: [{ text: 'A', words: 1, createdAt: 1 }, { text: 'B', words: 1, createdAt: 2 }],
+      units: [{ text: 'U1', words: 1, createdAt: 3 }, { text: 'U2', words: 1, createdAt: 4 }],
     });
     const history = buildHistory(state, NAMES, { frontier: 'C' });
 
-    expect(history.map((m) => m.mes)).toEqual(['A', 'B', 'C', CONTINUATION_CONTROL]);
-    for (const message of history.slice(0, 3)) {
+    expect(history.map((m) => m.mes)).toEqual([
+      'A',
+      CONTINUATION_CONTROL,
+      'B',
+      CONTINUATION_CONTROL,
+      `U1${BLOCK_DELIMITER}U2${BLOCK_DELIMITER}C`,
+      CONTINUATION_CONTROL,
+    ]);
+    expect(history.map((m) => m.is_user)).toEqual([false, true, false, true, false, true]);
+    for (const message of history.filter((m) => m.is_user === false)) {
       expect(message.name).toBe('Narrator');
-      expect(message.is_user).toBe(false);
       expect(message.is_system).toBe(false);
     }
-    expect(history[3].name).toBe('Mara');
-    expect(history[3].is_user).toBe(true);
-    expect(history[3].is_system).toBe(false);
+    for (const message of history.filter((m) => m.is_user === true)) {
+      expect(message.name).toBe('Mara');
+      expect(message.is_system).toBe(false);
+      expect(message.mes).toBe(CONTINUATION_CONTROL);
+    }
     for (const message of history) {
       expect(message.extra[METADATA_KEY].reconstructed).toBe(true);
     }
   });
 
-  it('omits the frontier message when it is blank, absent or not a string', () => {
+  it('joins the unsealed units into the frontier message without giving them turns', () => {
+    const state = makeState({ units: [{ text: 'U1', words: 1, createdAt: 1 }, { text: 'U2', words: 1, createdAt: 2 }] });
+    const history = buildHistory(state, NAMES, { frontier: 'C' });
+
+    expect(history.map((m) => m.mes)).toEqual([`U1${BLOCK_DELIMITER}U2${BLOCK_DELIMITER}C`, CONTINUATION_CONTROL]);
+  });
+
+  it('alternates strictly and always ends with a user turn', () => {
+    for (const state of [
+      makeState({ frozen: [{ text: 'A' }] }),
+      makeState({ frozen: [{ text: 'A' }, { text: 'B' }], units: [{ text: 'U' }] }),
+      makeState({ units: [{ text: 'U' }] }),
+      makeState(),
+    ]) {
+      const history = buildHistory(state, NAMES, { frontier: 'C' });
+      history.forEach((message, i) => expect(message.is_user).toBe(i % 2 === 1));
+      if (history.length > 0) expect(history[history.length - 1].is_user).toBe(true);
+    }
+  });
+
+  // prefix-stability: the first 2n messages come from state.frozen alone -> docs/modules/frontier.md#shape
+  it('keeps the first 2n messages byte-identical as units, frontier and later finals change', () => {
+    const frozen = [{ text: 'A', words: 1, createdAt: 1 }, { text: 'B', words: 1, createdAt: 2 }];
+    const first = buildHistory(makeState({ frozen, units: [{ text: 'U' }] }), NAMES, { frontier: 'C' });
+    const second = buildHistory(makeState({ frozen, units: [] }), NAMES, { frontier: 'different' });
+    const grown = buildHistory(makeState({ frozen: [...frozen, { text: 'D' }] }), NAMES, { frontier: 'C' });
+
+    expect(JSON.stringify(second.slice(0, 4))).toBe(JSON.stringify(first.slice(0, 4)));
+    expect(JSON.stringify(grown.slice(0, 4))).toBe(JSON.stringify(first.slice(0, 4)));
+    expect(grown.map((m) => m.mes)).toEqual([
+      'A',
+      CONTINUATION_CONTROL,
+      'B',
+      CONTINUATION_CONTROL,
+      'D',
+      CONTINUATION_CONTROL,
+      'C',
+      CONTINUATION_CONTROL,
+    ]);
+  });
+
+  it('omits the frontier message when units and frontier are all blank, adding no second user turn', () => {
     for (const options of [{ frontier: '' }, { frontier: '   \n  ' }, {}, undefined, { frontier: 42 }]) {
       const history = buildHistory(makeState({ frozen: [{ text: 'A' }] }), NAMES, options);
       expect(history.map((m) => m.mes)).toEqual(['A', CONTINUATION_CONTROL]);
       expect(history[history.length - 1].is_user).toBe(true);
+      expect(history.filter((m) => m.is_user === true)).toHaveLength(1);
     }
+
+    const blankUnits = buildHistory(makeState({ frozen: [{ text: 'A' }], units: [{ text: '  ' }] }), NAMES, {});
+    expect(blankUnits.map((m) => m.mes)).toEqual(['A', CONTINUATION_CONTROL]);
   });
 
   it('passes the frontier through verbatim, without trimming or re-joining', () => {
@@ -135,7 +190,7 @@ describe('interceptGeneration', () => {
     for (const type of ['normal', 'continue', 'regenerate', undefined, 'something_new']) {
       const chat = [makeMessage({ mes: 'live' })];
       expect(await interceptGeneration(chat, 4096, vi.fn(), type, ctx)).toBe(true);
-      expect(chat.map((m) => m.mes)).toEqual(['A', 'C', CONTINUATION_CONTROL]);
+      expect(chat.map((m) => m.mes)).toEqual(['A', CONTINUATION_CONTROL, 'C', CONTINUATION_CONTROL]);
     }
 
     const swiped = [makeMessage({ mes: 'live' })];
@@ -169,7 +224,12 @@ describe('interceptGeneration', () => {
 
     const chat = [];
     await interceptGeneration(chat, 4096, vi.fn(), 'normal', ctx);
-    expect(chat.map((m) => m.mes)).toEqual(['Already frozen.', 'Still mutable.', CONTINUATION_CONTROL]);
+    expect(chat.map((m) => m.mes)).toEqual([
+      'Already frozen.',
+      CONTINUATION_CONTROL,
+      'Still mutable.',
+      CONTINUATION_CONTROL,
+    ]);
   });
 
   // derived-frontier: an edit, a swipe or a delete lands on the next request → docs/modules/derive.md#derivation-rule
@@ -208,7 +268,7 @@ describe('interceptGeneration', () => {
 
   it('never calls abort and never persists, including for empty and malformed state', async () => {
     vi.spyOn(console, 'warn').mockImplementation(() => {});
-    for (const stored of [makeState(), { version: 2, frozen: 'nope' }, { version: 7, frozen: [] }]) {
+    for (const stored of [makeState(), { version: 3, frozen: 'nope', units: [] }, { version: 7, frozen: [] }]) {
       const ctx = installWithState(stored);
       const abort = vi.fn();
       const chat = [makeMessage({ mes: 'live' })];
@@ -284,7 +344,7 @@ describe('interceptGeneration', () => {
     await interceptGeneration(second, 4096, vi.fn(), 'normal', ctx);
 
     const userTurns = first.filter((m) => m.is_user === true);
-    expect(userTurns).toHaveLength(1);
+    expect(userTurns).toHaveLength(3);
     expect(first[first.length - 1].is_user).toBe(true);
     expect(first[first.length - 1].mes).toBe(CONTINUATION_CONTROL);
     expect(JSON.stringify(first)).toBe(JSON.stringify(second));
@@ -398,10 +458,9 @@ describe('the one-shot solo variant', () => {
     expect(last.mes).toBe('X');
     expect(last.is_user).toBe(true);
     for (const message of history.slice(0, -1)) {
-      expect(message.is_user).toBe(false);
       expect(message.mes).not.toBe('X');
     }
-    expect(history.slice(0, -1).map((m) => m.mes)).toEqual(['A', 'B']);
+    expect(history.slice(0, -1).map((m) => m.mes)).toEqual(['A', CONTINUATION_CONTROL, 'B']);
   });
 
   it('falls back to the canonical string for absent, empty and non-string controls', () => {

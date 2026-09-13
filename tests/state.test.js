@@ -2,20 +2,20 @@ import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
 import fs from 'node:fs';
 import path from 'node:path';
 import { installFakeContext, uninstall, makeMessage } from './helpers/fake-context.js';
-import { METADATA_KEY, STATE_VERSION, INTERCEPTOR_GLOBAL } from '../src/constants.js';
-import { createState, getState, pushFrozen, save, advanceWatermark } from '../src/state.js';
+import { METADATA_KEY, STATE_VERSION, INTERCEPTOR_GLOBAL, BLOCK_DELIMITER } from '../src/constants.js';
+import { createState, getState, pushFrozen, pushUnit, sealUnits, canPushSpan, save, advanceWatermark } from '../src/state.js';
 import { deriveFrontier } from '../src/derive.js';
 import * as stateModule from '../src/state.js';
 
 const COMPLETE = 'Anton: he reaches for the lamp.';
 const INCOMPLETE = 'Anton: he reaches for the';
-const EMPTY_STATE = { version: 2, frozen: [], frozenIds: [], watermark: { messageId: null, offset: 0 } };
+const EMPTY_STATE = { version: 3, frozen: [], units: [], frozenIds: [], watermark: { messageId: null, offset: 0 } };
 
 describe('createState', () => {
-  it('returns the documented v2 shape and survives a JSON round trip', () => {
+  it('returns the documented v3 shape and survives a JSON round trip', () => {
     const state = createState();
     expect(state).toEqual(EMPTY_STATE);
-    expect(STATE_VERSION).toBe(2);
+    expect(STATE_VERSION).toBe(3);
     expect(JSON.parse(JSON.stringify(state))).toEqual(state);
   });
 
@@ -84,8 +84,31 @@ describe('getState', () => {
     expect(getState()).toBe(ctx.chatMetadata[METADATA_KEY]);
   });
 
-  it('discards an unknown version and replaces it with a fresh v2 state, warning exactly once', () => {
-    const foreign = { version: 7, spans: ['keep me'] };
+  it('upgrades a stored v2 object in place, keeping its identity and its final spans', () => {
+    const span = { text: 'Anton: he reaches for the lamp.', words: 6, createdAt: 1234 };
+    const stored = { version: 2, frozen: [span], frozenIds: ['a'], watermark: { messageId: 'a', offset: 7 } };
+    const ctx = installFakeContext({ chatMetadata: { [METADATA_KEY]: stored } });
+    const warnSpy = vi.spyOn(console, 'warn').mockImplementation(() => {});
+
+    const state = getState(ctx);
+
+    expect(state).toBe(stored);
+    expect(ctx.chatMetadata[METADATA_KEY]).toBe(stored);
+    expect(state.version).toBe(3);
+    expect(state.units).toEqual([]);
+    expect(state.frozen).toEqual([span]);
+    expect(state.frozen[0]).toBe(span);
+    expect(state.frozenIds).toEqual(['a']);
+    expect(state.watermark).toEqual({ messageId: 'a', offset: 7 });
+    expect(warnSpy).not.toHaveBeenCalled();
+    expect(ctx.saveMetadata).not.toHaveBeenCalled();
+
+    expect(getState(ctx)).toBe(stored);
+    expect(state.units).toEqual([]);
+  });
+
+  it('discards an unknown version and replaces it with a fresh v3 state, warning exactly once', () => {
+    const foreign = { version: 99, spans: ['keep me'] };
     const ctx = installFakeContext({ chatMetadata: { [METADATA_KEY]: foreign } });
     const warnSpy = vi.spyOn(console, 'warn').mockImplementation(() => {});
 
@@ -94,7 +117,7 @@ describe('getState', () => {
     expect(state).toEqual(EMPTY_STATE);
     expect(ctx.chatMetadata[METADATA_KEY]).toBe(state);
     expect(warnSpy).toHaveBeenCalledTimes(1);
-    expect(warnSpy.mock.calls[0][0]).toContain('7');
+    expect(warnSpy.mock.calls[0][0]).toContain('99');
     expect(ctx.saveMetadata).not.toHaveBeenCalled();
 
     expect(getState(ctx)).toBe(state);
@@ -183,11 +206,82 @@ describe('pushFrozen', () => {
   it('exports no removal, replacement or frontier path', () => {
     expect(Object.keys(stateModule).sort()).toEqual([
       'advanceWatermark',
+      'canPushSpan',
       'createState',
       'getState',
       'pushFrozen',
+      'pushUnit',
       'save',
+      'sealUnits',
     ]);
+  });
+});
+
+describe('canPushSpan', () => {
+  it('accepts a complete trailing block and refuses everything pushFrozen refuses', () => {
+    expect(canPushSpan(COMPLETE)).toBe(true);
+    for (const text of [undefined, null, 42, '', '  ', INCOMPLETE]) {
+      expect(canPushSpan(text)).toBe(false);
+      expect(pushFrozen(createState(), { text })).toBe(false);
+    }
+  });
+});
+
+describe('pushUnit', () => {
+  it('appends to units, never to frozen, and fills words and createdAt', () => {
+    const state = createState();
+    const before = Date.now();
+    expect(pushUnit(state, { text: COMPLETE })).toBe(true);
+
+    expect(state.frozen).toEqual([]);
+    expect(state.units).toHaveLength(1);
+    expect(state.units[0].text).toBe(COMPLETE);
+    expect(state.units[0].words).toBe(6);
+    expect(state.units[0].createdAt).toBeGreaterThanOrEqual(before);
+    expect(Object.keys(state.units[0]).sort()).toEqual(['createdAt', 'text', 'words']);
+  });
+
+  it('refuses blank and mid-block text exactly as pushFrozen does', () => {
+    const state = createState();
+    for (const unit of [{}, { text: 42 }, { text: '' }, { text: '   ' }, { text: INCOMPLETE }]) {
+      expect(pushUnit(state, unit)).toBe(false);
+      expect(state.units).toHaveLength(0);
+    }
+  });
+});
+
+describe('sealUnits', () => {
+  it('returns null and changes nothing when there are no units', () => {
+    const state = createState();
+    expect(sealUnits(state)).toBeNull();
+    expect(state).toEqual(createState());
+  });
+
+  it('keeps the units and returns false when the joined span is refused', () => {
+    const state = createState();
+    state.units.push({ text: INCOMPLETE, words: 5, createdAt: 1 });
+    const before = JSON.parse(JSON.stringify(state));
+
+    expect(sealUnits(state)).toBe(false);
+    expect(state.units).toEqual(before.units);
+    expect(state.frozen).toEqual([]);
+  });
+
+  it('joins the units into one final span, clears them and returns the new index', () => {
+    const state = createState();
+    pushUnit(state, { text: 'One.', words: 1 });
+    pushUnit(state, { text: 'Two.', words: 1 });
+
+    expect(sealUnits(state)).toBe(0);
+    expect(state.units).toEqual([]);
+    expect(state.frozen).toHaveLength(1);
+    expect(state.frozen[0].text).toBe(`One.${BLOCK_DELIMITER}Two.`);
+    expect(state.frozen[0].words).toBe(2);
+
+    pushUnit(state, { text: 'Three.', words: 1 });
+    expect(sealUnits(state)).toBe(1);
+    expect(state.frozen[0].text).toBe(`One.${BLOCK_DELIMITER}Two.`);
+    expect(state.frozen[1].text).toBe('Three.');
   });
 });
 

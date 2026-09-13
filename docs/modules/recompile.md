@@ -7,7 +7,7 @@ Depends on: host, constants, boundary, derive, state, freeze
 
 ## What a recompile is, and is not {#what-it-is}
 
-A recompile throws away the stored compiled region of the open chat and builds a new one from `chat[]` as it stands right now, under the freeze rules currently in the code. It is a **reset plus rebuild**, never a re-cut of a surviving span: no stored span is edited, split or merged, because no stored span survives the reset. Every span the rebuild produces comes out of `maybeFreeze`/`pushFrozen` under the same complete-block rule as an ordinary freeze, so INV-6 holds span by span.
+A recompile throws away the stored compiled region of the open chat and builds a new one from `chat[]` as it stands right now, under the freeze rules currently in the code. It is a **reset plus rebuild**, never a re-cut of a surviving span: no stored span is edited, split or merged, because no stored span survives the reset. Every span the rebuild produces comes out of `compileUnit`/`pushFrozen` under the same complete-block rule as an ordinary freeze, so INV-6 holds span by span.
 
 This is editorial authority under PLAN §10 applied to bookkeeping rather than to prose. §16's "old spans are not *normally* re-cut" guards cache prefixes, historical demonstrations and transport statistics; a whole-chat rebuild resets all three together rather than disturbing them piecemeal, which is the only reason it is allowed at all. Losing the provider's cache prefix is the known cost, and it is the collaborator's to choose: the function runs only on explicit request — never on load, never on `CHAT_CHANGED`, never on receipt.
 
@@ -29,9 +29,11 @@ Existing `message.extra[METADATA_KEY].id` values are not cleared, rewritten or r
 
 ## The loop and why it terminates {#loop}
 
-Each iteration derives the frontier afresh — `deriveFrontier(ctx.chat, state, literal)` with `literal = reservedLiteral(ctx)` — and offers it to `maybeFreeze(state, derived, literal, {})`. The loop stops when `maybeFreeze` returns `null`, which is what it returns when no cut is available or a cut is refused.
+Each iteration derives the frontier afresh — `deriveFrontier(ctx.chat, state, literal)` with `literal = reservedLiteral(ctx)` — and offers it to `compileUnit(state, derived, literal, {})`. The loop stops when `compileUnit` returns `null`, which is what it returns when no cut is available or a cut is refused.
 
 Termination follows from the state: an accepted freeze consumes at least `FREEZE_MIN_WORDS` of a finite frontier and always advances `frozenIds` or the watermark offset, so the next derivation is strictly shorter. A hard cap of 1,000 iterations is nevertheless the loop bound, so the function cannot hang on any input; reaching the cap simply ends the loop, and the result is reported in the usual way.
+
+There is **no post-loop seal step**. The loop ends when `compileUnit` returns `null`, and any units still unsealed at that point are by construction below the seal policy's thresholds (`docs/modules/freeze.md#seal-policy`) — sealing them anyway would manufacture a final span the live path would never have produced, and the next receipt that does compile a unit will seal them under the ordinary rule.
 
 The options object is `{}` — the same empty object `recovery` passes — so the live default target, jitter seed and salience rules apply unchanged. Recompiling under the current rules is the entire point; a frozen or captured set of options would defeat it.
 
@@ -39,9 +41,11 @@ The options object is `{}` — the same empty object `recovery` passes — so th
 
 `save(ctx)` runs exactly once, after the loop, whether or not any span was pushed. The reset itself is a change to canonical state and has to be persisted even when the rebuild freezes nothing.
 
-Degenerate inputs need no special case: an empty or absent `chat` makes `deriveFrontier` return `{ text: '', segments: [] }`, `maybeFreeze` returns `null` on the first pass, and the function resets, saves and returns `{ spans: 0, words: 0 }`.
+Degenerate inputs need no special case: an empty or absent `chat` makes `deriveFrontier` return `{ text: '', segments: [] }`, `compileUnit` returns `null` on the first pass, and the function resets, saves and returns `{ spans: 0, words: 0 }`.
 
 ## Summary line {#summary}
+
+`spans` and `words` count **final** spans only — `state.frozen` after the loop — which is what they counted before compilation became two-tier. Trailing unsealed units are not reported, because reporting them would change a pinned string.
 
 `formatRecompileSummary({ spans, words })` builds the one line both callers report — the slash command and the drawer button — which is why it is shared rather than inlined.
 

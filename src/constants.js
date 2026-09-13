@@ -5,7 +5,7 @@ export const LOG_PREFIX = '[UID]';
 export const METADATA_KEY = 'userInterventionDissolve';
 
 // state-shape: version field of the stored per-chat structure → docs/modules/state.md#shape
-export const STATE_VERSION = 2;
+export const STATE_VERSION = 3;
 
 // block-delimiter: write-side join string; read side is grammar's parser → docs/modules/grammar.md#block-delimiter
 export const BLOCK_DELIMITER = '\n\n';
@@ -35,4 +35,10 @@ export const FREEZE_MIN_WORDS = 3000;
 
 // freeze-max-words: advisory ceiling; a cut past it is an overrun → docs/modules/freeze.md#overrun
 export const FREEZE_MAX_WORDS = 4200;
+
+// final-min-words: floor below which units are not sealed into a final span → docs/modules/freeze.md#seal-policy
+export const FINAL_MIN_WORDS = 6000;
+
+// final-max-words: hard ceiling for one sealed final span → docs/modules/freeze.md#seal-policy
+export const FINAL_MAX_WORDS = 10000;
 
