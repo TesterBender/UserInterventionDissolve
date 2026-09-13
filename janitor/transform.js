@@ -11,10 +11,12 @@ import {
   JANITOR_WORDS_PER_TOKEN,
   JANITOR_LEAD_IN,
 } from './constants.js';
-import { loadJanitorState, saveJanitorState } from './storage.js';
+import { loadJanitorState, saveJanitorState, freshState } from './storage.js';
+import { consumeRecompile, rebuildState, writeWatermarkInsurance } from './recompile.js';
+import { setRequestStatus, noteDrift } from './status.js';
 import { stopRouteKey, isStopRejected } from './stop-routes.js';
 import { classifyMessages, toStShape, fromStShape } from './history.js';
-import { matchWatermark, classifyDrift, prefixIdentity } from './identity.js';
+import { matchWatermark, classifyDrift } from './identity.js';
 import { rollbackHistory } from './rollback.js';
 
 // first-sentence-probe: computed from the import, never a copied literal → docs/modules/janitor-adapter.md#system-message
@@ -100,7 +102,13 @@ export function transformRequest(data, context) {
   }
 
   // reload-per-request: another tab may have compiled since the last one → docs/modules/janitor-adapter.md#request-pipeline
-  const state = loadJanitorState(context.chatId);
+  let state = loadJanitorState(context.chatId);
+  // recompile-flag: consumed by the next request for this chat, then reset → docs/modules/janitor-adapter.md#recompile
+  const rebuilding = consumeRecompile(context.chatId);
+  if (rebuilding) {
+    state = freshState();
+    state.literal = `${context.personaName}:`;
+  }
   const messages = adapter.messagesContainer.messages;
   const { history, injections, systemIndex } = classifyMessages(messages, context.chatMessages, context.personaName);
   // sentinel-drop: exact match, every occurrence, before identities exist → docs/modules/janitor-adapter.md#sentinel
@@ -122,17 +130,18 @@ export function transformRequest(data, context) {
   let derived = deriveFrontier(shaped, state, literal);
 
   let froze = false;
-  // identified-gate: compile nothing rather than store an empty id → docs/modules/janitor-adapter.md#envelope-id-identity
-  if (derived.segments.length >= 2 && kept.every((entry) => entry.messageId !== '')) {
+  // rebuild-here: the loop needs the same shaped, trimmed, identified entries → docs/modules/janitor-adapter.md#recompile
+  if (rebuilding) {
+    rebuildState(shaped, literal, state);
+    saveJanitorState(context.chatId, state);
+    derived = deriveFrontier(shaped, state, literal);
+  } else if (derived.segments.length >= 2 && kept.every((entry) => entry.messageId !== '')) {
+    // identified-gate: compile nothing rather than store an empty id → docs/modules/janitor-adapter.md#envelope-id-identity
     // last-message-clamp: the last segment's start, so regenerate stays safe → docs/modules/janitor-adapter.md#freeze-at-request-build
     const maxFrozenEnd = derived.segments[derived.segments.length - 1].start;
     if (compileUnit(state, derived, literal, { maxFrozenEnd }) !== null) {
       froze = true;
-      const watermarked = kept.find((entry) => entry.messageId === state.watermark.messageId);
-      state.watermark.prefixHash = watermarked === undefined
-        ? ''
-        : prefixIdentity(watermarked.content, state.watermark.offset);
-      state.watermarkText = watermarked === undefined ? '' : String(watermarked.content);
+      writeWatermarkInsurance(state, shaped);
       derived = deriveFrontier(shaped, state, literal);
       saveJanitorState(context.chatId, state);
     }
@@ -163,6 +172,20 @@ export function transformRequest(data, context) {
       + `drift ${drift.editedCompiledIndexes.length}, boundary ${state.boundaries.length}, `
       + `rollback ${rollbacks}, stop ${stopSent ? 'sent' : 'skipped'}`,
   );
+
+  // status-write: the same facts, for the panel instead of the console → docs/modules/janitor-adapter.md#status-snapshot
+  noteDrift(context.chatId, drift.editedCompiledIndexes.map((index) => kept[index].messageId));
+  setRequestStatus({
+    chatId: context.chatId,
+    literal,
+    finals: state.frozen.length,
+    units: state.units.length,
+    frontierWords: countWords(derived.text),
+    froze,
+    rebuilt: rebuilding,
+    stopSent,
+    routerEnabled: context.janitorRouterEnabled,
+  });
 
   const lastAlignedId = aligned.length === 0 ? '' : aligned[aligned.length - 1].messageId;
   return {

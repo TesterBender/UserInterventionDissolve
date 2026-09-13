@@ -1434,6 +1434,175 @@ function saveJanitorState(chatId, state, storage = localStorage) {
   }
 }
 
+// ---- janitor/identity.js ----
+// fnv1a32: dependency-free, allocation-free, stable across processes → docs/modules/janitor-adapter.md#prefix-hash-watermark
+function fnv1a32(text) {
+  const input = String(text);
+  let hash = 0x811c9dc5;
+  for (let i = 0; i < input.length; i += 1) {
+    hash ^= input.charCodeAt(i);
+    hash = Math.imul(hash, 0x01000193) >>> 0;
+  }
+  return hash.toString(16).padStart(8, '0');
+}
+
+// prefix-hash: the compiled part of the watermark message only → docs/modules/janitor-adapter.md#prefix-hash-watermark
+function prefixIdentity(content, offset) {
+  return fnv1a32(String(content).slice(0, offset));
+}
+
+// watermark-match: envelope id, then prefix hash, then give up → docs/modules/janitor-adapter.md#prefix-hash-watermark
+function matchWatermark(entries, watermark) {
+  const target = watermark.messageId;
+  if (target) {
+    const exact = entries.findIndex((entry) => entry.messageId === target);
+    if (exact !== -1) return exact;
+  }
+
+  const offset = watermark.offset;
+  if (offset > 0 && watermark.prefixHash) {
+    for (let index = 0; index < entries.length; index += 1) {
+      const content = String(entries[index].content ?? '');
+      if (content.length < offset) continue;
+      if (prefixIdentity(content, offset) === watermark.prefixHash) return index;
+    }
+  }
+  return -1;
+}
+
+// drift-report: indexes only, decides nothing and logs nothing → docs/modules/janitor-adapter.md#drift
+function classifyDrift(entries, state) {
+  const frozenIds = new Set(state.frozenIds);
+  // compiled-corpus: a consumed message's text sits verbatim in a span → docs/modules/janitor-adapter.md#drift
+  const corpus = [...state.frozen, ...state.units].map((span) => span.text).join(BLOCK_DELIMITER);
+  const watermark = state.watermark;
+
+  const editedCompiledIndexes = [];
+  for (let index = 0; index < entries.length; index += 1) {
+    const messageId = entries[index].messageId;
+    const content = String(entries[index].content ?? '');
+    if (messageId === '') continue;
+
+    if (frozenIds.has(messageId) && content !== '' && !corpus.includes(content)) {
+      editedCompiledIndexes.push(index);
+      continue;
+    }
+    if (messageId === watermark.messageId && prefixIdentity(content, watermark.offset) !== watermark.prefixHash) {
+      editedCompiledIndexes.push(index);
+    }
+  }
+  return { editedCompiledIndexes };
+}
+
+// ---- janitor/recompile.js ----
+// rebuild-bound: hard stop, the state already guarantees termination → docs/modules/janitor-adapter.md#recompile
+const MAX_REBUILD_PASSES = 1000;
+
+// recompile-flag: per page, in memory, consumed by the next request → docs/modules/janitor-adapter.md#recompile
+let requestedChatId = '';
+
+function requestRecompile(chatId) {
+  requestedChatId = chatId;
+}
+
+function consumeRecompile(chatId) {
+  if (requestedChatId === '' || requestedChatId !== chatId) return false;
+  requestedChatId = '';
+  return true;
+}
+
+// watermark-insurance: the post-freeze write both compile paths share → docs/modules/janitor-adapter.md#freeze-at-request-build
+function writeWatermarkInsurance(state, shaped) {
+  const message = shaped.find((entry) => entry.extra[METADATA_KEY].id === state.watermark.messageId);
+  state.watermark.prefixHash = message === undefined ? '' : prefixIdentity(message.mes, state.watermark.offset);
+  state.watermarkText = message === undefined ? '' : String(message.mes);
+}
+
+// reset-and-rebuild: the pure loop, never a re-cut of a surviving span → docs/modules/janitor-adapter.md#recompile
+function rebuildState(shaped, literal, state) {
+  for (let pass = 0; pass < MAX_REBUILD_PASSES; pass += 1) {
+    const derived = deriveFrontier(shaped, state, literal);
+    if (derived.segments.length < 2) break;
+    // last-message-clamp: the last segment's start, so regenerate stays safe → docs/modules/janitor-adapter.md#recompile
+    const maxFrozenEnd = derived.segments[derived.segments.length - 1].start;
+    if (compileUnit(state, derived, literal, { maxFrozenEnd }) === null) break;
+    writeWatermarkInsurance(state, shaped);
+  }
+
+  return {
+    spans: state.frozen.length,
+    words: countWords(state.frozen.map((span) => span.text).join(BLOCK_DELIMITER)),
+    units: state.units.length,
+  };
+}
+
+// ---- janitor/status.js ----
+// notice-cap: a notice surface, not a log → docs/modules/janitor-adapter.md#status-snapshot
+const DRIFT_NOTICE_CAP = 20;
+
+// last-request-snapshot: the panel's whole view of the request side → docs/modules/janitor-adapter.md#status-snapshot
+const snapshot = {
+  chatId: '',
+  literal: '',
+  finals: 0,
+  units: 0,
+  frontierWords: 0,
+  froze: false,
+  rebuilt: false,
+  stopSent: false,
+  routerEnabled: false,
+  driftNotices: [],
+  at: 0,
+};
+
+let noticed = new Set();
+let statusListener = null;
+let warnedListenerThrew = false;
+
+// one-listener: the panel is the only consumer → docs/modules/janitor-adapter.md#status-snapshot
+function setStatusListener(fn) {
+  statusListener = fn;
+}
+
+function getRequestStatus() {
+  return { ...snapshot, driftNotices: [...snapshot.driftNotices] };
+}
+
+function notify() {
+  if (!statusListener) return;
+  try {
+    statusListener(getRequestStatus());
+  } catch (error) {
+    if (warnedListenerThrew) return;
+    warnedListenerThrew = true;
+    console.warn(`${LOG_PREFIX} the status listener threw and is being kept: ${error.message}`);
+  }
+}
+
+function setRequestStatus(patch) {
+  Object.assign(snapshot, patch, { at: Date.now() });
+  notify();
+}
+
+// once-per-occurrence: this host's replacement for the toastr notice → docs/modules/janitor-adapter.md#status-snapshot
+function noteDrift(chatId, messageIds) {
+  if (chatId !== snapshot.chatId) {
+    snapshot.chatId = chatId;
+    snapshot.driftNotices = [];
+    noticed = new Set();
+  }
+
+  let added = 0;
+  for (const messageId of messageIds) {
+    if (noticed.has(messageId)) continue;
+    noticed.add(messageId);
+    snapshot.driftNotices.push(messageId);
+    if (snapshot.driftNotices.length > DRIFT_NOTICE_CAP) snapshot.driftNotices.shift();
+    added += 1;
+  }
+  return added;
+}
+
 // ---- janitor/history.js ----
 // envelope-id: identity is read off the entry alignment chose → docs/modules/janitor-adapter.md#envelope-id-identity
 function entryId(entry) {
@@ -1504,66 +1673,6 @@ function fromStShape(history) {
     role: message.is_user === true ? 'user' : 'assistant',
     content: message.mes,
   }));
-}
-
-// ---- janitor/identity.js ----
-// fnv1a32: dependency-free, allocation-free, stable across processes → docs/modules/janitor-adapter.md#prefix-hash-watermark
-function fnv1a32(text) {
-  const input = String(text);
-  let hash = 0x811c9dc5;
-  for (let i = 0; i < input.length; i += 1) {
-    hash ^= input.charCodeAt(i);
-    hash = Math.imul(hash, 0x01000193) >>> 0;
-  }
-  return hash.toString(16).padStart(8, '0');
-}
-
-// prefix-hash: the compiled part of the watermark message only → docs/modules/janitor-adapter.md#prefix-hash-watermark
-function prefixIdentity(content, offset) {
-  return fnv1a32(String(content).slice(0, offset));
-}
-
-// watermark-match: envelope id, then prefix hash, then give up → docs/modules/janitor-adapter.md#prefix-hash-watermark
-function matchWatermark(entries, watermark) {
-  const target = watermark.messageId;
-  if (target) {
-    const exact = entries.findIndex((entry) => entry.messageId === target);
-    if (exact !== -1) return exact;
-  }
-
-  const offset = watermark.offset;
-  if (offset > 0 && watermark.prefixHash) {
-    for (let index = 0; index < entries.length; index += 1) {
-      const content = String(entries[index].content ?? '');
-      if (content.length < offset) continue;
-      if (prefixIdentity(content, offset) === watermark.prefixHash) return index;
-    }
-  }
-  return -1;
-}
-
-// drift-report: indexes only, decides nothing and logs nothing → docs/modules/janitor-adapter.md#drift
-function classifyDrift(entries, state) {
-  const frozenIds = new Set(state.frozenIds);
-  // compiled-corpus: a consumed message's text sits verbatim in a span → docs/modules/janitor-adapter.md#drift
-  const corpus = [...state.frozen, ...state.units].map((span) => span.text).join(BLOCK_DELIMITER);
-  const watermark = state.watermark;
-
-  const editedCompiledIndexes = [];
-  for (let index = 0; index < entries.length; index += 1) {
-    const messageId = entries[index].messageId;
-    const content = String(entries[index].content ?? '');
-    if (messageId === '') continue;
-
-    if (frozenIds.has(messageId) && content !== '' && !corpus.includes(content)) {
-      editedCompiledIndexes.push(index);
-      continue;
-    }
-    if (messageId === watermark.messageId && prefixIdentity(content, watermark.offset) !== watermark.prefixHash) {
-      editedCompiledIndexes.push(index);
-    }
-  }
-  return { editedCompiledIndexes };
 }
 
 // ---- janitor/rollback.js ----
@@ -1669,7 +1778,13 @@ function transformRequest(data, context) {
   }
 
   // reload-per-request: another tab may have compiled since the last one → docs/modules/janitor-adapter.md#request-pipeline
-  const state = loadJanitorState(context.chatId);
+  let state = loadJanitorState(context.chatId);
+  // recompile-flag: consumed by the next request for this chat, then reset → docs/modules/janitor-adapter.md#recompile
+  const rebuilding = consumeRecompile(context.chatId);
+  if (rebuilding) {
+    state = freshState();
+    state.literal = `${context.personaName}:`;
+  }
   const messages = adapter.messagesContainer.messages;
   const { history, injections, systemIndex } = classifyMessages(messages, context.chatMessages, context.personaName);
   // sentinel-drop: exact match, every occurrence, before identities exist → docs/modules/janitor-adapter.md#sentinel
@@ -1691,17 +1806,18 @@ function transformRequest(data, context) {
   let derived = deriveFrontier(shaped, state, literal);
 
   let froze = false;
-  // identified-gate: compile nothing rather than store an empty id → docs/modules/janitor-adapter.md#envelope-id-identity
-  if (derived.segments.length >= 2 && kept.every((entry) => entry.messageId !== '')) {
+  // rebuild-here: the loop needs the same shaped, trimmed, identified entries → docs/modules/janitor-adapter.md#recompile
+  if (rebuilding) {
+    rebuildState(shaped, literal, state);
+    saveJanitorState(context.chatId, state);
+    derived = deriveFrontier(shaped, state, literal);
+  } else if (derived.segments.length >= 2 && kept.every((entry) => entry.messageId !== '')) {
+    // identified-gate: compile nothing rather than store an empty id → docs/modules/janitor-adapter.md#envelope-id-identity
     // last-message-clamp: the last segment's start, so regenerate stays safe → docs/modules/janitor-adapter.md#freeze-at-request-build
     const maxFrozenEnd = derived.segments[derived.segments.length - 1].start;
     if (compileUnit(state, derived, literal, { maxFrozenEnd }) !== null) {
       froze = true;
-      const watermarked = kept.find((entry) => entry.messageId === state.watermark.messageId);
-      state.watermark.prefixHash = watermarked === undefined
-        ? ''
-        : prefixIdentity(watermarked.content, state.watermark.offset);
-      state.watermarkText = watermarked === undefined ? '' : String(watermarked.content);
+      writeWatermarkInsurance(state, shaped);
       derived = deriveFrontier(shaped, state, literal);
       saveJanitorState(context.chatId, state);
     }
@@ -1732,6 +1848,20 @@ function transformRequest(data, context) {
       + `drift ${drift.editedCompiledIndexes.length}, boundary ${state.boundaries.length}, `
       + `rollback ${rollbacks}, stop ${stopSent ? 'sent' : 'skipped'}`,
   );
+
+  // status-write: the same facts, for the panel instead of the console → docs/modules/janitor-adapter.md#status-snapshot
+  noteDrift(context.chatId, drift.editedCompiledIndexes.map((index) => kept[index].messageId));
+  setRequestStatus({
+    chatId: context.chatId,
+    literal,
+    finals: state.frozen.length,
+    units: state.units.length,
+    frontierWords: countWords(derived.text),
+    froze,
+    rebuilt: rebuilding,
+    stopSent,
+    routerEnabled: context.janitorRouterEnabled,
+  });
 
   const lastAlignedId = aligned.length === 0 ? '' : aligned[aligned.length - 1].messageId;
   return {

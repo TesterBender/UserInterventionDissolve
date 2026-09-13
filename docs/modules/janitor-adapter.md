@@ -130,6 +130,7 @@ The id is also not a secret leaking outward: it is Janitor's own key for text Ja
 
 1. **Gate.** Only a `chat` adapter with an envelope is transformed. A container carrying a top-level `system` string is the Anthropic-shaped body the shell's chat test deliberately accepts (`docs/modules/janitor-transport.md#chat-shape-adapter`); it passes through silently, because the Anthropic adapter is a later phase and a half-applied protocol is worse than none. A missing envelope warns once per page and passes through: without a chat id there is no state to key and without a persona there is no reserved literal, so there is nothing this layer could do that would not corrupt the manuscript.
 2. **State** is reloaded from `localStorage` on every request and never cached in a module variable. Another tab may have compiled a unit since the last request; the request body is the only thing that is guaranteed fresh, so the state read beside it must be too.
+2b. **Recompile** ([Recompile on this host](#recompile)): a recompile flag set for this chat is consumed here, immediately after the load and before anything is classified, and the working state becomes a fresh one carrying this request's literal. The rebuild itself runs later, at step 8, where the live freeze would — it needs the same shaped, trimmed, identified entries the live compile needs, and running it any earlier would rebuild from text the rollback is about to change.
 3. **Classify** before anything else touches the array, because the envelope diff aligns against Janitor's `chatMessages` by exact content ([Envelope diff](#envelope-diff)) and any edit this layer made first would break the alignment.
 4. **Sentinel** drop ([The sentinel literal](#sentinel)) before identity, so a sentinel turn never enters the frontier and is never a candidate for the watermark.
 4b. **Boundary resolution** ([Boundary records](#boundary-records)): the pending marker left by the previous generation is turned into an entry of `state.boundaries` or discarded, before anything reads `boundaries`.
@@ -212,7 +213,7 @@ One hazard is Janitor's, not ours: the custom prompt may not be left empty in pr
 
 The clamp value is the `start` offset of the **last** entry of `derived.segments`, passed as `maxFrozenEnd` (`docs/modules/freeze.md#last-message-clamp`). That offset is where the last surviving message's text begins in the frontier, so no cut can consume any part of a message Janitor's regenerate can still replace. With fewer than two segments no freeze is attempted at all, because the only segment there is, is the last one.
 
-On a non-`null` result the watermark's `prefixHash` and `watermarkText` are written from the watermark message's raw content before the state is saved, and the frontier is derived a second time against the updated state — the request must carry the post-freeze view, not the view that produced the cut. A `null` result writes nothing at all, and no save is attempted.
+On a non-`null` result `writeWatermarkInsurance(state, shaped)` — shared with the rebuild loop of [Recompile on this host](#recompile), with behaviour unchanged from the inline version it replaced — writes the watermark's `prefixHash` and `watermarkText` from the watermark message's shaped content before the state is saved, and the frontier is derived a second time against the updated state — the request must carry the post-freeze view, not the view that produced the cut. A `null` result writes nothing at all, and no save is attempted.
 
 ## Transport horizon {#transport-horizon}
 
@@ -259,3 +260,43 @@ The boundary is then enforced by the stream cut alone, which is the fallback INV
 Exactly one `console.info` per transformed request, prefixed with `LOG_PREFIX`: how many final spans and unsealed units the state holds, how many words the frontier carries, whether a unit was compiled this request, how many messages carry text that is no longer the text that was compiled under their id ([Drift](#drift)), how many boundary stops are on record after this request's resolution ([Boundary records](#boundary-records)), how many messages this request's trim changed ([Derivation-time rollback](#derivation-rollback)), and whether the reserved literal was written into the `stop` field or skipped because this route rejected it — `stop sent` or `stop skipped` ([Stop array](#stop-array)). It is operator-facing and never part of the body.
 
 Until the panel exists it is the only sign of life the script gives, which is why it is one line with the handful of facts that decide whether the protocol is working rather than a debug stream: it has to stay readable in a console Janitor itself writes to.
+
+## Recompile on this host {#recompile}
+
+A recompile here is the same thing it is on SillyTavern — a **reset plus rebuild**, never a re-cut of a surviving span (`docs/modules/recompile.md#what-it-is`). The stored state for the chat is discarded whole and a new one is built from the messages Janitor is sending at that moment, under the cut rules currently in the code. INV-6 survives because no compiled span survives the reset.
+
+`src/recompile.js` is **not** imported and must not be. That module calls `getState`, `assignIds`, `saveChat` and `reservedLiteral` on a SillyTavern context and raises that host's pinned summary line; none of those exist here. `janitor/recompile.js` duplicates the loop and nothing else: derive, stop under two segments, `compileUnit` with the clamp, stop on `null`, write the watermark insurance, repeat, bounded at 1,000 passes. There is no post-loop seal step, for the reason `docs/modules/recompile.md#loop` already gives.
+
+The clamp inside the loop is the same `maxFrozenEnd` the live path applies ([Freeze at request build](#freeze-at-request-build), `docs/modules/freeze.md#last-message-clamp`), for the same reason: a message Janitor's regenerate can still replace must never be partly compiled. A rebuild is not allowed to be a laxer compiler than the request path.
+
+**It is a flag, not an action.** This script cannot start a generation on janitorai.com, so `requestRecompile(chatId)` only records the wish in a module variable and the *next* transformed request on that chat consumes it and does the work. The flag is per page and in memory: it is not a state field, it does not survive a reload, and a recompile asked for in one tab is not a request made by another. Until the human sends something, a requested recompile has not happened.
+
+**What the reset discards.** `frozen`, `units`, `frozenIds`, the watermark, `watermarkText`, `literal`, `boundaries` and `pendingBoundaryAfter` all go. Dropping the last two has one visible consequence: on the rebuilding request a message that stopped at the reserved boundary is no longer exempt from the rollback trim ([Derivation-time rollback](#derivation-rollback)) and may lose a trailing incomplete block. That is one trim of text the model had already been shown as frontier, never of compiled text, and it is cheaper than carrying a field across a reset whose whole purpose is to discard everything.
+
+**The rebuild can only use what Janitor still sends.** Janitor trims the history to its configured window before assembling the request (`docs/api/janitor.md`, `TamperContainment/PLAN-janitor.md` reality 4). Messages it no longer sends are not in the request and therefore not in the rebuild: a chat Janitor has truncated rebuilds **short**, and the text that fell out of the window is gone from the manuscript for good. This is a cost of the host, not a bug, and it is exactly why [State export and import](#state-transfer) exists.
+
+## Request status snapshot {#status-snapshot}
+
+`janitor/status.js` holds one module-level object describing the last transformed request: `chatId`, `literal`, `finals`, `units`, `frontierWords`, `froze`, `rebuilt`, `stopSent`, `routerEnabled`, `driftNotices` and `at` (epoch ms of the write). It is written once per transformed request, beside the `console.info` of [Request report](#request-report) and carrying the same facts, and it is read by the panel. Nothing in it reaches the model (§27). `getRequestStatus()` hands back a copy, so a renderer cannot write into the module's object.
+
+`setStatusListener(fn)` fills **one** listener slot, replaced by a second call and cleared with `null`. The panel is the only consumer; a subscriber list would be an abstraction with one consumer. The listener runs inside a `try` after every write; a listener that throws is warned about once per page and is never unsubscribed, because a renderer that fails on one frame is not evidence that it will fail on the next, and dropping it silently would leave a dead panel with no explanation.
+
+The **drift-notice ledger** is this host's replacement for SillyTavern's toastr notice (`docs/modules/freeze.md#frozen-edit-notice`). `noteDrift(chatId, messageIds)` appends one notice per id not already noticed for this chat and returns how many were new, so an edit to compiled text surfaces exactly once per occurrence rather than on every request that still sees it. The ledger and its seen set are in memory and reset when the chat id changes, so switching chat in the same tab starts clean and a reload re-notices an edit that is still present; persisting it would be a second store to keep correct for a notice whose whole purpose is to be seen once while the human is looking. It is capped at a module-level constant of 20 entries, oldest dropped. A notice is the message id and nothing else — the sentence around it belongs to the panel. Like [Drift](#drift) itself, the ledger reports and never repairs: nothing here re-cuts or rewrites compiled text (INV-6).
+
+## State export and import {#state-transfer}
+
+On this host the compiled manuscript exists in exactly one place: `localStorage` in this browser profile (`TamperContainment/PLAN-janitor.md` reality 20). Janitor's own window truncation means the chat itself is not a second copy — the old messages the spans were compiled from are no longer sent and often no longer reachable (reality 4). So Export is not a nicety, it is the only backup the protocol has, and the §23 host contract is what makes handing it to the human part of the job.
+
+`exportStateJson(chatId, state)` returns a pretty-printed JSON string shaped
+
+```
+{ "kind": "uid-janitor-state", "chatId": …, "exportedAt": …, "state": { … } }
+```
+
+The wrapper carries **no version of its own**: `state.version` and `state.janitorFormat` are already the two versions that matter, and a third would be a third thing to keep consistent for no added check. The module produces a string and nothing else — no `Blob`, no object URL, no download — so the mechanism that puts it in front of a human is the panel's business.
+
+`importStateJson(text)` returns `{ ok: true, chatId, state }` or `{ ok: false, reason }` with `reason` one of `unreadable` (not JSON, or not an object), `not-a-state` (wrong `kind`, or `state` is not an object, or `frozen`/`units`/`frozenIds` is not an array, or `watermark` is not an object) and `wrong-format` (`version` or `janitorFormat` is not this build's). The reason is a code; the panel maps it to a sentence.
+
+**No repair, no migration, no merge.** A state that fails any check is refused whole, and a state that passes is returned exactly as parsed — no field defaulting, no id re-keying, no clamping. Import **replaces**; there is no path that combines two manuscripts, because there is no rule for which of two cuts of the same prose wins. The exported `chatId` is returned for display, not enforced: importing a state exported from another chat is the point of the feature (a manuscript restored into a re-created chat), and the caller saves it under the *current* chat's key.
+
+INV-10 applies to the file itself. It carries message ids, prefix hashes and watermark offsets — transport bookkeeping that says where the human intervened. It is written for the human and stored by the human; it must never be shown to the model, injected into a prompt or pasted into a chat.

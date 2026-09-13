@@ -1,5 +1,5 @@
 # Brief 0039 — Janitor recompile loop, request-status snapshot and state export/import (no DOM)
-Status: draft
+Status: implemented
 Complexity: high  (it changes the request pipeline's step order again, adds a whole-chat state reset, adds the only non-`console` reporting surface the script has, and touches three `janitor/` modules plus the storage module)
 PLAN sections: §10 (editorial authority over the uncompiled region — a deliberate whole-chat rebuild is that authority applied to the compile bookkeeping rather than to prose), §16 (freezing is append-only and old spans are not re-cut; a recompile is a reset plus rebuild, never a re-cut of a surviving span), §17 (the rebuild uses the cut rules currently in the code, with the last-message clamp this host adds), §23 (the host supplies behaviours; on this host the only copy of the compiled manuscript is `localStorage`, so handing it to the human is part of the host contract), §27 (nothing this brief adds reaches the model; the snapshot is operator-facing and the export is a file for a human)
 Invariants touched: INV-6 (compiled text is never re-cut or rewritten — the rebuild survives the invariant only because nothing survives the reset), INV-10 (the exported JSON carries ids, hashes and offsets, and must never become something the model is shown)
@@ -90,18 +90,18 @@ Three pure-ish pieces exist so that brief 0040's panel is a thin renderer with n
 - (empty) No SillyTavern API is involved. The Janitor facts this brief rests on are answered in `docs/api/janitor.md`: Janitor trims history to its configured window before assembling (reality 4, the field name is an open item that this brief does not read), a regenerate drops the replaced assistant message (2026-09-13), envelope entries carry database ids (2026-09-14). Do not launch `st-api-verifier`; it verifies SillyTavern only.
 
 ## Acceptance
-- [ ] A rebuild from a fresh state over a recorded body produces the same `frozen`, `units`, `frozenIds` and `watermark` as the same messages compiled one unit per request through repeated transforms.
-- [ ] No cut produced by the loop consumes any part of the last shaped message; a single-segment or empty frontier returns `{spans: 0, …}` without looping.
-- [ ] `requestRecompile` is consumed by the next transformed request for that chat and by nothing else; a second request after it does not rebuild; a request for a different chat id does not consume it.
-- [ ] A rebuilt state saved to `localStorage` contains no span, no `frozenIds` entry, no `boundaries` entry, no `pendingBoundaryAfter` and no `watermarkText` from the state it replaced.
-- [ ] The live freeze branch and the loop write identical `watermark.prefixHash` and `watermarkText` for the same input.
-- [ ] The status snapshot after a transformed request reports the literal, finals, units, frontier words, freeze, rebuild, `stopSent` and `routerEnabled`; `getRequestStatus()` cannot be mutated into the module's copy; the single listener is notified once per write.
-- [ ] The same drift id produces exactly one notice; a chat-id change clears the ledger; the ledger never exceeds its cap.
-- [ ] `importStateJson(exportStateJson(id, state))` deep-equals the input state; each of unreadable, wrong-kind, wrong `version` and wrong `janitorFormat` returns its `reason` and no state.
-- [ ] No file added by this brief references `document`, `window` or `SillyTavern`; `src/**` is byte-identical; nothing imports `src/recompile.js`.
-- [ ] `npm run build:janitor` regenerates `dist/janitor-manuscript-dissolve.user.js`, the committed file matches a fresh build, and it parses via `new Function`.
-- [ ] `npm run check` passes
-- [ ] every new pointer comment resolves (`node tools/check-comments.mjs`)
+- [x] A rebuild from a fresh state over a recorded body produces the same `frozen`, `units`, `frozenIds` and `watermark` as the same messages compiled one unit per request through repeated transforms.
+- [x] No cut produced by the loop consumes any part of the last shaped message; a single-segment or empty frontier returns `{spans: 0, …}` without looping.
+- [x] `requestRecompile` is consumed by the next transformed request for that chat and by nothing else; a second request after it does not rebuild; a request for a different chat id does not consume it.
+- [x] A rebuilt state saved to `localStorage` contains no span, no `frozenIds` entry, no `boundaries` entry, no `pendingBoundaryAfter` and no `watermarkText` from the state it replaced.
+- [x] The live freeze branch and the loop write identical `watermark.prefixHash` and `watermarkText` for the same input.
+- [x] The status snapshot after a transformed request reports the literal, finals, units, frontier words, freeze, rebuild, `stopSent` and `routerEnabled`; `getRequestStatus()` cannot be mutated into the module's copy; the single listener is notified once per write.
+- [x] The same drift id produces exactly one notice; a chat-id change clears the ledger; the ledger never exceeds its cap.
+- [x] `importStateJson(exportStateJson(id, state))` deep-equals the input state; each of unreadable, wrong-kind, wrong `version` and wrong `janitorFormat` returns its `reason` and no state.
+- [x] No file added by this brief references `document`, `window` or `SillyTavern`; `src/**` is byte-identical; nothing imports `src/recompile.js`.
+- [x] `npm run build:janitor` regenerates `dist/janitor-manuscript-dissolve.user.js`, the committed file matches a fresh build, and it parses via `new Function`.
+- [x] `npm run check` passes
+- [x] every new pointer comment resolves (`node tools/check-comments.mjs`)
 
 ## Docs to write/update
 - `docs/modules/janitor-adapter.md` — new `## Recompile on this host {#recompile}`: what a recompile is and is not (reset plus rebuild, never a re-cut — point at `docs/modules/recompile.md#what-it-is` rather than restating it); why the loop is duplicated here instead of importing `src/recompile.js` (that module calls `getState`, `assignIds`, `saveChat` and `reservedLiteral` on a SillyTavern context and raises that host's summary line); that the clamp applies inside the loop for the same regenerate reason as the live path; why it is a flag consumed by the next request (the script cannot start a generation here); what the reset discards, including `boundaries` and `pendingBoundaryAfter`, and the one trim that can follow; and — prominently — that the rebuild can only use what Janitor still sends, so a chat Janitor has truncated rebuilds short, which is what Export is for (`TamperContainment/PLAN-janitor.md` reality 4, `docs/api/janitor.md`).

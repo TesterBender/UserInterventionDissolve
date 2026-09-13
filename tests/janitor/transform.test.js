@@ -792,3 +792,114 @@ describe('the committed bundle', () => {
     expect(() => new Function(bundle)).not.toThrow();
   });
 });
+
+describe('a requested recompile', () => {
+  const LONG_TURNS = [
+    { role: 'user', content: 'She pushed the door open.' },
+    { role: 'assistant', content: prose('first', 360) },
+    { role: 'user', content: 'And after that?' },
+    { role: 'assistant', content: prose('second', 360) },
+    { role: 'user', content: 'And after that again?' },
+    { role: 'assistant', content: prose('third', 360) },
+    { role: 'user', content: 'And then?' },
+    { role: 'assistant', content: prose('fourth', 360) },
+  ];
+
+  function spansOf(spans) {
+    return spans.map((span) => ({ text: span.text, words: span.words }));
+  }
+
+  function compiledPart(state) {
+    return {
+      frozen: spansOf(state.frozen),
+      units: spansOf(state.units),
+      frozenIds: state.frozenIds,
+      watermark: state.watermark,
+      watermarkText: state.watermarkText,
+    };
+  }
+
+  it('rebuilds exactly what one unit per request compiles over the same messages', async () => {
+    for (let pass = 0; pass < 6; pass += 1) await dispatched(LONG_TURNS);
+    const incremental = compiledPart(stateNow());
+    expect(incremental.frozen.length + incremental.units.length).toBeGreaterThan(1);
+
+    store.clear();
+    const { requestRecompile } = await import('../../janitor/recompile.js');
+    requestRecompile(CHAT_ID);
+    await dispatched(LONG_TURNS);
+
+    expect(compiledPart(stateNow())).toEqual(incremental);
+  });
+
+  it('discards every trace of the state it replaces', async () => {
+    const stale = { text: prose('stale', 40), words: 480, createdAt: 1 };
+    seed(storedState({
+      frozen: [stale],
+      frozenIds: ['ghost-id'],
+      watermark: { messageId: 'ghost-id', offset: 90, prefixHash: 'deadbeef' },
+      boundaries: ['103237690003'],
+      pendingBoundaryAfter: '103237690002',
+      watermarkText: 'stale text',
+    }));
+
+    const { requestRecompile } = await import('../../janitor/recompile.js');
+    requestRecompile(CHAT_ID);
+    await dispatched(LONG_TURNS);
+
+    const saved = stateNow();
+    expect(saved.frozen).not.toContainEqual(stale);
+    expect(saved.boundaries).toEqual([]);
+    expect(saved.pendingBoundaryAfter).toBe('');
+    expect(saved.watermarkText).not.toBe('stale text');
+    expect(saved.frozenIds).not.toContain('ghost-id');
+    expect(saved.watermark.prefixHash).not.toBe('deadbeef');
+  });
+
+  it('is consumed by the next request and by nothing after it', async () => {
+    const { requestRecompile } = await import('../../janitor/recompile.js');
+    const { getRequestStatus } = await import('../../janitor/status.js');
+
+    requestRecompile(CHAT_ID);
+    await dispatched(LONG_TURNS);
+    expect(getRequestStatus().rebuilt).toBe(true);
+    const afterRebuild = stateNow();
+
+    await dispatched(LONG_TURNS);
+    expect(getRequestStatus().rebuilt).toBe(false);
+    expect(stateNow().frozen.length + stateNow().units.length)
+      .toBeGreaterThanOrEqual(afterRebuild.frozen.length + afterRebuild.units.length);
+  });
+
+  it('is not consumed by a request for another chat', async () => {
+    const { requestRecompile } = await import('../../janitor/recompile.js');
+    const { getRequestStatus } = await import('../../janitor/status.js');
+
+    requestRecompile('another-chat');
+    await dispatched(SHORT_TURNS);
+    expect(getRequestStatus().rebuilt).toBe(false);
+  });
+});
+
+describe('the request status snapshot', () => {
+  it('reports the same facts as the console line for the request just sent', async () => {
+    const { getRequestStatus } = await import('../../janitor/status.js');
+    seed(storedState({ frozen: [{ text: prose('opening', 40), words: 480, createdAt: 1 }] }));
+    await dispatched(SHORT_TURNS);
+
+    const status = getRequestStatus();
+    const state = stateNow();
+    expect(status).toMatchObject({
+      chatId: CHAT_ID,
+      literal: LITERAL,
+      finals: state.frozen.length,
+      units: state.units.length,
+      froze: false,
+      rebuilt: false,
+      stopSent: true,
+      routerEnabled: false,
+    });
+    expect(status.frontierWords).toBeGreaterThan(0);
+    expect(status.at).toBeGreaterThan(0);
+  });
+});

@@ -3,7 +3,7 @@ import { createState } from '../src/state.js';
 import { STORAGE_KEY_PREFIX, JANITOR_STATE_FORMAT } from './constants.js';
 
 // janitor-fields: v3 state plus the five fields this layer owns → docs/modules/janitor-adapter.md#stored-state
-function freshState() {
+export function freshState() {
   return {
     ...createState(),
     janitorFormat: JANITOR_STATE_FORMAT,
