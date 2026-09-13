@@ -3,7 +3,7 @@ Owns: INV-1 (docs/protocol/invariants.md)
 PLAN: §5, §7, §8, §14
 Depends on: nothing
 
-`src/grammar.js` is the only parser of manuscript text. It is pure: a string in, plain data out. No SillyTavern API, no state, no I/O, no configuration. Everything it answers is *structural* — where blocks begin and end, whether a block carries a tag header, how an actor name classifies against a caller-supplied membership set. Judgements about content (does this buffer introduce a commitment, does this tag commit someone else) belong to `lint`, not here.
+`src/grammar.js` is the only parser of manuscript text. It is pure: a string in, plain data out. No SillyTavern API, no state, no I/O, no configuration. Everything it answers is *structural* — where blocks begin and end, whether a block carries a tag header, where an agency span opens. Judgements about content (does this buffer introduce a commitment, does this tag commit someone else) belong to `lint`, not here.
 
 ## Block delimiter
 
@@ -39,20 +39,9 @@ The accepted cost: a lowercase attribution such as `she said: "no"` at block sta
 
 Because `.` and space are both admitted tag characters, a block that opens with a complete sentence ending in a period, followed by a capitalised name and a colon — `He turned. Anton: left.` — matches the whole leading run `He turned. Anton` as the tag part, not just `Anton`. This is the same class of cost as the `she said:` case above: the pattern's job is confident structural matching of a name-then-colon shape at block start, not sentence boundary detection, and a wrongly-scoped tag is a legibility cost rather than a safety one.
 
-The actor name is reported trimmed, exactly as matched, with **no lowercasing or other case normalisation** — `parseTagHeader` and `parseManuscript` apply no case transformation to any returned value. This matters because `boundary` builds its §8 stop literal from the persona name verbatim (`docs/protocol/host-mapping.md#s8-boundary`); an actor string normalised here could never be compared against that literal. `normalise()` exists only for the case-insensitive comparison inside `classifyActor`, below, and is never applied to a returned actor.
+The actor name is reported trimmed, exactly as matched, with **no lowercasing or other case normalisation** — `parseTagHeader` and `parseManuscript` apply no case transformation to any returned value. This matters because `boundary` builds its §8 stop literal from the persona name verbatim (`docs/protocol/host-mapping.md#s8-boundary`); an actor string normalised here could never be compared against that literal.
 
 The body is the block text with the header and the whitespace that separates it from the body removed. A block with no valid header is `kind: 'buffer'`, `actor: null`, and its body is the whole block.
-
-## Actor classification
-
-An actor name classifies two ways against a set of *currently individuated* actors supplied by the caller (§7):
-
-- `individual` — the name is in the supplied set (compared case-insensitively, after trimming). It commits exactly that character.
-- `aggregate` — anything else. An aggregate tag (`The guards`, `The crowd`, `Everyone`) commits only those members who are not currently individuated, which is why the classification depends on the caller's set rather than on the name.
-
-Membership is an argument, never module state: who is individuated changes as the manuscript advances, and that history belongs to the modules that track it. `grammar` must not cache, infer or default it — a stale set here would silently mis-classify a tag and let a commitment through.
-
-A name like `Everyone` classifies as `aggregate` like any other unindividuated name; `grammar` has no notion of "universal" and no blocklist. Whether such a tag is discouraged or forbidden is regulated by the system prompt and the seed span, not by code (docs/decisions/0001-prompt-level-grammar.md, docs/protocol/invariants.md#enforcement-model).
 
 ## Tag literal lookup
 

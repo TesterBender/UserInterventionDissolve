@@ -44,7 +44,7 @@ The type is tracked from `GENERATION_STARTED` because neither settings-ready eve
 
 A boundary is an occurrence of the literal **at a block start**, and nothing else. `findBoundary` strips the trailing colon from the literal and asks `findTagLiteral` (`docs/modules/grammar.md#tag-literal-lookup`) for every occurrence with `atBlockStart === true`; the first one is the boundary. `He turned. Mara: left.` mid-paragraph and `"Mara: stop," he said.` in dialogue are not boundaries and are left alone.
 
-The test goes through `findTagLiteral` rather than through the parsed actor string or `classifyActor`, because the broadened tag-header rule (`docs/briefs/0004-tag-header-rule.md`) makes `He turned. Mara` a legal actor name: a block whose header parses to that actor would match a name comparison, while the literal `Mara:` does not start that block. Position, not actor identity, is the criterion here.
+The test goes through `findTagLiteral`, never the actor string, because the broadened tag-header rule (`docs/briefs/0004-tag-header-rule.md`) makes `He turned. Mara` a legal actor name: a block whose header parses to that actor would match a name comparison, while the literal `Mara:` does not start that block. Position, not actor identity, is the criterion here.
 
 The module does not escape, rewrite or flag occurrences of the literal inside ordinary prose. "Ordinary content must not contain the literal" is a prompt-level rule (`docs/protocol/invariants.md#enforcement-model`); the only code-side consequence is that a block-start occurrence is treated as the boundary.
 
