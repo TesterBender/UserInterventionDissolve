@@ -1,5 +1,5 @@
 # Brief 0036 — Janitor message identity moves to the envelope's database ids
-Status: implemented
+Status: done
 Complexity: high  (it replaces the identity scheme `frozenIds` and the watermark are expressed over, changes the INV-10 argument recorded in decision 0007, bumps the store's own format, and touches five `janitor/` modules plus the envelope record)
 PLAN sections: §3 (interaction-topology non-identifiability — the stored identity must not record where in the exchange a turn sat, and nothing stored may reach the model), §9 (the human's turn becomes manuscript text; identity is what decides whether it is still frontier or already compiled), §10 (manuscript-wide editing inside the mutable frontier — an edit to an uncompiled message must keep its identity, and a tail edit of the watermark message must still slice), §23 (canonical state reconstructs model-visible history because this host owns the history and the script does not), §27 (no transport information reaches the model)
 Invariants touched: INV-6 (compiled text is never rewritten; an edit to a compiled message is reported, never re-compiled or re-sent), INV-10 (the stored identity is now a server-assigned database id — the argument that no transport topology is persisted has to be re-made, not inherited)

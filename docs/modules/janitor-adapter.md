@@ -30,6 +30,8 @@ Superseded by [Envelope-id identity](#envelope-id-identity). Identity is no long
 
 ## Prefix-hash watermark {#prefix-hash-watermark}
 
+The prefix hash is FNV-1a/32: it needs no dependency, allocates nothing, and gives the same value for the same text in every process, so a hash stored in one session matches in the next. It identifies a compiled prefix, not a message, so its collision space is one message wide.
+
 A freeze cuts mid-message, so state records `{messageId, offset}` — the one partially consumed message and the character offset the cut ran through (`docs/modules/state.md#shape`) — and this layer adds `prefixHash`. `messageId` is an envelope id string ([Envelope-id identity](#envelope-id-identity)); `prefixHash` is `fnv1a32(content.slice(0, offset))`, the hash of the **compiled part only**.
 
 `matchWatermark(entries, watermark)` tries, in order:
