@@ -13,7 +13,7 @@ import {
 } from './constants.js';
 import { loadJanitorState, saveJanitorState } from './storage.js';
 import { classifyMessages, toStShape, fromStShape } from './history.js';
-import { assignIdentities, matchWatermark, classifyDrift, prefixIdentity } from './identity.js';
+import { matchWatermark, classifyDrift, prefixIdentity } from './identity.js';
 
 // first-sentence-probe: computed from the import, never a copied literal → docs/modules/janitor-adapter.md#system-message
 const PROMPT_FIRST_SENTENCE = MANUSCRIPT_SYSTEM_PROMPT.slice(0, MANUSCRIPT_SYSTEM_PROMPT.indexOf('.') + 1);
@@ -72,23 +72,25 @@ export function transformRequest(data, context) {
   // sentinel-drop: exact match, every occurrence, before identities exist → docs/modules/janitor-adapter.md#sentinel
   const kept = history.filter((entry) => !(entry.role === 'user' && entry.content === SENTINEL));
 
-  const ids = assignIdentities(kept);
-  const watermarkIndex = matchWatermark(ids, kept, state.watermark);
-  if (watermarkIndex !== -1) state.watermark.messageId = ids[watermarkIndex];
-  const frozenIds = new Set(state.frozenIds);
-  const drift = classifyDrift(ids, ids.map((id, index) => frozenIds.has(id) || index === watermarkIndex));
+  const watermarkIndex = matchWatermark(kept, state.watermark);
+  // watermark-rekey: a prefix-hash match moves the watermark onto the new id → docs/modules/janitor-adapter.md#prefix-hash-watermark
+  if (watermarkIndex !== -1 && kept[watermarkIndex].messageId !== '') {
+    state.watermark.messageId = kept[watermarkIndex].messageId;
+  }
+  const drift = classifyDrift(kept, state);
 
   const literal = `${context.personaName}:`;
-  const shaped = toStShape(kept, ids);
+  const shaped = toStShape(kept);
   let derived = deriveFrontier(shaped, state, literal);
 
   let froze = false;
-  if (derived.segments.length >= 2) {
+  // identified-gate: compile nothing rather than store an empty id → docs/modules/janitor-adapter.md#envelope-id-identity
+  if (derived.segments.length >= 2 && kept.every((entry) => entry.messageId !== '')) {
     // last-message-clamp: the last segment's start, so regenerate stays safe → docs/modules/janitor-adapter.md#freeze-at-request-build
     const maxFrozenEnd = derived.segments[derived.segments.length - 1].start;
     if (compileUnit(state, derived, literal, { maxFrozenEnd }) !== null) {
       froze = true;
-      const watermarked = kept[ids.indexOf(state.watermark.messageId)];
+      const watermarked = kept.find((entry) => entry.messageId === state.watermark.messageId);
       state.watermark.prefixHash = watermarked === undefined
         ? ''
         : prefixIdentity(watermarked.content, state.watermark.offset);
@@ -115,7 +117,7 @@ export function transformRequest(data, context) {
   console.info(
     `${LOG_PREFIX} finals ${state.frozen.length}, units ${state.units.length}, `
       + `frontier ${countWords(derived.text)} words, froze ${froze ? 'yes' : 'no'}, `
-      + `drift ${drift.editedBeforeIndexes.length}`,
+      + `drift ${drift.editedCompiledIndexes.length}`,
   );
   return true;
 }

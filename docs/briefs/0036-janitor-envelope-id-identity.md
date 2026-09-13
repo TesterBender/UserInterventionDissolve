@@ -1,5 +1,5 @@
 # Brief 0036 — Janitor message identity moves to the envelope's database ids
-Status: draft
+Status: implemented
 Complexity: high  (it replaces the identity scheme `frozenIds` and the watermark are expressed over, changes the INV-10 argument recorded in decision 0007, bumps the store's own format, and touches five `janitor/` modules plus the envelope record)
 PLAN sections: §3 (interaction-topology non-identifiability — the stored identity must not record where in the exchange a turn sat, and nothing stored may reach the model), §9 (the human's turn becomes manuscript text; identity is what decides whether it is still frontier or already compiled), §10 (manuscript-wide editing inside the mutable frontier — an edit to an uncompiled message must keep its identity, and a tail edit of the watermark message must still slice), §23 (canonical state reconstructs model-visible history because this host owns the history and the script does not), §27 (no transport information reaches the model)
 Invariants touched: INV-6 (compiled text is never rewritten; an edit to a compiled message is reported, never re-compiled or re-sent), INV-10 (the stored identity is now a server-assigned database id — the argument that no transport topology is persisted has to be re-made, not inherited)
@@ -85,17 +85,17 @@ On the Janitor host a message's identity is the `id` of the `/generateAlpha` env
 - (empty) The one Janitor fact this brief acts on is answered: `docs/api/janitor.md#envelope-message-entries-carry-database-ids`, status answered, captured 2026-09-14 — `id` is a large integer database id, entries carry `is_bot`/`is_main`/`created_at`, and the envelope includes the message being sent. The supporting facts are answered too: `is_main` marks the selected alternative (2026-09-13), the persona prefix on user turns (2026-09-14), regenerate drops the replaced assistant message (2026-09-13), `/generateAlpha` precedes every model invocation (2026-09-13). Do not launch `st-api-verifier`; it verifies SillyTavern only.
 
 ## Acceptance
-- [ ] Every aligned history entry's identity is the string form of its envelope entry's `id`; no `#`-suffixed hash id appears anywhere in `janitor/` or in a stored state.
-- [ ] `messageIdentity` and `assignIdentities` no longer exist; `fnv1a32` has exactly one caller, `prefixIdentity`.
-- [ ] Two byte-identical user messages with different envelope ids receive different identities; compiling the first leaves the second in the derived frontier.
-- [ ] A compiled message edited in place is reported in `editedCompiledIndexes` and is absent from the derived frontier; the same message unedited is reported by neither.
-- [ ] The watermark message is found by id after an edit to its tail, and by `prefixHash` when its id is not in the request; a head edit yields `-1`.
-- [ ] A regenerate fixture (trailing assistant message replaced, new envelope id) leaves no compiled text re-sent and no uncompiled text dropped.
-- [ ] Three consecutive transforms over a fixture whose canonical state does not change produce a byte-identical `[final, control]` prefix.
-- [ ] A stored state with no `janitorFormat`, and one with a wrong `janitorFormat`, each yield a fresh state and exactly one `console.warn`; `src/constants.js` is byte-identical.
-- [ ] `npm run build:janitor` regenerates `dist/janitor-manuscript-dissolve.user.js`, the committed file matches a fresh build, and it parses via `new Function`.
-- [ ] `npm run check` passes
-- [ ] every new pointer comment resolves (`node tools/check-comments.mjs`)
+- [x] Every aligned history entry's identity is the string form of its envelope entry's `id`; no `#`-suffixed hash id appears anywhere in `janitor/` or in a stored state.
+- [x] `messageIdentity` and `assignIdentities` no longer exist; `fnv1a32` has exactly one caller, `prefixIdentity`.
+- [x] Two byte-identical user messages with different envelope ids receive different identities; compiling the first leaves the second in the derived frontier.
+- [x] A compiled message edited in place is reported in `editedCompiledIndexes` and is absent from the derived frontier; the same message unedited is reported by neither.
+- [x] The watermark message is found by id after an edit to its tail, and by `prefixHash` when its id is not in the request; a head edit yields `-1`.
+- [x] A regenerate fixture (trailing assistant message replaced, new envelope id) leaves no compiled text re-sent and no uncompiled text dropped.
+- [x] Three consecutive transforms over a fixture whose canonical state does not change produce a byte-identical `[final, control]` prefix.
+- [x] A stored state with no `janitorFormat`, and one with a wrong `janitorFormat`, each yield a fresh state and exactly one `console.warn`; `src/constants.js` is byte-identical.
+- [x] `npm run build:janitor` regenerates `dist/janitor-manuscript-dissolve.user.js`, the committed file matches a fresh build, and it parses via `new Function`.
+- [x] `npm run check` passes
+- [x] every new pointer comment resolves (`node tools/check-comments.mjs`)
 
 ## Docs to write/update
 - `docs/modules/janitor-adapter.md` — new `## Envelope-id identity {#envelope-id-identity}`: identity is the envelope entry's database `id` as a string; why that is available now (the 2026-09-14 capture retired the positional claim the earlier rejection rested on); that the id is read off the entry alignment already chose and is never used to align; what an id-less entry means (`''`, never frozen, never the watermark, and the freeze gate refuses the request's compile rather than store an empty id); and that the duplicate-collision cost the old scheme accepted is gone because two identical texts have two database ids.

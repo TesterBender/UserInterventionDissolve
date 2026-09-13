@@ -1,6 +1,6 @@
 import { describe, it, expect, beforeEach, vi, afterEach } from 'vitest';
 import { stateKey, loadJanitorState, saveJanitorState } from '../../janitor/storage.js';
-import { STORAGE_KEY_PREFIX } from '../../janitor/constants.js';
+import { STORAGE_KEY_PREFIX, JANITOR_STATE_FORMAT } from '../../janitor/constants.js';
 
 function fakeStorage(initial = {}) {
   const map = new Map(Object.entries(initial));
@@ -28,10 +28,11 @@ describe('stateKey', () => {
 });
 
 describe('loadJanitorState', () => {
-  it('returns a fresh v3 state with the three Janitor fields when nothing is stored', () => {
+  it('returns a fresh v3 state with the four Janitor fields when nothing is stored', () => {
     const state = loadJanitorState('chat-7f3', fakeStorage());
     expect(state).toEqual({
       version: 3,
+      janitorFormat: JANITOR_STATE_FORMAT,
       frozen: [],
       units: [],
       frozenIds: [],
@@ -47,12 +48,13 @@ describe('loadJanitorState', () => {
     const storage = fakeStorage();
     const stored = {
       version: 3,
+      janitorFormat: JANITOR_STATE_FORMAT,
       frozen: [{ text: 'A final span.', words: 3, createdAt: 11 }],
       units: [{ text: 'An unsealed unit.', words: 3, createdAt: 12 }],
-      frozenIds: ['a1b2c3d4#0'],
-      watermark: { messageId: 'e5f6a7b8#1', offset: 17, prefixHash: '1a47e90b' },
+      frozenIds: ['103237690204'],
+      watermark: { messageId: '103237690391', offset: 17, prefixHash: '1a47e90b' },
       literal: 'Mara:',
-      boundaries: ['a1b2c3d4#0'],
+      boundaries: ['103237690204'],
       watermarkText: 'The whole text of the watermark message.',
     };
     saveJanitorState('chat-7f3', stored, storage);
@@ -62,13 +64,17 @@ describe('loadJanitorState', () => {
 
   it.each([
     ['a version 2 blob', JSON.stringify({ version: 2, frozen: [], frozenIds: [] })],
+    ['a hash-keyed state with no janitorFormat', JSON.stringify({ version: 3, frozen: [], frozenIds: ['a1b2c3d4#0'] })],
+    ['a state with a wrong janitorFormat', JSON.stringify({ version: 3, janitorFormat: 1, frozen: [], frozenIds: [] })],
     ['a foreign JSON object', JSON.stringify({ notOurs: true })],
     ['an unparseable string', '{not json at all'],
   ])('replaces %s with a fresh state and warns exactly once', (_label, raw) => {
     const storage = fakeStorage({ [`${STORAGE_KEY_PREFIX}chat-7f3`]: raw });
     const state = loadJanitorState('chat-7f3', storage);
     expect(state.version).toBe(3);
+    expect(state.janitorFormat).toBe(JANITOR_STATE_FORMAT);
     expect(state.frozen).toEqual([]);
+    expect(state.frozenIds).toEqual([]);
     expect(state.watermarkText).toBe('');
     expect(warn).toHaveBeenCalledTimes(1);
   });
@@ -88,8 +94,8 @@ describe('loadJanitorState', () => {
 
   it('keys each chat separately', () => {
     const storage = fakeStorage();
-    saveJanitorState('chat-a', { version: 3, literal: 'Mara:' }, storage);
-    saveJanitorState('chat-b', { version: 3, literal: 'Ilse:' }, storage);
+    saveJanitorState('chat-a', { version: 3, janitorFormat: JANITOR_STATE_FORMAT, literal: 'Mara:' }, storage);
+    saveJanitorState('chat-b', { version: 3, janitorFormat: JANITOR_STATE_FORMAT, literal: 'Ilse:' }, storage);
     expect(loadJanitorState('chat-a', storage).literal).toBe('Mara:');
     expect(loadJanitorState('chat-b', storage).literal).toBe('Ilse:');
   });

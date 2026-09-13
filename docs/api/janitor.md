@@ -31,7 +31,7 @@ status: answered — captured 2026-09-14
 
 Each entry of the `/generateAlpha` envelope's `chatMessages` has the shape `{character_id (bot messages only), chat_id, created_at, id, is_bot, is_main, message}`. `id` is a large integer **database** id (e.g. `103237690204`), not a position, and the envelope includes the message currently being sent.
 
-The earlier entry here — "the ids are 0-based positional indices, counted from the first system message" (2026-09-13) — **was wrong**. Whether these database ids are usable as stored message identity is deliberately left to a follow-up brief; brief 0035 changed nothing about identity except the text that is hashed, and no code in `janitor/` reads `id`.
+The earlier entry here — "the ids are 0-based positional indices, counted from the first system message" (2026-09-13) — **was wrong**. The follow-up brief that this entry deferred is brief 0036: these ids are now the adapter layer's stored message identity, read off the envelope entry alignment chose and written into `frozenIds`, the watermark and `boundaries` (`docs/modules/janitor-adapter.md#envelope-id-identity`).
 
 Janitor keeps per-message alternatives (`changeLastMessageIndex` in the initiator stack), so `is_main === true` most likely marks the selected alternative; the diff matches against those entries only.
 

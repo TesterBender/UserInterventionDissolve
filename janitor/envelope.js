@@ -63,6 +63,8 @@ export function readEnvelope(data) {
     janitorRouterEnabled: userConfig.janitor_router_enabled === true,
     chatMessages: data.chatMessages.map((message, position) => ({
       position,
+      // envelope-id: the entry's database id, as a string → docs/modules/janitor-adapter.md#envelope-id-identity
+      id: isObject(message) && (typeof message.id === 'string' || Number.isFinite(message.id)) ? String(message.id) : '',
       isMain: isObject(message) && message.is_main === true,
       isBot: isObject(message) && message.is_bot === true,
       message: isObject(message) ? String(message.message ?? '') : '',

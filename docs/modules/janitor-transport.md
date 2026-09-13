@@ -39,9 +39,9 @@ The wrapper spends work on a request only after four rungs, in the optimizer's o
 | `prefill` | `generation_settings.prefill_enabled` / `prefill_text` | Read only. Prefill *recovery* — the optimizer's re-issue logic — is not ported. |
 | `route` | `open_ai_reverse_proxy` parsed against `location.href` into `{url, host, path}` | `path` is collapsed (`//` → `/`) and stripped of a trailing slash. A missing or unparseable value records `null`: the human is not in proxy mode and the shell has nothing to intercept. |
 | `janitorRouterEnabled` | `userConfig.janitor_router_enabled` | Router traffic is server-side and invisible to any userscript. |
-| `chatMessages` | the envelope array | `[{position, isMain, isBot, message}]`. |
+| `chatMessages` | the envelope array | `[{position, id, isMain, isBot, message}]`. `id` is the entry's database id as a string (`''` when absent), which the adapter layer stores as that message's identity (`docs/api/janitor.md#envelope-message-entries-carry-database-ids`, `docs/modules/janitor-adapter.md#envelope-id-identity`). |
 
-`position` is the 0-based index in the envelope array. Janitor's own ids are positional too (ledger 2026-09-13), which is exactly why they are not an identity scheme: they shift on every deletion. They exist here only so a later phase can align envelope entries with the provider `messages` array. `isMain` is `is_main === true` and most likely marks the selected alternative of a regenerated turn (`changeLastMessageIndex` in the initiator stack); `isBot` is `is_bot === true`, the envelope's role flag.
+`position` is the 0-based index in the envelope array; it exists only so a later phase can align envelope entries with the provider `messages` array, and it is never stored. `id` is the entry's own `id` — a large integer database id, not a position (`docs/api/janitor.md#envelope-message-entries-carry-database-ids`) — rendered as a string, or `''` when the entry carries no usable id. `isMain` is `is_main === true` and most likely marks the selected alternative of a regenerated turn (`changeLastMessageIndex` in the initiator stack); `isBot` is `is_bot === true`, the envelope's role flag.
 
 ## Conversation binding (L132–139, L2148–2168) {#conversation-binding}
 

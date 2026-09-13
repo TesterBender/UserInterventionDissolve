@@ -1,4 +1,6 @@
-// fnv1a32: dependency-free, allocation-free, stable across processes → docs/modules/janitor-adapter.md#content-hash-identity
+import { BLOCK_DELIMITER } from '../src/constants.js';
+
+// fnv1a32: dependency-free, allocation-free, stable across processes → docs/modules/janitor-adapter.md#prefix-hash-watermark
 export function fnv1a32(text) {
   const input = String(text);
   let hash = 0x811c9dc5;
@@ -9,55 +11,50 @@ export function fnv1a32(text) {
   return hash.toString(16).padStart(8, '0');
 }
 
-// content-identity: raw content, no trim and no substitution → docs/modules/janitor-adapter.md#content-hash-identity
-export function messageIdentity(role, content, occurrence) {
-  return `${fnv1a32(role + content)}#${occurrence}`;
-}
-
-// occurrence-index: identical pairs counted from the front, mutates nothing → docs/modules/janitor-adapter.md#content-hash-identity
-export function assignIdentities(messages) {
-  const seen = new Map();
-  const ids = [];
-  for (const message of messages) {
-    const role = String(message.role ?? '');
-    const content = String(message.content ?? '');
-    const key = `${role}\u0000${content}`;
-    const occurrence = seen.get(key) ?? 0;
-    seen.set(key, occurrence + 1);
-    ids.push(messageIdentity(role, content, occurrence));
-  }
-  return ids;
-}
-
 // prefix-hash: the compiled part of the watermark message only → docs/modules/janitor-adapter.md#prefix-hash-watermark
 export function prefixIdentity(content, offset) {
   return fnv1a32(String(content).slice(0, offset));
 }
 
-// watermark-match: exact id, then prefix hash, then give up → docs/modules/janitor-adapter.md#prefix-hash-watermark
-export function matchWatermark(ids, messages, watermark) {
-  const exact = ids.indexOf(watermark.messageId);
-  if (exact !== -1) return exact;
+// watermark-match: envelope id, then prefix hash, then give up → docs/modules/janitor-adapter.md#prefix-hash-watermark
+export function matchWatermark(entries, watermark) {
+  const target = watermark.messageId;
+  if (target) {
+    const exact = entries.findIndex((entry) => entry.messageId === target);
+    if (exact !== -1) return exact;
+  }
 
   const offset = watermark.offset;
-  for (let index = 0; index < messages.length; index += 1) {
-    const content = String(messages[index].content ?? '');
-    if (content.length < offset) continue;
-    if (prefixIdentity(content, offset) === watermark.prefixHash) return index;
+  if (offset > 0 && watermark.prefixHash) {
+    for (let index = 0; index < entries.length; index += 1) {
+      const content = String(entries[index].content ?? '');
+      if (content.length < offset) continue;
+      if (prefixIdentity(content, offset) === watermark.prefixHash) return index;
+    }
   }
   return -1;
 }
 
 // drift-report: indexes only, decides nothing and logs nothing → docs/modules/janitor-adapter.md#drift
-export function classifyDrift(ids, matchedFlags) {
-  let lastMatched = -1;
-  for (let index = 0; index < matchedFlags.length; index += 1) {
-    if (matchedFlags[index]) lastMatched = index;
-  }
+export function classifyDrift(entries, state) {
+  const frozenIds = new Set(state.frozenIds);
+  // compiled-corpus: a consumed message's text sits verbatim in a span → docs/modules/janitor-adapter.md#drift
+  const corpus = [...state.frozen, ...state.units].map((span) => span.text).join(BLOCK_DELIMITER);
+  const watermark = state.watermark;
 
-  const editedBeforeIndexes = [];
-  for (let index = 0; index < lastMatched; index += 1) {
-    if (!matchedFlags[index]) editedBeforeIndexes.push(index);
+  const editedCompiledIndexes = [];
+  for (let index = 0; index < entries.length; index += 1) {
+    const messageId = entries[index].messageId;
+    const content = String(entries[index].content ?? '');
+    if (messageId === '') continue;
+
+    if (frozenIds.has(messageId) && content !== '' && !corpus.includes(content)) {
+      editedCompiledIndexes.push(index);
+      continue;
+    }
+    if (messageId === watermark.messageId && prefixIdentity(content, watermark.offset) !== watermark.prefixHash) {
+      editedCompiledIndexes.push(index);
+    }
   }
-  return { editedBeforeIndexes };
+  return { editedCompiledIndexes };
 }

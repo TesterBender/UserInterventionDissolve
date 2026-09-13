@@ -1,10 +1,10 @@
 import { STATE_VERSION } from '../src/constants.js';
 import { createState } from '../src/state.js';
-import { STORAGE_KEY_PREFIX } from './constants.js';
+import { STORAGE_KEY_PREFIX, JANITOR_STATE_FORMAT } from './constants.js';
 
-// janitor-fields: v3 state plus literal, boundaries and watermarkText → docs/modules/janitor-adapter.md#stored-state
+// janitor-fields: v3 state plus the four fields this layer owns → docs/modules/janitor-adapter.md#stored-state
 function freshState() {
-  return { ...createState(), literal: '', boundaries: [], watermarkText: '' };
+  return { ...createState(), janitorFormat: JANITOR_STATE_FORMAT, literal: '', boundaries: [], watermarkText: '' };
 }
 
 // per-chat-key: one entry per Janitor chat id, no global entry → docs/modules/janitor-adapter.md#stored-state
@@ -26,8 +26,9 @@ export function loadJanitorState(chatId, storage = localStorage) {
     stored = null;
   }
 
-  if (typeof stored !== 'object' || stored === null || stored.version !== STATE_VERSION) {
-    console.warn(`[Manuscript] stored state for ${chatId} is not readable as version ${STATE_VERSION}; starting fresh.`);
+  if (typeof stored !== 'object' || stored === null || stored.version !== STATE_VERSION
+    || stored.janitorFormat !== JANITOR_STATE_FORMAT) {
+    console.warn(`[Manuscript] stored state for ${chatId} is not readable as version ${STATE_VERSION}/${JANITOR_STATE_FORMAT}; starting fresh.`);
     return freshState();
   }
 

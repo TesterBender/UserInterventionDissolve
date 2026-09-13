@@ -1,3 +1,5 @@
+import { JANITOR_STATE_FORMAT } from '../../../janitor/constants.js';
+
 export const CHAT_ID = 'chat-mx1';
 export const PERSONA = 'Mara';
 export const PROXY_URL = 'https://relay.example.com/v1/chat/completions';
@@ -27,7 +29,8 @@ export function envelopeFor(turns, options = {}) {
       janitor_router_enabled: false,
       generation_settings: { prefill_enabled: true, prefill_text: PREFILL_TEXT },
     },
-    chatMessages: turns.map((turn) => ({
+    chatMessages: turns.map((turn, position) => ({
+      id: turn.id ?? 103237690000 + position,
       is_bot: turn.role !== 'user',
       is_main: true,
       message: turn.content,
@@ -48,6 +51,7 @@ export function bodyFor(turns, options = {}) {
 export function storedState(overrides = {}) {
   return {
     version: 3,
+    janitorFormat: JANITOR_STATE_FORMAT,
     frozen: [],
     units: [],
     frozenIds: [],

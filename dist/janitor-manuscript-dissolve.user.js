@@ -170,6 +170,8 @@ function readEnvelope(data) {
     janitorRouterEnabled: userConfig.janitor_router_enabled === true,
     chatMessages: data.chatMessages.map((message, position) => ({
       position,
+      // envelope-id: the entry's database id, as a string → docs/modules/janitor-adapter.md#envelope-id-identity
+      id: isObject(message) && (typeof message.id === 'string' || Number.isFinite(message.id)) ? String(message.id) : '',
       isMain: isObject(message) && message.is_main === true,
       isBot: isObject(message) && message.is_bot === true,
       message: isObject(message) ? String(message.message ?? '') : '',
@@ -1073,6 +1075,9 @@ const SENTINEL = '//';
 // storage-key: one localStorage entry per Janitor chat id → docs/modules/janitor-adapter.md#stored-state
 const STORAGE_KEY_PREFIX = 'uid-janitor-v1:';
 
+// janitor-format: this layer's own stored version, not src/'s STATE_VERSION → docs/modules/janitor-adapter.md#stored-state
+const JANITOR_STATE_FORMAT = 2;
+
 // horizon-budget: host constant, never a setting and never read from Janitor → docs/modules/janitor-adapter.md#horizon-budget
 const JANITOR_HORIZON_TOKEN_BUDGET = 100_000;
 
@@ -1086,9 +1091,9 @@ const JANITOR_WORDS_PER_TOKEN = 1.4;
 const JANITOR_LEAD_IN = 'Write the manuscript.';
 
 // ---- janitor/storage.js ----
-// janitor-fields: v3 state plus literal, boundaries and watermarkText → docs/modules/janitor-adapter.md#stored-state
+// janitor-fields: v3 state plus the four fields this layer owns → docs/modules/janitor-adapter.md#stored-state
 function freshState() {
-  return { ...createState(), literal: '', boundaries: [], watermarkText: '' };
+  return { ...createState(), janitorFormat: JANITOR_STATE_FORMAT, literal: '', boundaries: [], watermarkText: '' };
 }
 
 // per-chat-key: one entry per Janitor chat id, no global entry → docs/modules/janitor-adapter.md#stored-state
@@ -1110,8 +1115,9 @@ function loadJanitorState(chatId, storage = localStorage) {
     stored = null;
   }
 
-  if (typeof stored !== 'object' || stored === null || stored.version !== STATE_VERSION) {
-    console.warn(`[Manuscript] stored state for ${chatId} is not readable as version ${STATE_VERSION}; starting fresh.`);
+  if (typeof stored !== 'object' || stored === null || stored.version !== STATE_VERSION
+    || stored.janitorFormat !== JANITOR_STATE_FORMAT) {
+    console.warn(`[Manuscript] stored state for ${chatId} is not readable as version ${STATE_VERSION}/${JANITOR_STATE_FORMAT}; starting fresh.`);
     return freshState();
   }
 
@@ -1130,6 +1136,11 @@ function saveJanitorState(chatId, state, storage = localStorage) {
 }
 
 // ---- janitor/history.js ----
+// envelope-id: identity is read off the entry alignment chose → docs/modules/janitor-adapter.md#envelope-id-identity
+function entryId(entry) {
+  return typeof entry.id === 'string' ? entry.id : '';
+}
+
 // two-cursor-diff: envelope entries decide history, roles decide nothing → docs/modules/janitor-adapter.md#envelope-diff
 // no-envelope-fallback: without a record every non-system message is history → docs/modules/janitor-adapter.md#envelope-diff
 function classifyMessages(messages, envelopeChatMessages, personaName) {
@@ -1155,19 +1166,19 @@ function classifyMessages(messages, envelopeChatMessages, personaName) {
 
     const entry = { index, role, content };
     if (mains.length === 0) {
-      history.push(entry);
+      history.push({ ...entry, messageId: '' });
       continue;
     }
 
     if (cursor < mains.length && mains[cursor].message === content) {
+      history.push({ ...entry, messageId: entryId(mains[cursor]) });
       cursor += 1;
-      history.push(entry);
       continue;
     }
 
     // persona-prefix-align: user turns arrive as `Name: text`; history carries the bare text → docs/modules/janitor-adapter.md#envelope-diff
     if (cursor < mains.length && role === 'user' && prefix !== '' && content === prefix + mains[cursor].message) {
-      history.push({ index, role, content: mains[cursor].message });
+      history.push({ index, role, content: mains[cursor].message, messageId: entryId(mains[cursor]) });
       cursor += 1;
       continue;
     }
@@ -1179,12 +1190,12 @@ function classifyMessages(messages, envelopeChatMessages, personaName) {
 }
 
 // st-shape: the four fields deriveFrontier reads, no name invented → docs/modules/janitor-adapter.md#st-shape-shim
-function toStShape(historyMessages, ids) {
-  return historyMessages.map((message, position) => ({
+function toStShape(historyMessages) {
+  return historyMessages.map((message) => ({
     mes: message.content,
     is_user: message.role === 'user',
     is_system: false,
-    extra: { [METADATA_KEY]: { id: ids[position] } },
+    extra: { [METADATA_KEY]: { id: message.messageId } },
   }));
 }
 
@@ -1197,7 +1208,7 @@ function fromStShape(history) {
 }
 
 // ---- janitor/identity.js ----
-// fnv1a32: dependency-free, allocation-free, stable across processes → docs/modules/janitor-adapter.md#content-hash-identity
+// fnv1a32: dependency-free, allocation-free, stable across processes → docs/modules/janitor-adapter.md#prefix-hash-watermark
 function fnv1a32(text) {
   const input = String(text);
   let hash = 0x811c9dc5;
@@ -1208,57 +1219,52 @@ function fnv1a32(text) {
   return hash.toString(16).padStart(8, '0');
 }
 
-// content-identity: raw content, no trim and no substitution → docs/modules/janitor-adapter.md#content-hash-identity
-function messageIdentity(role, content, occurrence) {
-  return `${fnv1a32(role + content)}#${occurrence}`;
-}
-
-// occurrence-index: identical pairs counted from the front, mutates nothing → docs/modules/janitor-adapter.md#content-hash-identity
-function assignIdentities(messages) {
-  const seen = new Map();
-  const ids = [];
-  for (const message of messages) {
-    const role = String(message.role ?? '');
-    const content = String(message.content ?? '');
-    const key = `${role}\u0000${content}`;
-    const occurrence = seen.get(key) ?? 0;
-    seen.set(key, occurrence + 1);
-    ids.push(messageIdentity(role, content, occurrence));
-  }
-  return ids;
-}
-
 // prefix-hash: the compiled part of the watermark message only → docs/modules/janitor-adapter.md#prefix-hash-watermark
 function prefixIdentity(content, offset) {
   return fnv1a32(String(content).slice(0, offset));
 }
 
-// watermark-match: exact id, then prefix hash, then give up → docs/modules/janitor-adapter.md#prefix-hash-watermark
-function matchWatermark(ids, messages, watermark) {
-  const exact = ids.indexOf(watermark.messageId);
-  if (exact !== -1) return exact;
+// watermark-match: envelope id, then prefix hash, then give up → docs/modules/janitor-adapter.md#prefix-hash-watermark
+function matchWatermark(entries, watermark) {
+  const target = watermark.messageId;
+  if (target) {
+    const exact = entries.findIndex((entry) => entry.messageId === target);
+    if (exact !== -1) return exact;
+  }
 
   const offset = watermark.offset;
-  for (let index = 0; index < messages.length; index += 1) {
-    const content = String(messages[index].content ?? '');
-    if (content.length < offset) continue;
-    if (prefixIdentity(content, offset) === watermark.prefixHash) return index;
+  if (offset > 0 && watermark.prefixHash) {
+    for (let index = 0; index < entries.length; index += 1) {
+      const content = String(entries[index].content ?? '');
+      if (content.length < offset) continue;
+      if (prefixIdentity(content, offset) === watermark.prefixHash) return index;
+    }
   }
   return -1;
 }
 
 // drift-report: indexes only, decides nothing and logs nothing → docs/modules/janitor-adapter.md#drift
-function classifyDrift(ids, matchedFlags) {
-  let lastMatched = -1;
-  for (let index = 0; index < matchedFlags.length; index += 1) {
-    if (matchedFlags[index]) lastMatched = index;
-  }
+function classifyDrift(entries, state) {
+  const frozenIds = new Set(state.frozenIds);
+  // compiled-corpus: a consumed message's text sits verbatim in a span → docs/modules/janitor-adapter.md#drift
+  const corpus = [...state.frozen, ...state.units].map((span) => span.text).join(BLOCK_DELIMITER);
+  const watermark = state.watermark;
 
-  const editedBeforeIndexes = [];
-  for (let index = 0; index < lastMatched; index += 1) {
-    if (!matchedFlags[index]) editedBeforeIndexes.push(index);
+  const editedCompiledIndexes = [];
+  for (let index = 0; index < entries.length; index += 1) {
+    const messageId = entries[index].messageId;
+    const content = String(entries[index].content ?? '');
+    if (messageId === '') continue;
+
+    if (frozenIds.has(messageId) && content !== '' && !corpus.includes(content)) {
+      editedCompiledIndexes.push(index);
+      continue;
+    }
+    if (messageId === watermark.messageId && prefixIdentity(content, watermark.offset) !== watermark.prefixHash) {
+      editedCompiledIndexes.push(index);
+    }
   }
-  return { editedBeforeIndexes };
+  return { editedCompiledIndexes };
 }
 
 // ---- janitor/transform.js ----
@@ -1319,23 +1325,25 @@ function transformRequest(data, context) {
   // sentinel-drop: exact match, every occurrence, before identities exist → docs/modules/janitor-adapter.md#sentinel
   const kept = history.filter((entry) => !(entry.role === 'user' && entry.content === SENTINEL));
 
-  const ids = assignIdentities(kept);
-  const watermarkIndex = matchWatermark(ids, kept, state.watermark);
-  if (watermarkIndex !== -1) state.watermark.messageId = ids[watermarkIndex];
-  const frozenIds = new Set(state.frozenIds);
-  const drift = classifyDrift(ids, ids.map((id, index) => frozenIds.has(id) || index === watermarkIndex));
+  const watermarkIndex = matchWatermark(kept, state.watermark);
+  // watermark-rekey: a prefix-hash match moves the watermark onto the new id → docs/modules/janitor-adapter.md#prefix-hash-watermark
+  if (watermarkIndex !== -1 && kept[watermarkIndex].messageId !== '') {
+    state.watermark.messageId = kept[watermarkIndex].messageId;
+  }
+  const drift = classifyDrift(kept, state);
 
   const literal = `${context.personaName}:`;
-  const shaped = toStShape(kept, ids);
+  const shaped = toStShape(kept);
   let derived = deriveFrontier(shaped, state, literal);
 
   let froze = false;
-  if (derived.segments.length >= 2) {
+  // identified-gate: compile nothing rather than store an empty id → docs/modules/janitor-adapter.md#envelope-id-identity
+  if (derived.segments.length >= 2 && kept.every((entry) => entry.messageId !== '')) {
     // last-message-clamp: the last segment's start, so regenerate stays safe → docs/modules/janitor-adapter.md#freeze-at-request-build
     const maxFrozenEnd = derived.segments[derived.segments.length - 1].start;
     if (compileUnit(state, derived, literal, { maxFrozenEnd }) !== null) {
       froze = true;
-      const watermarked = kept[ids.indexOf(state.watermark.messageId)];
+      const watermarked = kept.find((entry) => entry.messageId === state.watermark.messageId);
       state.watermark.prefixHash = watermarked === undefined
         ? ''
         : prefixIdentity(watermarked.content, state.watermark.offset);
@@ -1362,7 +1370,7 @@ function transformRequest(data, context) {
   console.info(
     `${LOG_PREFIX} finals ${state.frozen.length}, units ${state.units.length}, `
       + `frontier ${countWords(derived.text)} words, froze ${froze ? 'yes' : 'no'}, `
-      + `drift ${drift.editedBeforeIndexes.length}`,
+      + `drift ${drift.editedCompiledIndexes.length}`,
   );
   return true;
 }
