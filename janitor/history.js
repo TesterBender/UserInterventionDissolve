@@ -2,11 +2,12 @@ import { METADATA_KEY } from '../src/constants.js';
 
 // two-cursor-diff: envelope entries decide history, roles decide nothing → docs/modules/janitor-adapter.md#envelope-diff
 // no-envelope-fallback: without a record every non-system message is history → docs/modules/janitor-adapter.md#envelope-diff
-export function classifyMessages(messages, envelopeChatMessages) {
+export function classifyMessages(messages, envelopeChatMessages, personaName) {
   const mains = Array.isArray(envelopeChatMessages)
     ? envelopeChatMessages.filter((entry) => entry.isMain === true)
     : [];
 
+  const prefix = personaName ? `${personaName}: ` : '';
   const history = [];
   const injections = [];
   let systemIndex = -1;
@@ -31,6 +32,13 @@ export function classifyMessages(messages, envelopeChatMessages) {
     if (cursor < mains.length && mains[cursor].message === content) {
       cursor += 1;
       history.push(entry);
+      continue;
+    }
+
+    // persona-prefix-align: user turns arrive as `Name: text`; history carries the bare text → docs/modules/janitor-adapter.md#envelope-diff
+    if (cursor < mains.length && role === 'user' && prefix !== '' && content === prefix + mains[cursor].message) {
+      history.push({ index, role, content: mains[cursor].message });
+      cursor += 1;
       continue;
     }
 

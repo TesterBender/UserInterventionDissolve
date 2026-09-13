@@ -68,7 +68,7 @@ export function transformRequest(data, context) {
   // reload-per-request: another tab may have compiled since the last one → docs/modules/janitor-adapter.md#request-pipeline
   const state = loadJanitorState(context.chatId);
   const messages = adapter.messagesContainer.messages;
-  const { history, injections, systemIndex } = classifyMessages(messages, context.chatMessages);
+  const { history, injections, systemIndex } = classifyMessages(messages, context.chatMessages, context.personaName);
   // sentinel-drop: exact match, every occurrence, before identities exist → docs/modules/janitor-adapter.md#sentinel
   const kept = history.filter((entry) => !(entry.role === 'user' && entry.content === SENTINEL));
 

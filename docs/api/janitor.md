@@ -25,13 +25,23 @@ status: answered — captured 2026-09-13
 
 Still open on the same envelope: the set of `generateType` values per user action, and the exact semantics of `is_main`.
 
-## Envelope message ids are positional
+## Envelope message entries carry database ids
 
-status: answered — captured 2026-09-13
+status: answered — captured 2026-09-14
 
-The ids in the envelope's `chatMessages` are **0-based positional indices**, counted from the first system message to the most recent. They shift on every deletion, so they are not usable as message identity; decision 0004 rejected index identity for exactly this reason. They are recorded only to align envelope entries with the provider `messages` array for a later injection diff.
+Each entry of the `/generateAlpha` envelope's `chatMessages` has the shape `{character_id (bot messages only), chat_id, created_at, id, is_bot, is_main, message}`. `id` is a large integer **database** id (e.g. `103237690204`), not a position, and the envelope includes the message currently being sent.
 
-Janitor keeps per-message alternatives (`changeLastMessageIndex` in the initiator stack), so `is_main === true` most likely marks the selected alternative; a later diff must match against those entries only.
+The earlier entry here — "the ids are 0-based positional indices, counted from the first system message" (2026-09-13) — **was wrong**. Whether these database ids are usable as stored message identity is deliberately left to a follow-up brief; brief 0035 changed nothing about identity except the text that is hashed, and no code in `janitor/` reads `id`.
+
+Janitor keeps per-message alternatives (`changeLastMessageIndex` in the initiator stack), so `is_main === true` most likely marks the selected alternative; the diff matches against those entries only.
+
+## Janitor prefixes user turns with the persona name
+
+status: answered — captured 2026-09-14
+
+In the provider body, **user-role** history messages arrive as `` `${profile.name}: ${message}` `` — inline, one colon, one space — while **assistant**-role messages arrive unprefixed. The envelope's `chatMessages` stores the bare text, without the prefix. The prefix is Janitor's transport formatting; it is not part of what the human wrote, and the diff strips it by matching that one exact form (`docs/modules/janitor-adapter.md#envelope-diff`).
+
+Captured on a live proxy chat: the envelope held `"Oi, back to you, mate! …"` while the body sent `Shant: "Oi, back to you, mate! …`.
 
 ## Persona name lives at profile.name
 

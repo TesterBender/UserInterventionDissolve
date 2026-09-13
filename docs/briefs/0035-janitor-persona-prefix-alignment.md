@@ -1,5 +1,5 @@
 # Brief 0035 — Janitor persona-prefix alignment in the envelope diff
-Status: draft
+Status: implemented
 Complexity: high  (the misclassification it fixes is an INV-3 failure — the human's turn never reaches the frontier as a manuscript block — and the fix threads text through two `janitor/` modules and changes a stored identity's input)
 PLAN sections: §9 (the collaborator's input must become manuscript text headed by the reserved literal; a user turn folded into the system message is the failure this brief repairs), §10 (the frontier is manuscript-wide editable, so the aligned text must be the text the human wrote, not a transport decoration), §27 (Janitor's `Name: ` prefix is transport formatting; it must not reach the model as part of the manuscript)
 Invariants touched: INV-3 (user turns route through `toManuscriptBlock` and arrive as an own-line header block), INV-10 (the aligned/hashed text is private state; no transport artefact is stored or emitted)
@@ -78,14 +78,14 @@ The store is `uid-janitor-v1:` with no users to migrate (`docs/modules/janitor-a
 - (empty) The Janitor behaviour this brief depends on was captured by the user on 2026-09-14 in a live proxy chat and is recorded by this brief as an answered ledger entry. Everything else it uses is already answered: the persona lives at `profile.name` (2026-09-13), non-history turns are injected in any role (2026-09-13), the custom prompt may not be empty (2026-09-13). Do not launch `st-api-verifier`; it verifies SillyTavern only.
 
 ## Acceptance
-- [ ] On the new fixture, the dispatched body's assistant-role frontier turn ends with `Shant:` on its own line followed by the bare captured text; the string `` `Shant: "Oi` `` (prefix form) appears nowhere in the dispatched body.
-- [ ] On the same fixture, `.` appears exactly once, inside the assembled system message, and no non-system dispatched message equals `.`.
-- [ ] `classifyMessages` unit cases all hold: prefixed user turn → history with bare `content`; unprefixed user turn → history; `Other: <text>` → injection; assistant message beginning `Shant: ` → injection (never prefix-matched); empty `personaName` → prefixed turn is an injection.
-- [ ] The id assigned to a prefixed user turn equals the id assigned to the same turn sent unprefixed — identity is over the bare text.
-- [ ] Every test that passed before this brief still passes unchanged; no existing fixture is edited to accommodate the new rule.
-- [ ] `npm run build:janitor` regenerates `dist/janitor-manuscript-dissolve.user.js`, the committed file matches a fresh build, and it parses via `new Function`.
-- [ ] `npm run check` passes
-- [ ] every new pointer comment resolves (`node tools/check-comments.mjs`)
+- [x] On the new fixture, the dispatched body's assistant-role frontier turn ends with `Shant:` on its own line followed by the bare captured text; the string `` `Shant: "Oi` `` (prefix form) appears nowhere in the dispatched body.
+- [x] On the same fixture, `.` appears exactly once, inside the assembled system message, and no non-system dispatched message equals `.`.
+- [x] `classifyMessages` unit cases all hold: prefixed user turn → history with bare `content`; unprefixed user turn → history; `Other: <text>` → injection; assistant message beginning `Shant: ` → injection (never prefix-matched); empty `personaName` → prefixed turn is an injection.
+- [x] The id assigned to a prefixed user turn equals the id assigned to the same turn sent unprefixed — identity is over the bare text.
+- [x] Every test that passed before this brief still passes unchanged; no existing fixture is edited to accommodate the new rule.
+- [x] `npm run build:janitor` regenerates `dist/janitor-manuscript-dissolve.user.js`, the committed file matches a fresh build, and it parses via `new Function`.
+- [x] `npm run check` passes
+- [x] every new pointer comment resolves (`node tools/check-comments.mjs`)
 
 ## Docs to write/update
 - `docs/api/janitor.md` — replace the entry "Envelope message ids are positional" with a corrected entry (status: answered, captured 2026-09-14) stating what the capture shows: each `chatMessages` entry is `{character_id (bot messages only), chat_id, created_at, id, is_bot, is_main, message}`, `id` is a large integer database id (e.g. `103237690204`), not a position; and the envelope includes the message currently being sent. State plainly that the earlier "0-based positional indices" claim was wrong, and that whether those ids are usable as stored identity is deliberately left to a follow-up brief. Add a new answered entry (captured 2026-09-14), "Janitor prefixes user turns with the persona name": in the provider body, user-role history messages arrive as `` `${profile.name}: ${message}` `` — inline, one colon, one space — while assistant-role messages arrive unprefixed; the envelope stores the bare text. Do not touch the other entries or the `Open` list beyond this.

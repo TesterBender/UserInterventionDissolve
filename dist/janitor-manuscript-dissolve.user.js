@@ -1132,11 +1132,12 @@ function saveJanitorState(chatId, state, storage = localStorage) {
 // ---- janitor/history.js ----
 // two-cursor-diff: envelope entries decide history, roles decide nothing → docs/modules/janitor-adapter.md#envelope-diff
 // no-envelope-fallback: without a record every non-system message is history → docs/modules/janitor-adapter.md#envelope-diff
-function classifyMessages(messages, envelopeChatMessages) {
+function classifyMessages(messages, envelopeChatMessages, personaName) {
   const mains = Array.isArray(envelopeChatMessages)
     ? envelopeChatMessages.filter((entry) => entry.isMain === true)
     : [];
 
+  const prefix = personaName ? `${personaName}: ` : '';
   const history = [];
   const injections = [];
   let systemIndex = -1;
@@ -1161,6 +1162,13 @@ function classifyMessages(messages, envelopeChatMessages) {
     if (cursor < mains.length && mains[cursor].message === content) {
       cursor += 1;
       history.push(entry);
+      continue;
+    }
+
+    // persona-prefix-align: user turns arrive as `Name: text`; history carries the bare text → docs/modules/janitor-adapter.md#envelope-diff
+    if (cursor < mains.length && role === 'user' && prefix !== '' && content === prefix + mains[cursor].message) {
+      history.push({ index, role, content: mains[cursor].message });
+      cursor += 1;
       continue;
     }
 
@@ -1307,7 +1315,7 @@ function transformRequest(data, context) {
   // reload-per-request: another tab may have compiled since the last one → docs/modules/janitor-adapter.md#request-pipeline
   const state = loadJanitorState(context.chatId);
   const messages = adapter.messagesContainer.messages;
-  const { history, injections, systemIndex } = classifyMessages(messages, context.chatMessages);
+  const { history, injections, systemIndex } = classifyMessages(messages, context.chatMessages, context.personaName);
   // sentinel-drop: exact match, every occurrence, before identities exist → docs/modules/janitor-adapter.md#sentinel
   const kept = history.filter((entry) => !(entry.role === 'user' && entry.content === SENTINEL));
 
