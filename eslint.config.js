@@ -4,6 +4,9 @@ const browserGlobals = {
   window: 'readonly', document: 'readonly', globalThis: 'readonly', console: 'readonly',
   localStorage: 'readonly', setTimeout: 'readonly', clearTimeout: 'readonly',
   SillyTavern: 'readonly', toastr: 'readonly', jQuery: 'readonly', $: 'readonly',
+  fetch: 'readonly', Request: 'readonly', Response: 'readonly', Headers: 'readonly',
+  ReadableStream: 'readonly', XMLHttpRequest: 'readonly', location: 'readonly',
+  TextEncoder: 'readonly', TextDecoder: 'readonly', URL: 'readonly',
 };
 const nodeGlobals = { process: 'readonly', Buffer: 'readonly', URL: 'readonly' };
 
