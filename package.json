@@ -9,6 +9,7 @@
     "test": "vitest --run --reporter=dot",
     "test:watch": "vitest",
     "build:preset": "node tools/build-preset.mjs",
+    "build:janitor": "node tools/build-janitor.mjs",
     "check:comments": "node tools/check-comments.mjs index.js src janitor tools tests style.css",
     "check:docs": "node tools/check-docs.mjs",
     "check": "npm run lint && npm test && npm run check:comments && npm run check:docs"

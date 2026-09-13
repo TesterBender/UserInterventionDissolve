@@ -1,5 +1,5 @@
 # Brief 0029 — Janitor userscript build (`tools/build-janitor.mjs`)
-Status: draft
+Status: implemented
 Complexity: high  (touches `tools/`, `package.json`, a new committed build product and a new doc; flattening an ESM graph into one IIFE without a bundler is where the errors hide)
 PLAN sections: §23 (host requirements are behavioural, so a userscript is a legitimate host; the build only decides how that host receives the code), §27 (final criterion — the build adds nothing model-visible; its only protocol duty is that model-facing strings lifted from `src/` reach the bundle byte-identical)
 Invariants touched: none directly. INV-5's byte-identical continuation control depends on the bundle not rewriting string literals from `src/`; the acceptance list pins that.
@@ -44,15 +44,16 @@ Scope source: `TamperContainment/PLAN-janitor.md#layout-and-build` — source tr
 - (empty) No Janitor runtime fact is involved. The only external fact used is the Tampermonkey header shape, read directly from `TamperContainment/TamperMonkeyJanAI.txt` L1–12.
 
 ## Acceptance
-- [ ] `npm run build:janitor` writes `dist/janitor-manuscript-dissolve.user.js` and exits 0 on the tree as it stands after brief 0028.
-- [ ] The written file begins with `// ==UserScript==` … `// ==/UserScript==` including `@match https://janitorai.com/*`, `@grant none`, `@run-at document-start`, `@sandbox raw`, followed by the generated-file banner and one IIFE.
-- [ ] Every string literal from a bundled `src/` module appears in the bundle byte-identical to the source (asserted on at least one literal from a bundled module, or on the whole stripped module body).
-- [ ] Two consecutive builds produce identical bytes.
-- [ ] Duplicate top-level names, a default export, an import cycle, and a bare specifier each fail the build with a message naming the file; none of them silently produces a bundle.
-- [ ] `new Function(bundle)` parses the output.
-- [ ] `dist/` is tracked by git and absent from `.gitignore`; eslint ignores it.
-- [ ] `npm run check` passes.
-- [ ] every new pointer comment resolves (`node tools/check-comments.mjs`)
+- [x] `npm run build:janitor` writes `dist/janitor-manuscript-dissolve.user.js` and exits 0 on the tree as it stands after brief 0028.
+- [x] The written file begins with `// ==UserScript==` … `// ==/UserScript==` including `@match https://janitorai.com/*`, `@grant none`, `@run-at document-start`, `@sandbox raw`, followed by the generated-file banner and one IIFE.
+- [x] Every string literal from a bundled `src/` module appears in the bundle byte-identical to the source (asserted on at least one literal from a bundled module, or on the whole stripped module body).
+- [x] Two consecutive builds produce identical bytes.
+- [x] Duplicate top-level names, a default export, an import cycle, and a bare specifier each fail the build with a message naming the file; none of them silently produces a bundle.
+  Deviation, deliberate: two **byte-identical function declarations** are allowed through, because `janitor/envelope.js` and `janitor/shape.js` both carry the same private `isObject` helper and this brief forbids editing `janitor/**` — without the exception acceptance item 1 is unreachable. Rationale and limits: `docs/modules/janitor-build.md#duplicate-top-level-names`.
+- [x] `new Function(bundle)` parses the output.
+- [x] `dist/` is tracked by git and absent from `.gitignore`; eslint ignores it.
+- [x] `npm run check` passes.
+- [x] every new pointer comment resolves (`node tools/check-comments.mjs`)
 
 ## Docs to write/update
 - `docs/modules/janitor-build.md` — new. Headings for the pointer comments: `## Why a hand-written concatenator` (no dependency, the graph is small and fully controlled; plan `#layout-and-build`); `## Supported module syntax` (the exact subset, and that anything else is a hard failure rather than a best effort); `## Bundle shape` (header block, banner, single IIFE, `'use strict'`); `## dist is a build product` (committed like `presets/`, never hand-edited, rebuilt with `npm run build:janitor`); `## What the build must never do` (rewrite literals — the byte-identical model-facing strings that keep both hosts cache-compatible, plan Architecture layer 2).
