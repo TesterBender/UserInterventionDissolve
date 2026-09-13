@@ -355,9 +355,1013 @@ function installXhrWarning() {
   };
 }
 
+// ---- src/constants.js ----
+// log-prefix: shared console line prefix → docs/modules/bootstrap.md#log-prefix
+const LOG_PREFIX = '[UID]';
+
+// metadata-key: chatMetadata namespace for canonical state → docs/modules/host.md#metadata-namespace
+const METADATA_KEY = 'userInterventionDissolve';
+
+// state-shape: version field of the stored per-chat structure → docs/modules/state.md#shape
+const STATE_VERSION = 3;
+
+// block-delimiter: write-side join string; read side is grammar's parser → docs/modules/grammar.md#block-delimiter
+const BLOCK_DELIMITER = '\n\n';
+
+// settings-key: extensionSettings namespace → docs/modules/host.md#settings-namespace
+const SETTINGS_KEY = 'userInterventionDissolve';
+
+// interceptor-global: must equal manifest.json's generate_interceptor value → docs/modules/bootstrap.md#interceptor-placeholder
+const INTERCEPTOR_GLOBAL = 'userInterventionDissolveInterceptor';
+
+// required-keys: every context key a host operation needs → docs/modules/host.md#required-keys
+const REQUIRED_KEYS = [
+  'chat',
+  'chatMetadata',
+  'eventSource',
+  'saveChat',
+  'saveMetadata',
+  'substituteParams',
+  'name1',
+  'stopGeneration',
+  'extensionSettings',
+  'saveSettingsDebounced',
+];
+
+// freeze-min-words: §16 target floor; no cut is considered below it → docs/modules/freeze.md#target-jitter
+const FREEZE_MIN_WORDS = 3000;
+
+// freeze-max-words: advisory ceiling; a cut past it is an overrun → docs/modules/freeze.md#overrun
+const FREEZE_MAX_WORDS = 4200;
+
+// final-min-words: floor below which units are not sealed into a final span → docs/modules/freeze.md#seal-policy
+const FINAL_MIN_WORDS = 6000;
+
+// final-max-words: hard ceiling for one sealed final span → docs/modules/freeze.md#seal-policy
+const FINAL_MAX_WORDS = 10000;
+
+// ---- src/prompt.js ----
+// grammar-text: craft framing first, then the four load-bearing rules → docs/modules/prompt.md#grammar-text
+// tag-ladder: name, unnamed, collective, animate; no rung below → docs/modules/prompt.md#tag-ladder
+// plain-tag-header: header stays plain; styling never mentioned → docs/modules/prompt.md#plain-tag-header
+// says-nothing-of-mechanics: no real name, no assembly, no single-act instruction → docs/modules/prompt.md#says-nothing-of-mechanics
+const MANUSCRIPT_SYSTEM_PROMPT = `This is a piece of creative writing shaped by what is already on the page: the voices, the unfinished gestures, the things characters have begun but not yet completed. Write it as prose that feels particular and sensory, and let it be strange when the story wants to be strange.
+
+The narrative follows a simple format.
+
+A figure takes the passage with a header on its own line, and everything that follows is theirs until the next header: what they say, what they do, what they choose, what they notice, what they intend, and how they understand what is happening. A passage runs for as many paragraphs as it needs. Description, hesitation, the room around them, the consequences of what they just did all belong inside it, the way they would in any story told close to one person. The header appears once, when the figure takes the passage; new paragraphs are just the prose breathing.
+
+The tag does not have to be a person's name. It can simply be whatever the story currently knows them as. If the story later gives them a name, the tag can change with it.
+
+\`\`\`
+Idris:
+He sets the cup down. "No."
+
+The tall one:
+She laughs before she has decided to.
+
+Guards:
+They lower their spears together.
+
+The dog:
+It refuses the doorway.
+\`\`\`
+
+Sometimes the world itself takes the floor: weather moving in, time passing, something happening two streets away, the slow consequence of what was set in motion earlier. Those passages open with ∅: on its own line. Use it when the story's attention genuinely leaves the characters for a moment; ordinary description inside someone's passage stays theirs.
+
+For instance:
+
+\`\`\`
+Idris:
+He sets the cup down and does not pick it up again.
+
+For a while he watches the door instead of the man in front of him. Whatever he had meant to say has gone thin on him while he waited, and he lets it go.
+
+"You'll want to see the ledger before you decide anything."
+
+∅:
+Rain has been working at the windows since noon, steady enough that the room has stopped hearing it. Down in the yard the carts are gone; only the ruts remain, filling.
+
+The bell for the second watch comes late, then twice, as if whoever rang it had forgotten and remembered.
+
+The clerk:
+She takes the ledger from the shelf without being asked.
+\`\`\`
+
+Noticing is not the same as making something happen. A figure can watch another, guess at them, expect something from them, or misunderstand what they mean, but another figure's speech, action, choice, or acceptance belongs in that figure's own passage. If the page has not yet given them that moment, leave it open. A plate set down can be an offer; it does not become a meal until someone actually takes it.
+
+When what comes next belongs to another figure, the page is allowed to wait for them. Everyone else can keep speaking, moving, noticing, or doing whatever is theirs to do around that gap without filling it in on their behalf.
+
+If a tagged figure begins something or holds an intention, that can continue across later narration until the story gives it a reason to stop, change, or be interrupted.
+
+A group tag can stand for several figures while they are still moving together or remain individually indistinct. Once one of them becomes distinct enough to receive their own tag, their actions and choices belong to them separately.
+
+The purpose of the tags is simply to keep the page clear about who is speaking, acting, noticing, or choosing, without forcing the prose into a conventional script.
+
+Beyond that, follow the story where it leads.
+
+The story ends when it has reached its ending.`;
+
+// continuation-control: one frozen byte-stable string, never recomposed → docs/modules/prompt.md#continuation-control
+const CONTINUATION_CONTROL =
+  'Continue naturally from where the manuscript leaves off, with the full preceding context in mind. Let what has already been established—character intentions, scene dynamics, tone, and unfolding circumstances—inform what follows, while staying consistent with the existing voice and perspective.';
+
+// solo-continuation: canonical string by reference plus one pinned sentence → docs/modules/prompt.md#solo-continuation
+const SOLO_CONTINUATION_CONTROL = `${CONTINUATION_CONTROL} For this stretch, {{user}} is in the scene but stays out of the writing; let the others carry it.`;
+
+// take-stock: opt-in §22 state-reconstruction paragraph, disabled by default → docs/modules/prompt.md#take-stock
+const TAKE_STOCK_PROMPT = 'Before the next stretch, take stock of the room: who is where, what each of them knows and does not know, what is still in motion from earlier, and who has a reason to move now. Let what comes next grow out of that, not out of where the story ought to end up.';
+
+// ---- src/grammar.js ----
+// block-delimiter: blank line is the only block separator, CRLF included → docs/modules/grammar.md#block-delimiter
+const DELIMITER = /\r?\n(?:[ \t]*\r?\n)+/g;
+
+// tag-header: any name-then-colon at block start is a tag → docs/modules/grammar.md#tag-header
+const TAG_HEADER = /^(?!["“”'‘’«»])([\p{L}\p{N}][\p{L}\p{N} '’\-.]{0,39}):(?=\s|$)/u;
+
+// neutral-header: U+2205 is outside TAG_HEADER's first-character class → docs/modules/grammar.md#spans
+const NEUTRAL_HEADER = /^∅:(?=\s|$)/u;
+
+// block-completeness: terminal punctuation plus balanced double quotes → docs/modules/grammar.md#block-completeness
+const TERMINAL = /[.!?…]["”'’)\]*]*$/;
+
+function trimRange(text, start, end) {
+  let s = start;
+  let e = end;
+  while (s < e && /\s/.test(text[s])) s += 1;
+  while (e > s && /\s/.test(text[e - 1])) e -= 1;
+  return { start: s, end: e };
+}
+
+function isBlockComplete(blockText) {
+  const trimmed = blockText.replace(/\s+$/, '');
+  if (!trimmed) return false;
+  if (!TERMINAL.test(trimmed)) return false;
+  return (trimmed.match(/"/g) || []).length % 2 === 0;
+}
+
+function parseTagHeader(blockText) {
+  const match = TAG_HEADER.exec(blockText);
+  if (!match) return null;
+  const body = blockText.slice(match[0].length).replace(/^[ \t]*\r?\n?/, '');
+  return { actor: match[1].trim(), body };
+}
+
+function parseManuscript(text) {
+  const segments = [];
+  let cursor = 0;
+  let match;
+  DELIMITER.lastIndex = 0;
+  while ((match = DELIMITER.exec(text)) !== null) {
+    segments.push({ start: cursor, end: match.index, delimited: true });
+    cursor = match.index + match[0].length;
+  }
+  segments.push({ start: cursor, end: text.length, delimited: false });
+
+  const blocks = [];
+  for (const segment of segments) {
+    const { start, end } = trimRange(text, segment.start, segment.end);
+    if (start === end) continue;
+    const raw = text.slice(start, end);
+    const header = parseTagHeader(raw);
+    blocks.push({
+      kind: header ? 'tag' : 'buffer',
+      actor: header ? header.actor : null,
+      body: header ? header.body : raw,
+      raw,
+      start,
+      end,
+      complete: segment.delimited ? true : isBlockComplete(raw),
+    });
+  }
+  return blocks;
+}
+
+// reserved-opener: the caller's literal opens a span even when no header parses → docs/modules/grammar.md#reserved-spans
+function opensReserved(block, reservedActor) {
+  if (reservedActor === '') return false;
+  return findTagLiteral(block.raw, reservedActor).some((hit) => hit.atBlockStart);
+}
+
+// agency-spans: a header opens a span; every other block joins it → docs/modules/grammar.md#spans
+function groupSpans(blocks, options = {}) {
+  const reservedActor = typeof options.reservedActor === 'string' ? options.reservedActor : '';
+  const spans = [];
+  blocks.forEach((block, index) => {
+    const neutral = NEUTRAL_HEADER.test(block.raw);
+    const reserved = opensReserved(block, reservedActor);
+    const opens = neutral || reserved || block.kind === 'tag';
+    if (!opens && spans.length > 0) {
+      const current = spans[spans.length - 1];
+      current.end = block.end;
+      current.blockIndices.push(index);
+      return;
+    }
+    spans.push({
+      header: reserved ? reservedActor : (neutral ? '∅' : block.actor),
+      neutral,
+      reserved,
+      start: block.start,
+      end: block.end,
+      blockIndices: [index],
+    });
+  });
+  return spans;
+}
+
+// tag-literal-lookup: caller names the actor; grammar knows no character → docs/modules/grammar.md#tag-literal-lookup
+function findTagLiteral(text, actor) {
+  const literal = `${actor}:`;
+  const blockStarts = new Set(parseManuscript(text).map((block) => block.start));
+  const found = [];
+  let index = text.indexOf(literal);
+  while (index !== -1) {
+    found.push({ index, atBlockStart: blockStarts.has(index) });
+    index = text.indexOf(literal, index + 1);
+  }
+  return found;
+}
+
+function isTrailingBlockComplete(text) {
+  const blocks = parseManuscript(text);
+  if (blocks.length === 0) return false;
+  return blocks[blocks.length - 1].complete;
+}
+
+function lastCompleteBoundary(text) {
+  const blocks = parseManuscript(text);
+  for (let i = blocks.length - 1; i >= 0; i -= 1) {
+    if (blocks[i].complete) return blocks[i].end;
+  }
+  return 0;
+}
+
+function truncateToLastCompleteBlock(text) {
+  return text.slice(0, lastCompleteBoundary(text)).replace(/\s+$/, '');
+}
+
+// ---- src/derive.js ----
+// own-line-header: one header, one span, paragraphs below it verbatim → docs/modules/derive.md#own-line-header
+// transformation-rule: head the contribution, paragraphs byte-identical → docs/modules/derive.md#transformation-rule
+// reserved-literal: borrowed from boundary, empty name writes no tag → docs/modules/derive.md#reserved-literal
+function toManuscriptBlock(text, literal) {
+  if (typeof text !== 'string') return '';
+  const trimmed = text.trim();
+  if (trimmed === '') return '';
+  if (typeof literal !== 'string' || literal === '') return trimmed;
+
+  const actor = literal.replace(/:$/, '').trim();
+  const header = parseTagHeader(trimmed);
+  if (header !== null && header.actor.trim().toLowerCase() === actor.trim().toLowerCase()) return trimmed;
+
+  return `${literal}\n${trimmed}`;
+}
+
+// message-ids: random and meaningless, spread past sibling markers → docs/modules/derive.md#message-ids
+function ensureMessageId(message) {
+  const existing = message.extra?.[METADATA_KEY]?.id;
+  if (typeof existing === 'string') return existing;
+
+  const id = Math.random().toString(36).slice(2, 10);
+  message.extra = message.extra ?? {};
+  message.extra[METADATA_KEY] = { ...(message.extra[METADATA_KEY] ?? {}), id };
+  return id;
+}
+
+// assign-ids: one pass, called by the handlers that already saveChat → docs/modules/derive.md#message-ids
+function assignIds(chat) {
+  if (!Array.isArray(chat)) return false;
+
+  let assigned = false;
+  for (const message of chat) {
+    if (typeof message !== 'object' || message === null) continue;
+    if (typeof message.mes !== 'string' || message.is_system === true) continue;
+    if (typeof message.extra?.[METADATA_KEY]?.id === 'string') continue;
+    ensureMessageId(message);
+    assigned = true;
+  }
+  return assigned;
+}
+
+// considered: the gate every derivation rule is expressed over → docs/modules/derive.md#derivation-rule
+function isConsidered(message) {
+  if (typeof message !== 'object' || message === null) return false;
+  return typeof message.mes === 'string' && message.is_system !== true;
+}
+
+// regeneration-scope: swipe drops the message under regeneration; regenerate already removed it → docs/modules/derive.md#regeneration-scope
+function excludedIndex(chat, options) {
+  if (options?.excludeLastAssistant !== true) return -1;
+  for (let i = chat.length - 1; i >= 0; i -= 1) {
+    if (!isConsidered(chat[i])) continue;
+    return chat[i].is_user === true ? -1 : i;
+  }
+  return -1;
+}
+
+// derivation-rule: per-message inclusion, watermark slice, user transform → docs/modules/derive.md#derivation-rule
+// purity: reads chat and state, mutates neither, assigns no id → docs/modules/derive.md#purity
+function deriveFrontier(chat, state, literal, options = {}) {
+  if (!Array.isArray(chat)) return { text: '', segments: [] };
+
+  const frozenIds = new Set(state?.frozenIds ?? []);
+  const watermark = state?.watermark ?? { messageId: null, offset: 0 };
+  const excluded = excludedIndex(chat, options);
+
+  const blocks = [];
+  const segments = [];
+  let end = 0;
+
+  for (let index = 0; index < chat.length; index += 1) {
+    const message = chat[index];
+    if (!isConsidered(message)) continue;
+    if (index === excluded) continue;
+
+    // per-message: an absent or unknown id is mutable, never frozen → docs/modules/derive.md#per-message
+    const id = message.extra?.[METADATA_KEY]?.id ?? null;
+    if (id !== null && frozenIds.has(id)) continue;
+
+    const offset = watermark.offset;
+    const cut = id === watermark.messageId && Number.isFinite(offset) && offset > 0;
+    const source = cut ? message.mes.slice(offset) : message.mes;
+
+    const block = message.is_user === true ? toManuscriptBlock(source, literal) : source.trim();
+    if (block === '') continue;
+
+    // source-start: offset into mes, null when the transform shifted it → docs/modules/derive.md#derivation-rule
+    const sourceStart = block === source.trim()
+      ? (cut ? offset : 0) + (source.length - source.trimStart().length)
+      : null;
+
+    const start = blocks.length === 0 ? 0 : end + BLOCK_DELIMITER.length;
+    end = start + block.length;
+    segments.push({ id, start, end, sourceStart });
+    blocks.push(block);
+  }
+
+  return { text: blocks.join(BLOCK_DELIMITER), segments };
+}
+
+// ---- src/frontier.js ----
+// five-fields: name/is_user/is_system/mes/extra, nothing time-varying → docs/modules/frontier.md#shape
+function reconstructed(name, isUser, mes) {
+  return { name, is_user: isUser, is_system: false, mes, extra: { [METADATA_KEY]: { reconstructed: true } } };
+}
+
+// total-reconstruction: final spans from state, mutable turn from options → docs/modules/frontier.md#total-reconstruction
+// tiered-shape: one canonical control after every final, units carry no turn → docs/modules/frontier.md#shape
+// empty-state: blank state yields no array, not a lone continuation turn → docs/modules/frontier.md#empty-state
+// solo-variant: options.control replaces the live control text for one request → docs/modules/frontier.md#solo-variant
+function buildHistory(state, { name1, name2 }, options = {}) {
+  if (typeof state !== 'object' || state === null) return [];
+
+  const assistantName = String(name2 ?? '');
+  const userName = String(name1 ?? '');
+  const history = [];
+
+  if (Array.isArray(state.frozen)) {
+    for (const span of state.frozen) {
+      const text = String(span?.text ?? '');
+      if (text === '') continue;
+      history.push(reconstructed(assistantName, false, text));
+      history.push(reconstructed(userName, true, CONTINUATION_CONTROL));
+    }
+  }
+
+  const units = Array.isArray(state.units) ? state.units.map((unit) => String(unit?.text ?? '')) : [];
+  const frontier = typeof options?.frontier === 'string' ? options.frontier : '';
+  const pieces = [...units, frontier].filter((piece) => piece.trim() !== '');
+  if (pieces.length === 0) return history;
+
+  history.push(reconstructed(assistantName, false, pieces.join(BLOCK_DELIMITER)));
+  const control = typeof options?.control === 'string' && options.control !== '' ? options.control : CONTINUATION_CONTROL;
+  history.push(reconstructed(userName, true, control));
+  return history;
+}
+
+// array-identity: clear and refill in place, loop not spread → docs/modules/frontier.md#interceptor-scope
+function applyToRequestChat(chat, history) {
+  if (!Array.isArray(chat) || !Array.isArray(history) || history.length === 0) return false;
+  chat.length = 0;
+  for (const message of history) chat.push(message);
+  return true;
+}
+
+// regeneration-scope: only swipe still holds its old message in chat[] → docs/modules/frontier.md#interceptor-body
+function regeneratesLastMessage(type) {
+  return type === 'swipe';
+}
+
+// skipped-generation-types: quiet and impersonate only; unknown types reconstruct → docs/modules/frontier.md#skipped-generation-types
+function shouldReconstruct(type) {
+  return type !== 'quiet' && type !== 'impersonate';
+}
+
+// ---- src/state.js ----
+// state-shape: final spans, unsealed units, consumed ids, one watermark → docs/modules/state.md#shape
+function createState() {
+  return { version: STATE_VERSION, frozen: [], units: [], frozenIds: [], watermark: { messageId: null, offset: 0 } };
+}
+
+// can-push-span: the accept test both push paths and freeze's pre-check share → docs/modules/state.md#can-push-span
+function canPushSpan(text) {
+  return typeof text === 'string' && text.trim() !== '' && isTrailingBlockComplete(text);
+}
+
+// append-only: refuse a mid-block span, no removal or replacement path → docs/modules/state.md#append-only
+// mutation-is-storage: the stored object is mutated in place → docs/modules/state.md#mutation-is-storage
+function pushFrozen(state, span) {
+  const text = span.text;
+  if (!canPushSpan(text)) return false;
+
+  const words = Number.isFinite(span.words) ? span.words : (text.match(/\S+/g) ?? []).length;
+  const createdAt = Number.isFinite(span.createdAt) ? span.createdAt : Date.now();
+  state.frozen.push({ text, words, createdAt });
+  return true;
+}
+
+// push-unit: same contract as pushFrozen, onto the unsealed tier → docs/modules/state.md#push-unit
+function pushUnit(state, unit) {
+  const text = unit.text;
+  if (!canPushSpan(text)) return false;
+
+  const words = Number.isFinite(unit.words) ? unit.words : (text.match(/\S+/g) ?? []).length;
+  const createdAt = Number.isFinite(unit.createdAt) ? unit.createdAt : Date.now();
+  state.units.push({ text, words, createdAt });
+  return true;
+}
+
+// seal-units: joins the unsealed units into one final span, decides no policy → docs/modules/state.md#seal-units
+function sealUnits(state) {
+  if (state.units.length === 0) return null;
+
+  const text = state.units.map((unit) => unit.text).join(BLOCK_DELIMITER);
+  const words = state.units.reduce((total, unit) => total + unit.words, 0);
+  // seal-refusal: a refused push keeps the units, so no text is lost → docs/modules/state.md#seal-units
+  if (!pushFrozen(state, { text, words })) return false;
+
+  state.units.length = 0;
+  return state.frozen.length - 1;
+}
+
+// advance-watermark: the only writer of frozenIds and watermark → docs/modules/state.md#advance-watermark
+function advanceWatermark(state, { messageId, offset, consumedIds }) {
+  for (const id of consumedIds) {
+    if (typeof id !== 'string' || id === '') continue;
+    if (state.frozenIds.includes(id)) continue;
+    state.frozenIds.push(id);
+  }
+  state.watermark = { messageId: messageId ?? null, offset: Number.isFinite(offset) ? offset : 0 };
+}
+
+// ---- src/freeze.js ----
+// sentence-final: copy of grammar's private TERMINAL → docs/modules/freeze.md#salience-heuristics
+const SENTENCE_FINAL = /[.!?…]["”'’)\]*]*$/;
+
+// scene-separator: a line of three or more * or - → docs/modules/freeze.md#salience-heuristics
+const SCENE_SEPARATOR = /^(?:\*[ \t]*){3,}$|^(?:-[ \t]*){3,}$/;
+
+// word-count: /\S+/g once, matching pushFrozen's fill rule → docs/modules/freeze.md#word-counting
+function countWords(text) {
+  return (String(text ?? '').match(/\S+/g) ?? []).length;
+}
+
+// jitter-offset: drawn once per call, seed derived from the text → docs/modules/freeze.md#target-jitter
+function jitterOffset(seed, span) {
+  if (!(span > 0)) return 0;
+  let x = (Number.isFinite(seed) ? Math.trunc(seed) : 0) >>> 0;
+  x = (x + 0x9e3779b9) >>> 0;
+  x ^= x << 13;
+  x >>>= 0;
+  x ^= x >>> 17;
+  x ^= x << 5;
+  x >>>= 0;
+  return x % (span + 1);
+}
+
+// reserved-actor: the literal minus its colon, handed to grammar → docs/modules/freeze.md#salience-heuristics
+function reservedActor(literal) {
+  return typeof literal === 'string' ? literal.replace(/:$/, '') : '';
+}
+
+function isAllCaps(line) {
+  const letters = line.match(/\p{L}/gu) ?? [];
+  return letters.length >= 2 && line === line.toUpperCase();
+}
+
+function isTitleCase(line) {
+  const words = line.split(/\s+/).filter((word) => word !== '');
+  if (words.length === 0) return false;
+  return words.every((word) => {
+    const first = word[0];
+    if (!/\p{L}/u.test(first)) return true;
+    return first === first.toUpperCase();
+  });
+}
+
+// scene-opening: mechanical marker test, never a semantic judgement → docs/modules/freeze.md#salience-heuristics
+function isSceneOpening(block, opensSpan) {
+  const first = block.raw.split(/\r?\n/)[0].trim();
+  if (SCENE_SEPARATOR.test(first)) return true;
+  if (opensSpan) return false;
+  if (countWords(block.raw) > 6) return false;
+  return isAllCaps(first) || isTitleCase(first);
+}
+
+// soft-preferences: neutral span start, then any span start, then scene-seam avoidance → docs/modules/freeze.md#salience-heuristics
+function preferred(inBudget, blocks, spans, spanOf, cumWords, target) {
+  const spanStart = (i) => spans[spanOf[i + 1]].blockIndices[0] === i + 1;
+  const neutralStart = (i) => spanStart(i) && spans[spanOf[i + 1]].neutral;
+  const sceneSeam = (i) =>
+    SENTENCE_FINAL.test(blocks[i].raw.replace(/\s+$/, '')) && isSceneOpening(blocks[i + 1], spanStart(i));
+
+  const tiers = [
+    inBudget.filter((i) => neutralStart(i) && !sceneSeam(i)),
+    inBudget.filter((i) => neutralStart(i)),
+    inBudget.filter((i) => spanStart(i) && !sceneSeam(i)),
+    inBudget.filter((i) => spanStart(i)),
+    inBudget.filter((i) => !sceneSeam(i)),
+    inBudget,
+  ];
+  const pool = tiers.find((tier) => tier.length > 0);
+
+  let best = pool[0];
+  for (const i of pool) {
+    const distance = Math.abs(cumWords[i] - target);
+    const bestDistance = Math.abs(cumWords[best] - target);
+    if (distance < bestDistance || (distance === bestDistance && cumWords[i] < cumWords[best])) {
+      best = i;
+    }
+  }
+  return best;
+}
+
+// cut-selection: hard rules, then preferences, over a jittered target → docs/modules/freeze.md#candidates
+function selectCut(frontierText, literal, opts = {}) {
+  const { min = FREEZE_MIN_WORDS, max = FREEZE_MAX_WORDS, jitterSeed, maxFrozenEnd } = opts;
+  if (typeof frontierText !== 'string' || frontierText === '') return null;
+
+  const blocks = parseManuscript(frontierText);
+  if (blocks.length < 2) return null;
+
+  const cumWords = blocks.map((block) => countWords(frontierText.slice(0, block.end)));
+  const spans = groupSpans(blocks, { reservedActor: reservedActor(literal) });
+  const spanOf = [];
+  spans.forEach((span, k) => span.blockIndices.forEach((i) => { spanOf[i] = k; }));
+
+  const safe = [];
+  for (let i = 0; i <= blocks.length - 2; i += 1) {
+    if (!blocks[i].complete) continue;
+    if (cumWords[i] < min) continue;
+    if (spans[spanOf[i]].reserved || spans[spanOf[i + 1]].reserved) continue;
+    // last-message-clamp: hard rule, a capped boundary is withheld → docs/modules/freeze.md#last-message-clamp
+    if (Number.isFinite(maxFrozenEnd) && blocks[i].end > maxFrozenEnd) continue;
+
+    safe.push(i);
+  }
+  if (safe.length === 0) return null;
+
+  const seed = Number.isFinite(jitterSeed) ? jitterSeed : countWords(frontierText);
+  const target = min + jitterOffset(seed, max - min);
+
+  // overrun: first safe boundary past max, preferences not applied → docs/modules/freeze.md#overrun
+  const inBudget = safe.filter((i) => cumWords[i] <= max);
+  const chosen = inBudget.length === 0 ? safe[0] : preferred(inBudget, blocks, spans, spanOf, cumWords, target);
+
+  return {
+    blockIndex: chosen,
+    frozenEnd: blocks[chosen].end,
+    index: blocks[chosen + 1].start,
+    words: cumWords[chosen],
+    target,
+    overrun: cumWords[chosen] > max,
+  };
+}
+
+// units-words: the unsealed tier's running total, the only seal input → docs/modules/freeze.md#seal-policy
+function unitsWords(state) {
+  return state.units.reduce((total, unit) => total + unit.words, 0);
+}
+
+// stall-warning: one warn per state whose units cannot be sealed → docs/modules/freeze.md#seal-policy
+const stalled = new WeakSet();
+
+function warnStalled(state) {
+  if (stalled.has(state)) return;
+  stalled.add(state);
+  console.warn(`${LOG_PREFIX} compilation stalled: the compiled units cannot be sealed`);
+}
+
+// seal-record: one entry per seal, none when the push was refused → docs/modules/freeze.md#seal-policy
+function seal(state, seals) {
+  const frozenIndex = sealUnits(state);
+  if (typeof frozenIndex !== 'number') return;
+
+  seals.push({ frozenIndex, words: state.frozen[frozenIndex].words });
+}
+
+// compile-unit: cut offset mapped onto a message → docs/modules/freeze.md#watermark-mapping
+// seal-policy: the unit is sealed into a final span around the push → docs/modules/freeze.md#seal-policy
+function compileUnit(state, derived, literal, opts = {}) {
+  const cut = selectCut(derived.text, literal, opts);
+  if (cut === null) return null;
+
+  const segments = derived.segments;
+  const segment = segments.find((s) => s.start <= cut.frozenEnd && cut.frozenEnd <= s.end);
+  if (segment === undefined) return null;
+
+  let messageId = null;
+  let offset = 0;
+  let consumedIds;
+
+  if (cut.frozenEnd === segment.end) {
+    consumedIds = segments.filter((s) => s.end <= cut.frozenEnd).map((s) => s.id);
+  } else {
+    // partial-refusal: no honest offset into mes, so no freeze this time → docs/modules/freeze.md#watermark-mapping
+    if (segment.sourceStart === null || segment.id === null) return null;
+    consumedIds = segments.filter((s) => s.end <= segment.start).map((s) => s.id);
+    messageId = segment.id;
+    offset = segment.sourceStart + (cut.frozenEnd - segment.start);
+  }
+
+  // push-refusal: a span canPushSpan rejects leaves the state byte-identical → docs/modules/freeze.md#overrun
+  const text = derived.text.slice(0, cut.frozenEnd);
+  if (!canPushSpan(text)) return null;
+
+  const seals = [];
+  // ceiling-guard: a combination above the ceiling is never created → docs/modules/freeze.md#seal-policy
+  if (state.units.length > 0 && unitsWords(state) + cut.words > FINAL_MAX_WORDS) {
+    seal(state, seals);
+    // ceiling-stall: a refused seal stops the push, state byte-identical → docs/modules/freeze.md#seal-policy
+    if (seals.length === 0) {
+      warnStalled(state);
+      return null;
+    }
+  }
+
+  pushUnit(state, { text, words: cut.words });
+  advanceWatermark(state, { messageId, offset, consumedIds });
+  const unitIndex = state.units.length - 1;
+
+  // seal-policy: seal once one more unit could no longer fit under the ceiling → docs/modules/freeze.md#seal-policy
+  if (unitsWords(state) >= FINAL_MIN_WORDS && unitsWords(state) + FREEZE_MAX_WORDS > FINAL_MAX_WORDS) seal(state, seals);
+
+  return {
+    unitIndex,
+    words: cut.words,
+    target: cut.target,
+    overrun: cut.overrun,
+    blockIndex: cut.blockIndex,
+    watermark: { messageId, offset },
+    seals,
+  };
+}
+
+// ---- src/boundary.js ----
+// stop-fields: stop for chat completion, stopping_strings and stop for text → docs/modules/boundary.md#stop-fields
+const STOP_FIELDS = { chat: ['stop'], text: ['stopping_strings', 'stop'] };
+
+// reserved-literal: `${persona}:` bare, recomputed per use, never stored → docs/modules/boundary.md#reserved-literal
+function reservedLiteral(ctx) {
+  let name = '';
+  try {
+    const expanded = ctx.substituteParams('{{user}}');
+    if (typeof expanded === 'string' && expanded !== '{{user}}') name = expanded.trim();
+  } catch {
+    name = '';
+  }
+  if (name === '') name = String(ctx.name1 ?? '').trim();
+  return name === '' ? '' : `${name}:`;
+}
+
+// why-first-in-stop-array: index 0 survives a provider-side cap → docs/modules/boundary.md#why-first-in-stop-array
+function applyStopStrings(body, literal, api) {
+  if (literal === '' || typeof body !== 'object' || body === null) return body;
+  for (const field of STOP_FIELDS[api]) {
+    if (!Array.isArray(body[field])) body[field] = [];
+    const strings = body[field];
+    for (let i = strings.length - 1; i >= 0; i -= 1) {
+      if (strings[i] === literal) strings.splice(i, 1);
+    }
+    strings.unshift(literal);
+  }
+  return body;
+}
+
+// block-start-only: position decides, never the parsed actor → docs/modules/boundary.md#block-start-only
+function findBoundary(text, literal) {
+  if (typeof text !== 'string' || literal === '') return { index: -1, endsAtLiteral: false };
+  const occurrence = findTagLiteral(text, literal.replace(/:$/, '')).find((found) => found.atBlockStart);
+  if (occurrence === undefined) return { index: -1, endsAtLiteral: false };
+  return {
+    index: occurrence.index,
+    endsAtLiteral: text.slice(occurrence.index + literal.length).trim() === '',
+  };
+}
+
+// receipt-trim: cut back to the character before the literal → docs/modules/boundary.md#receipt-trim
+function trimAtBoundary(text, literal) {
+  const { index } = findBoundary(text, literal);
+  if (index === -1) return text;
+  return text.slice(0, index).replace(/\s+$/, '');
+}
+
+// ---- janitor/constants.js ----
+// sentinel-literal: exact match only, consumed by the request transform → docs/modules/janitor-adapter.md#sentinel
+const SENTINEL = '//';
+
+// storage-key: one localStorage entry per Janitor chat id → docs/modules/janitor-adapter.md#stored-state
+const STORAGE_KEY_PREFIX = 'uid-janitor-v1:';
+
+// horizon-budget: host constant, never a setting and never read from Janitor → docs/modules/janitor-adapter.md#horizon-budget
+const JANITOR_HORIZON_TOKEN_BUDGET = 100_000;
+
+// horizon-hysteresis: once over budget, drop to this fraction of it → docs/modules/janitor-adapter.md#transport-horizon
+const JANITOR_HORIZON_HYSTERESIS = 0.8;
+
+// words-per-token: the estimate, no tokenizer and no dependency → docs/modules/janitor-adapter.md#horizon-budget
+const JANITOR_WORDS_PER_TOKEN = 1.4;
+
+// lead-in: pinned user-first turn for providers that demand one → docs/modules/janitor-adapter.md#lead-in
+const JANITOR_LEAD_IN = 'Write the manuscript.';
+
+// ---- janitor/storage.js ----
+// janitor-fields: v3 state plus literal, boundaries and watermarkText → docs/modules/janitor-adapter.md#stored-state
+function freshState() {
+  return { ...createState(), literal: '', boundaries: [], watermarkText: '' };
+}
+
+// per-chat-key: one entry per Janitor chat id, no global entry → docs/modules/janitor-adapter.md#stored-state
+function stateKey(chatId) {
+  return STORAGE_KEY_PREFIX + chatId;
+}
+
+// no-migration: a foreign or unreadable value is replaced, never guessed → docs/modules/janitor-adapter.md#stored-state
+function loadJanitorState(chatId, storage = localStorage) {
+  if (typeof chatId !== 'string' || chatId === '') return freshState();
+
+  const raw = storage.getItem(stateKey(chatId));
+  if (raw == null) return freshState();
+
+  let stored = null;
+  try {
+    stored = JSON.parse(raw);
+  } catch {
+    stored = null;
+  }
+
+  if (typeof stored !== 'object' || stored === null || stored.version !== STATE_VERSION) {
+    console.warn(`[Manuscript] stored state for ${chatId} is not readable as version ${STATE_VERSION}; starting fresh.`);
+    return freshState();
+  }
+
+  return stored;
+}
+
+// write-never-throws: a failed save must not abort a generation → docs/modules/janitor-adapter.md#stored-state
+function saveJanitorState(chatId, state, storage = localStorage) {
+  if (typeof chatId !== 'string' || chatId === '') return;
+
+  try {
+    storage.setItem(stateKey(chatId), JSON.stringify(state));
+  } catch (error) {
+    console.warn(`[Manuscript] could not save state for ${chatId}: ${error.message}`);
+  }
+}
+
+// ---- janitor/history.js ----
+// two-cursor-diff: envelope entries decide history, roles decide nothing → docs/modules/janitor-adapter.md#envelope-diff
+// no-envelope-fallback: without a record every non-system message is history → docs/modules/janitor-adapter.md#envelope-diff
+function classifyMessages(messages, envelopeChatMessages) {
+  const mains = Array.isArray(envelopeChatMessages)
+    ? envelopeChatMessages.filter((entry) => entry.isMain === true)
+    : [];
+
+  const history = [];
+  const injections = [];
+  let systemIndex = -1;
+  let cursor = 0;
+
+  for (let index = 0; index < messages.length; index += 1) {
+    const role = messages[index].role;
+    const content = messages[index].content;
+
+    // assembled-context: the first system turn is the card, not a turn → docs/modules/janitor-adapter.md#envelope-diff
+    if (systemIndex === -1 && (role === 'system' || role === 'developer')) {
+      systemIndex = index;
+      continue;
+    }
+
+    const entry = { index, role, content };
+    if (mains.length === 0) {
+      history.push(entry);
+      continue;
+    }
+
+    if (cursor < mains.length && mains[cursor].message === content) {
+      cursor += 1;
+      history.push(entry);
+      continue;
+    }
+
+    injections.push(entry);
+  }
+
+  return { history, injections, systemIndex };
+}
+
+// st-shape: the four fields deriveFrontier reads, no name invented → docs/modules/janitor-adapter.md#st-shape-shim
+function toStShape(historyMessages, ids) {
+  return historyMessages.map((message, position) => ({
+    mes: message.content,
+    is_user: message.role === 'user',
+    is_system: false,
+    extra: { [METADATA_KEY]: { id: ids[position] } },
+  }));
+}
+
+// provider-shape: exact inverse of buildHistory's output → docs/modules/janitor-adapter.md#st-shape-shim
+function fromStShape(history) {
+  return history.map((message) => ({
+    role: message.is_user === true ? 'user' : 'assistant',
+    content: message.mes,
+  }));
+}
+
+// ---- janitor/identity.js ----
+// fnv1a32: dependency-free, allocation-free, stable across processes → docs/modules/janitor-adapter.md#content-hash-identity
+function fnv1a32(text) {
+  const input = String(text);
+  let hash = 0x811c9dc5;
+  for (let i = 0; i < input.length; i += 1) {
+    hash ^= input.charCodeAt(i);
+    hash = Math.imul(hash, 0x01000193) >>> 0;
+  }
+  return hash.toString(16).padStart(8, '0');
+}
+
+// content-identity: raw content, no trim and no substitution → docs/modules/janitor-adapter.md#content-hash-identity
+function messageIdentity(role, content, occurrence) {
+  return `${fnv1a32(role + content)}#${occurrence}`;
+}
+
+// occurrence-index: identical pairs counted from the front, mutates nothing → docs/modules/janitor-adapter.md#content-hash-identity
+function assignIdentities(messages) {
+  const seen = new Map();
+  const ids = [];
+  for (const message of messages) {
+    const role = String(message.role ?? '');
+    const content = String(message.content ?? '');
+    const key = `${role} ${content}`;
+    const occurrence = seen.get(key) ?? 0;
+    seen.set(key, occurrence + 1);
+    ids.push(messageIdentity(role, content, occurrence));
+  }
+  return ids;
+}
+
+// prefix-hash: the compiled part of the watermark message only → docs/modules/janitor-adapter.md#prefix-hash-watermark
+function prefixIdentity(content, offset) {
+  return fnv1a32(String(content).slice(0, offset));
+}
+
+// watermark-match: exact id, then prefix hash, then give up → docs/modules/janitor-adapter.md#prefix-hash-watermark
+function matchWatermark(ids, messages, watermark) {
+  const exact = ids.indexOf(watermark.messageId);
+  if (exact !== -1) return exact;
+
+  const offset = watermark.offset;
+  for (let index = 0; index < messages.length; index += 1) {
+    const content = String(messages[index].content ?? '');
+    if (content.length < offset) continue;
+    if (prefixIdentity(content, offset) === watermark.prefixHash) return index;
+  }
+  return -1;
+}
+
+// drift-report: indexes only, decides nothing and logs nothing → docs/modules/janitor-adapter.md#drift
+function classifyDrift(ids, matchedFlags) {
+  let lastMatched = -1;
+  for (let index = 0; index < matchedFlags.length; index += 1) {
+    if (matchedFlags[index]) lastMatched = index;
+  }
+
+  const editedBeforeIndexes = [];
+  for (let index = 0; index < lastMatched; index += 1) {
+    if (!matchedFlags[index]) editedBeforeIndexes.push(index);
+  }
+  return { editedBeforeIndexes };
+}
+
+// ---- janitor/transform.js ----
+// first-sentence-probe: computed from the import, never a copied literal → docs/modules/janitor-adapter.md#system-message
+const PROMPT_FIRST_SENTENCE = MANUSCRIPT_SYSTEM_PROMPT.slice(0, MANUSCRIPT_SYSTEM_PROMPT.indexOf('.') + 1);
+
+let warnedWithoutEnvelope = false;
+let warnedHorizonFloor = false;
+
+// fold-injections: prompt first, Janitor's text verbatim, injections appended → docs/modules/janitor-adapter.md#system-message
+function foldedSystemMessage(janitorText, injections) {
+  const head = janitorText.includes(PROMPT_FIRST_SENTENCE)
+    ? [janitorText]
+    : [MANUSCRIPT_SYSTEM_PROMPT, janitorText];
+  const parts = [...head.filter((text) => text !== ''), ...injections.map((injection) => String(injection.content ?? ''))];
+  return { role: 'system', content: parts.join(BLOCK_DELIMITER) };
+}
+
+function estimatedTokens(messages) {
+  let words = 0;
+  for (const message of messages) words += countWords(message.content);
+  return words * JANITOR_WORDS_PER_TOKEN;
+}
+
+// whole-pairs-from-the-front: span 0, the frontier and the edge are pinned → docs/modules/janitor-adapter.md#transport-horizon
+function withinHorizon(messages) {
+  if (estimatedTokens(messages) <= JANITOR_HORIZON_TOKEN_BUDGET) return messages;
+
+  const kept = [...messages];
+  const floor = JANITOR_HORIZON_TOKEN_BUDGET * JANITOR_HORIZON_HYSTERESIS;
+  while (estimatedTokens(kept) > floor && kept.length >= 7) kept.splice(3, 2);
+
+  if (estimatedTokens(kept) > JANITOR_HORIZON_TOKEN_BUDGET && !warnedHorizonFloor) {
+    warnedHorizonFloor = true;
+    console.warn(`${LOG_PREFIX} the request is over the transport budget with nothing left to drop`);
+  }
+  return kept;
+}
+
+// request-pipeline: gate, classify, derive, freeze, reconstruct, trim, stop → docs/modules/janitor-adapter.md#request-pipeline
+function transformRequest(data, context) {
+  const adapter = context.adapter;
+  if (adapter.kind !== 'chat') return false;
+  // anthropic-passthrough: a top-level system string is a later phase → docs/modules/janitor-adapter.md#request-pipeline
+  if (typeof adapter.requestContainer.system === 'string') return false;
+  if (!context.chatId || !context.personaName) {
+    if (!warnedWithoutEnvelope) {
+      warnedWithoutEnvelope = true;
+      console.warn(`${LOG_PREFIX} no /generateAlpha envelope for this conversation; the request is passed through`);
+    }
+    return false;
+  }
+
+  // reload-per-request: another tab may have compiled since the last one → docs/modules/janitor-adapter.md#request-pipeline
+  const state = loadJanitorState(context.chatId);
+  const messages = adapter.messagesContainer.messages;
+  const { history, injections, systemIndex } = classifyMessages(messages, context.chatMessages);
+  // sentinel-drop: exact match, every occurrence, before identities exist → docs/modules/janitor-adapter.md#sentinel
+  const kept = history.filter((entry) => !(entry.role === 'user' && entry.content === SENTINEL));
+
+  const ids = assignIdentities(kept);
+  const watermarkIndex = matchWatermark(ids, kept, state.watermark);
+  if (watermarkIndex !== -1) state.watermark.messageId = ids[watermarkIndex];
+  const frozenIds = new Set(state.frozenIds);
+  const drift = classifyDrift(ids, ids.map((id, index) => frozenIds.has(id) || index === watermarkIndex));
+
+  const literal = `${context.personaName}:`;
+  const shaped = toStShape(kept, ids);
+  let derived = deriveFrontier(shaped, state, literal);
+
+  let froze = false;
+  if (derived.segments.length >= 2) {
+    // last-message-clamp: the last segment's start, so regenerate stays safe → docs/modules/janitor-adapter.md#freeze-at-request-build
+    const maxFrozenEnd = derived.segments[derived.segments.length - 1].start;
+    if (compileUnit(state, derived, literal, { maxFrozenEnd }) !== null) {
+      froze = true;
+      const watermarked = kept[ids.indexOf(state.watermark.messageId)];
+      state.watermark.prefixHash = watermarked === undefined
+        ? ''
+        : prefixIdentity(watermarked.content, state.watermark.offset);
+      state.watermarkText = watermarked === undefined ? '' : String(watermarked.content);
+      derived = deriveFrontier(shaped, state, literal);
+      saveJanitorState(context.chatId, state);
+    }
+  }
+
+  const janitorText = systemIndex === -1 ? '' : String(messages[systemIndex].content ?? '');
+  // prefill-drop: the trailing assistant injection is the prefill, never folded → docs/modules/janitor-adapter.md#prefill-strip
+  const folded = injections.filter((entry) => !(entry.role === 'assistant' && entry.index === messages.length - 1));
+  const reconstruction = fromStShape(
+    buildHistory(state, { name1: context.personaName, name2: '' }, { frontier: derived.text }),
+  );
+  const outgoing = withinHorizon([foldedSystemMessage(janitorText, folded), ...reconstruction]);
+  // user-first: some providers refuse a history that opens on an assistant turn → docs/modules/janitor-adapter.md#lead-in
+  if (outgoing[1]?.role === 'assistant') outgoing.splice(1, 0, { role: 'user', content: JANITOR_LEAD_IN });
+  adapter.messagesContainer.messages = outgoing;
+
+  applyStopStrings(adapter.requestContainer, literal, 'chat');
+
+  // request-report: four facts, one line, the only sign of life until the panel → docs/modules/janitor-adapter.md#request-report
+  console.info(
+    `${LOG_PREFIX} finals ${state.frozen.length}, units ${state.units.length}, `
+      + `frontier ${countWords(derived.text)} words, froze ${froze ? 'yes' : 'no'}, `
+      + `drift ${drift.editedBeforeIndexes.length}`,
+  );
+  return true;
+}
+
 // ---- janitor/main.js ----
-// no-op-transform: the phase boundary; protocol logic replaces this → docs/modules/janitor-transport.md#transform-seam
-installTransport(() => false);
+// transform-seam: the request pipeline is the shell's only protocol consumer → docs/modules/janitor-transport.md#transform-seam
+installTransport(transformRequest);
 installXhrWarning();
 
 })();

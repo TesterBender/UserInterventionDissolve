@@ -73,7 +73,9 @@ The wrap exists now, in a phase that changes no bytes, because phase 5's boundar
 
 `installTransport(transform)` takes the transform as a parameter rather than importing it. It has exactly two consumers — the phase-3 protocol pipeline and the tests — which is precisely the case where a parameter beats a module-level import: the tests get to drive the shell without stubbing a module, and phase 3 gets to add behaviour without editing the shell.
 
-The contract is narrow. `transform(data, context)` may mutate `data` in place and returns truthy if and when it did; `context` is `{...envelope, url, adapter}` when this conversation has an envelope, otherwise `{url, adapter}`. `janitor/main.js` passes `() => false`, and that no-op is the phase boundary: while it is in place the shell is provably inert, and the first line of protocol logic on this host replaces it.
+The contract is narrow. `transform(data, context)` may mutate `data` in place and returns truthy if and when it did; `context` is `{...envelope, url, adapter}` when this conversation has an envelope, otherwise `{url, adapter}`.
+
+The seam is wired. `janitor/main.js` passes `transformRequest` from `janitor/transform.js` (brief 0033, `docs/modules/janitor-adapter.md#request-pipeline`); the phase-2 no-op is gone. The shell itself is unchanged and still knows nothing about the protocol, but it is no longer provably inert: the pass-through property now holds exactly for the bodies the transform gates out — a non-`chat` adapter, a request with no recorded envelope, and an Anthropic-shaped body carrying a top-level `system` string — and for those the caller's own body string is dispatched unchanged. The no-op transform survives only in the shell's own tests, which is what it was for.
 
 ## XHR detector
 

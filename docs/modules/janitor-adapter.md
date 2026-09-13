@@ -6,7 +6,7 @@ Depends on: `src/constants.js`, `src/state.js` (`createState`), and — at its c
 
 `janitor/constants.js`, `janitor/identity.js`, `janitor/storage.js` and `janitor/history.js` are the adapter layer of the Janitor userscript: the pure modules between the transport shell (`docs/modules/janitor-transport.md`) and the protocol code in `src/`. On SillyTavern the extension owns the chat array, stamps its own random message ids into `extra` and saves state into the chat file. On Janitor none of that exists: history lives on Janitor's server, arrives as an opaque `{role, content}` array in the request body, and is read-only. This layer manufactures the three things `src/` assumes and the host does not give — a stable identity per message, a place to keep canonical state, and the message shape `deriveFrontier` reads.
 
-Nothing here is wired. `janitor/main.js` still installs a transform that returns falsy; the call site that uses these functions is brief 0033.
+`janitor/transform.js` (brief 0033) is the call site: it is installed by `janitor/main.js` as the shell's transform and drives every function in this layer once per outgoing provider request. Its own behaviour is documented from [Request pipeline](#request-pipeline) down.
 
 Janitor facts cited below are ledger entries in `docs/api/janitor.md`, not source: Janitor is closed source.
 
@@ -91,3 +91,81 @@ Routing follows for free: `is_user === true` is what sends a message through `to
 Every id and hash in this layer lives in `localStorage` and in local variables. `fromStShape` emits `{role, content}` and nothing else, so no id, hash, offset, occurrence index or envelope position can reach the model.
 
 `docs/decisions/0004-derived-frontier.md` rejected positional ids on the SillyTavern host because they persist interaction topology — where in the exchange each message sat — into a file that outlives the session. A list of content hashes persists strictly less: it records *that* a piece of text was compiled, not where it sat, and it is the same information `frozenIds` already holds on SillyTavern. The occurrence index is the one positional-looking part, and it is an index among identical strings, not an index in the conversation.
+
+## Request pipeline {#request-pipeline}
+
+`transformRequest(data, context)` is the whole request side of the Janitor host. It runs once per provider completion, mutates `data` in place and returns the shell's modified flag (`docs/modules/janitor-transport.md#transform-seam`). The order of its steps is load-bearing, not stylistic:
+
+1. **Gate.** Only a `chat` adapter with an envelope is transformed. A container carrying a top-level `system` string is the Anthropic-shaped body the shell's chat test deliberately accepts (`docs/modules/janitor-transport.md#chat-shape-adapter`); it passes through silently, because the Anthropic adapter is a later phase and a half-applied protocol is worse than none. A missing envelope warns once per page and passes through: without a chat id there is no state to key and without a persona there is no reserved literal, so there is nothing this layer could do that would not corrupt the manuscript.
+2. **State** is reloaded from `localStorage` on every request and never cached in a module variable. Another tab may have compiled a unit since the last request; the request body is the only thing that is guaranteed fresh, so the state read beside it must be too.
+3. **Classify** before anything else touches the array, because the envelope diff aligns against Janitor's `chatMessages` by exact content ([Envelope diff](#envelope-diff)) and any edit this layer made first would break the alignment.
+4. **Sentinel** drop ([The sentinel literal](#sentinel)) before identity, so a sentinel turn never receives an id, never enters the frontier and never shifts an occurrence index.
+5. **Identity** before derivation: `frozenIds` membership and the watermark slice are expressed over ids, so `deriveFrontier` cannot decide what is already compiled until the ids exist ([Content-hash identity](#content-hash-identity), [Prefix-hash watermark](#prefix-hash-watermark)). The drift report is computed here, while the state is still the one the ids were matched against.
+6. **System message** rewrite ([System message](#system-message)).
+7. **Derive** with the literal `` `${personaName}:` ``, built at this call site because `src/boundary.js`'s `reservedLiteral` reads a SillyTavern context and this host has none. Nothing else about the derivation differs between the two hosts.
+8. **Freeze** before reconstruction ([Freeze at request build](#freeze-at-request-build)) — the reconstruction is built from the post-freeze state, so a unit compiled this request is already a span in the body that carries it, and the state is saved before the body is dispatched.
+9. **Reconstruct**: the non-system messages are replaced wholesale by `[final, control] × n, frontier, edge` (`docs/modules/frontier.md#total-reconstruction`). Nothing of the incoming array survives, which is what makes the model-visible history identical for any two chats that normalise the same way (INV-10) and what strips the prefill for free ([Prefill strip](#prefill-strip)).
+10. **Horizon** before the lead-in ([Transport horizon](#transport-horizon)), so the lead-in is never itself a candidate for dropping and its presence does not depend on how much was dropped.
+11. **Lead-in** ([Lead-in turn](#lead-in)).
+12. **Stop** ([Stop array](#stop-array)).
+13. **Report** ([Request report](#request-report)).
+
+## System message {#system-message}
+
+Janitor's assembled context — preamble, custom prompt, separator, hidden context — is the first `system` or `developer` message. The transform rewrites that one message and never edits, reorders or trims Janitor's own text inside it: the hidden context is the optimizer's territory, and the custom prompt is the human's.
+
+`MANUSCRIPT_SYSTEM_PROMPT` is prepended, separated by `BLOCK_DELIMITER`, unless Janitor's text already contains the prompt's **first sentence**. That sentence is computed at module load from the imported constant (`slice(0, indexOf('.') + 1)`), never copied as a literal, so a reword of the prompt cannot leave a stale detector behind that silently prepends a second copy every turn. Testing the first sentence rather than the whole prompt catches the realistic case: the human pasted the prompt into Janitor's global custom prompt field and Janitor reflowed or truncated the tail.
+
+Every classified injection's content is then **appended**, in input order, each behind a `BLOCK_DELIMITER`. Appending rather than inserting is what keeps the provider-side cached prefix stable: the manuscript prompt and Janitor's static context stay at byte 0 and only the volatile tail moves. Injections are folded here rather than left in place because reconstruction discards depth anyway, and an injected turn left among the messages would reach the model as a non-manuscript turn (§27).
+
+One hazard is Janitor's, not ours: the custom prompt may not be left empty in proxy mode (`docs/api/janitor.md#the-custom-prompt-may-not-be-empty-in-proxy-mode`) or Janitor substitutes its own chat-oriented default. A lone `.` is the usual workaround, and the transform leaves it alone like any other Janitor text.
+
+## Freeze at request build {#freeze-at-request-build}
+
+`compileUnit` runs while the outgoing request is being assembled rather than when a generation is received (`docs/decisions/0007-janitor-host-deviations.md`). Repeating it is safe: the compiler is a pure function of the derived frontier and the stored state, so an abandoned request either moved the state — and the next request re-derives the shorter frontier — or left it byte-identical.
+
+The clamp value is the `start` offset of the **last** entry of `derived.segments`, passed as `maxFrozenEnd` (`docs/modules/freeze.md#last-message-clamp`). That offset is where the last surviving message's text begins in the frontier, so no cut can consume any part of a message Janitor's regenerate can still replace. With fewer than two segments no freeze is attempted at all, because the only segment there is, is the last one.
+
+On a non-`null` result the watermark's `prefixHash` and `watermarkText` are written from the watermark message's raw content before the state is saved, and the frontier is derived a second time against the updated state — the request must carry the post-freeze view, not the view that produced the cut. A `null` result writes nothing at all, and no save is attempted.
+
+## Transport horizon {#transport-horizon}
+
+The provider window is finite and the manuscript is not. When the estimated size of the assembled body exceeds the budget, whole `[final, control]` pairs are dropped **from the front, starting at the second pair**, until the estimate is at or below `JANITOR_HORIZON_HYSTERESIS` of the budget. The first pair is never dropped: it holds the §19 seed or the character's greeting, which is where the manuscript's voice and premise are established. The frontier turn and the edge control are never dropped or trimmed either — they are the live writing surface and the continuation instruction.
+
+Only whole pairs move, and only with hysteresis, because a prefix that shrinks by one message every turn invalidates the provider's prompt cache every turn; stepping down to 80% of the budget instead means the prefix is stable across many turns.
+
+**Canonical state is never touched.** Dropping is a property of one outgoing body; `state.frozen` and `state.units` keep every span, so addendum §7/§11 (no merge, no reorder, no reword of compiled text) hold and a later Export still holds the whole manuscript. This is a transport-window policy, in the same category as SillyTavern's own context trimming — it is explicitly **not** a fourth freeze horizon, and PLAN §18's three horizons are unaffected by it.
+
+When nothing more may be dropped and the estimate is still over budget, the transform warns once and dispatches anyway: a body the provider may refuse is better than a body with no manuscript in it.
+
+## Horizon budget is a constant {#horizon-budget}
+
+`JANITOR_HORIZON_TOKEN_BUDGET` is 100,000 tokens — a host constant, not a setting, and not read from Janitor. Janitor's total context size is 128k tokens (`docs/api/janitor.md#the-context-window-is-128k-tokens`), but the `generation_settings` field name for that window and its truncation unit are an open ledger item (`docs/api/janitor.md#open`); until that item is answered there is nothing to read. 100k leaves room under the real window for the assembled system message and a full-length response, and the script's own trimming sits on top of whatever Janitor does with the rest.
+
+The estimate is `countWords(text) * JANITOR_WORDS_PER_TOKEN` with `JANITOR_WORDS_PER_TOKEN = 1.4` (`docs/modules/freeze.md#word-counting`). No tokenizer and no dependency: a tokenizer for one heuristic threshold would be several hundred kilobytes in a userscript, and the hysteresis band absorbs an estimate that is off by a fifth.
+
+Exposing the budget as a setting is out of the question for the same reason every other knob is: PLAN.txt does not name it as host-selectable, and a human who lowered it below the frontier would silently lose finals from the model's view.
+
+## Lead-in turn {#lead-in}
+
+Some providers require the first non-system message to be a user turn, and reconstruction naturally starts on an assistant turn (a final span). When the first post-system message is `assistant`, one user turn holding `JANITOR_LEAD_IN` is inserted before it.
+
+The string is pinned: it is byte-stable across every request, so it joins the cached prefix rather than breaking it, and a reword goes through the pinned-string lane (`docs/workflow/workflow.md#pinned-string-lane`). It reads as an ordinary request to write and says nothing about transport, reconstruction, freezing or the collaborator — the §27 test — and it uses none of decision 0003's banned transform-and-echo vocabulary (`docs/decisions/0003-duplication-filter-wording.md`).
+
+## Prefill strip {#prefill-strip}
+
+Janitor appends its configured prefill as a trailing `assistant` message. It never survives the reconstruction: every non-system message is replaced, and `buildHistory` ends on a user turn (the continuation control), so there is no trailing assistant message left to remove and `prefill_text` is never re-added.
+
+One rule is needed on top of that, because the prefill has no counterpart in the envelope's `chatMessages` and the diff therefore calls it an injection ([Envelope diff](#envelope-diff)). Folding it into the system message would put it in front of the model by the other door. So the **last** message of the incoming array is dropped rather than folded when it is an injection with role `assistant`. The test is positional and role-based, not a read of `generation_settings.prefill_text`: the prefill setting is not read anywhere in this layer, and a trailing assistant injection is a prefill whatever the setting says.
+
+Both reasons to want it gone hold. A trailing assistant turn re-creates the shape modern Gemini rejects, and it shows the model a turn that is neither manuscript nor the continuation control — transport leaking into the fiction, which §27 forbids.
+
+## Stop array {#stop-array}
+
+`applyStopStrings(requestContainer, literal, 'chat')` is reused unchanged from the SillyTavern host: the reserved literal goes in first and any duplicate of it is removed (`docs/modules/boundary.md#why-first-in-stop-array`). Janitor sends no default `stop` list of its own (`docs/api/janitor.md#janitor-sends-no-default-stop-list`), so the script owns every slot and index 0 survives any provider-side cap on the array.
+
+## Request report {#request-report}
+
+Exactly one `console.info` per transformed request, prefixed with `LOG_PREFIX`: how many final spans and unsealed units the state holds, how many words the frontier carries, whether a unit was compiled this request, and how many messages before the watermark no longer match what was compiled ([Drift before the watermark](#drift)). It is operator-facing and never part of the body.
+
+Until the panel exists it is the only sign of life the script gives, which is why it is one line with the four facts that decide whether the protocol is working rather than a debug stream: it has to stay readable in a console Janitor itself writes to.
