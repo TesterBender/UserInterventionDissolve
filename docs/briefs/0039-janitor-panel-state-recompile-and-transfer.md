@@ -1,5 +1,5 @@
 # Brief 0039 — Janitor recompile loop, request-status snapshot and state export/import (no DOM)
-Status: implemented
+Status: done
 Complexity: high  (it changes the request pipeline's step order again, adds a whole-chat state reset, adds the only non-`console` reporting surface the script has, and touches three `janitor/` modules plus the storage module)
 PLAN sections: §10 (editorial authority over the uncompiled region — a deliberate whole-chat rebuild is that authority applied to the compile bookkeeping rather than to prose), §16 (freezing is append-only and old spans are not re-cut; a recompile is a reset plus rebuild, never a re-cut of a surviving span), §17 (the rebuild uses the cut rules currently in the code, with the last-message clamp this host adds), §23 (the host supplies behaviours; on this host the only copy of the compiled manuscript is `localStorage`, so handing it to the human is part of the host contract), §27 (nothing this brief adds reaches the model; the snapshot is operator-facing and the export is a file for a human)
 Invariants touched: INV-6 (compiled text is never re-cut or rewritten — the rebuild survives the invariant only because nothing survives the reset), INV-10 (the exported JSON carries ids, hashes and offsets, and must never become something the model is shown)
