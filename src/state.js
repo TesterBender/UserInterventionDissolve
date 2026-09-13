@@ -41,25 +41,27 @@ export function canPushSpan(text) {
   return typeof text === 'string' && text.trim() !== '' && isTrailingBlockComplete(text);
 }
 
-function append(list, span) {
+// append-only: refuse a mid-block span, no removal or replacement path → docs/modules/state.md#append-only
+// mutation-is-storage: the stored object is mutated in place → docs/modules/state.md#mutation-is-storage
+export function pushFrozen(state, span) {
   const text = span.text;
   if (!canPushSpan(text)) return false;
 
   const words = Number.isFinite(span.words) ? span.words : (text.match(/\S+/g) ?? []).length;
   const createdAt = Number.isFinite(span.createdAt) ? span.createdAt : Date.now();
-  list.push({ text, words, createdAt });
+  state.frozen.push({ text, words, createdAt });
   return true;
-}
-
-// append-only: refuse a mid-block span, no removal or replacement path → docs/modules/state.md#append-only
-// mutation-is-storage: the stored object is mutated in place → docs/modules/state.md#mutation-is-storage
-export function pushFrozen(state, span) {
-  return append(state.frozen, span);
 }
 
 // push-unit: same contract as pushFrozen, onto the unsealed tier → docs/modules/state.md#push-unit
 export function pushUnit(state, unit) {
-  return append(state.units, unit);
+  const text = unit.text;
+  if (!canPushSpan(text)) return false;
+
+  const words = Number.isFinite(unit.words) ? unit.words : (text.match(/\S+/g) ?? []).length;
+  const createdAt = Number.isFinite(unit.createdAt) ? unit.createdAt : Date.now();
+  state.units.push({ text, words, createdAt });
+  return true;
 }
 
 // seal-units: joins the unsealed units into one final span, decides no policy → docs/modules/state.md#seal-units
@@ -68,7 +70,9 @@ export function sealUnits(state) {
 
   const text = state.units.map((unit) => unit.text).join(BLOCK_DELIMITER);
   const words = state.units.reduce((total, unit) => total + unit.words, 0);
-  pushFrozen(state, { text, words });
+  // seal-refusal: a refused push keeps the units, so no text is lost → docs/modules/state.md#seal-units
+  if (!pushFrozen(state, { text, words })) return false;
+
   state.units.length = 0;
   return state.frozen.length - 1;
 }

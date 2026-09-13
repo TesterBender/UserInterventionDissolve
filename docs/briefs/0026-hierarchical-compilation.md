@@ -94,3 +94,9 @@ Compilation becomes two-tier. A cut at the existing 3,000–4,200-word target no
 - `docs/modules/recompile.md#loop` / `#summary` — why no post-loop seal exists and why the summary still counts finals only.
 - `docs/protocol/host-mapping.md#s12-frontier` — rewrite the reconstruction bullet for the tiered shape and the monotonic prefix; `#s16-freeze` — rewrite for two tiers: `selectCut` → unit → seal → final span, "compiled once, remembered" now covering units as well as finals.
 - `docs/decisions/0006-hierarchical-compilation.md` (+ entry in `docs/decisions/README.md`) — the policy numbers and arithmetic, why units are cleared on seal rather than kept as references (addendum §9 permits either; a retained copy duplicates the span bytes in `chatMetadata` with no consumer and no test that can observe it), why there is no jitter on `FINAL_MIN_WORDS`, and the continuation-between-finals fix (back-to-back assistant spans were relying on the host to keep them distinct).
+
+## Amendment 1 (orchestrator, 2026-09-13)
+
+`sealUnits` must honour `pushFrozen`'s boolean: when the push is refused it leaves `state.units` untouched and returns `false`, so no text is lost and no caller can read a `frozen` entry that was never created. `compileUnit`'s seal step handles a `false` seal by reporting no seal in `seals` and carrying on. Covered by a test that forces the refusal with a mid-block unit text and asserts `units` and `frozen` unchanged (`tests/state.test.js`, `tests/freeze.test.js`).
+
+- [x] `sealUnits` returns `false` and keeps the units when `pushFrozen` refuses; `compileUnit` reports no seal

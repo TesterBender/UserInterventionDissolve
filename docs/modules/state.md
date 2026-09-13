@@ -48,13 +48,13 @@ This keeps installation inert: opening a chat and doing nothing leaves the chat 
 
 ## pushUnit {#push-unit}
 
-`pushUnit(state, unit)` has the same contract as `pushFrozen` — refuse a missing, non-string, blank or mid-block `text`, otherwise fill `words` (`/\S+/g`) and `createdAt` (`Date.now()`) and append `{ text, words, createdAt }` — but it appends to `state.units`. Both functions share one private `append(list, span)`, so the two tiers can never disagree about what a span entry is or when one is acceptable.
+`pushUnit(state, unit)` has the same contract as `pushFrozen` — refuse a missing, non-string, blank or mid-block `text`, otherwise fill `words` (`/\S+/g`) and `createdAt` (`Date.now()`) and append `{ text, words, createdAt }` — but it appends to `state.units`. Both run the same accept test, [canPushSpan](#can-push-span), so the two tiers cannot disagree about when a span is acceptable.
 
 ## sealUnits {#seal-units}
 
-`sealUnits(state)` promotes the whole unsealed tier into one final span: it returns `null` when `units` is empty, and otherwise joins the unit texts with `BLOCK_DELIMITER` (`docs/modules/grammar.md#block-delimiter`), sums their `words`, appends the result through `pushFrozen`, clears `units` in place (`state.units.length = 0`) and returns the new `frozen` index.
+`sealUnits(state)` promotes the whole unsealed tier into one final span: it returns `null` when `units` is empty, and otherwise joins the unit texts with `BLOCK_DELIMITER` (`docs/modules/grammar.md#block-delimiter`), sums their `words` and offers the result to `pushFrozen`. On acceptance it clears `units` in place (`state.units.length = 0`) and returns the new `frozen` index.
 
-It decides nothing about *when* to seal — that policy lives in `freeze` (`docs/modules/freeze.md#seal-policy`) — and it needs no refusal path: every unit passed `canPushSpan` on the way in, and joining complete blocks with a blank line leaves the trailing block complete, so the joined text is acceptable by construction. The units are cleared rather than kept as a back-reference: the addendum (§9) permits either, and a retained copy would duplicate the span bytes in `chatMetadata` with no consumer (`docs/decisions/0006-hierarchical-compilation.md`).
+It honours `pushFrozen`'s boolean: a refused push returns `false` and leaves `units` untouched, so a seal can never lose the text it was going to promote and can never report a `frozen` entry that does not exist. In ordinary operation the refusal cannot happen — every unit passed `canPushSpan` on the way in, and joining complete blocks with a blank line leaves the trailing block complete — but the guard is what makes "no text loss" a property of this function rather than of its callers' inputs. `sealUnits` still decides nothing about *when* to seal; that policy lives in `freeze` (`docs/modules/freeze.md#seal-policy`). The units are cleared rather than kept as a back-reference: the addendum (§9) permits either, and a retained copy would duplicate the span bytes in `chatMetadata` with no consumer (`docs/decisions/0006-hierarchical-compilation.md`).
 
 ## Append only
 

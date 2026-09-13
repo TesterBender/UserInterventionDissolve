@@ -129,13 +129,16 @@ function unitsWords(state) {
   return state.units.reduce((total, unit) => total + unit.words, 0);
 }
 
-// seal-record: one entry per seal this call performed → docs/modules/freeze.md#seal-policy
+// seal-record: one entry per seal, none when the push was refused → docs/modules/freeze.md#seal-policy
 function seal(state, seals) {
   const frozenIndex = sealUnits(state);
+  if (typeof frozenIndex !== 'number') return;
+
   seals.push({ frozenIndex, words: state.frozen[frozenIndex].words });
 }
 
-// compile-unit: cut offset mapped onto a message, then the seal policy → docs/modules/freeze.md#watermark-mapping
+// compile-unit: cut offset mapped onto a message → docs/modules/freeze.md#watermark-mapping
+// seal-policy: the unit is sealed into a final span around the push → docs/modules/freeze.md#seal-policy
 export function compileUnit(state, derived, literal, opts = {}) {
   const cut = selectCut(derived.text, literal, opts);
   if (cut === null) return null;
@@ -158,7 +161,7 @@ export function compileUnit(state, derived, literal, opts = {}) {
     offset = segment.sourceStart + (cut.frozenEnd - segment.start);
   }
 
-  // push-refusal: a refused span leaves the state byte-identical → docs/modules/freeze.md#overrun
+  // push-refusal: a span canPushSpan rejects leaves the state byte-identical → docs/modules/freeze.md#overrun
   const text = derived.text.slice(0, cut.frozenEnd);
   if (!canPushSpan(text)) return null;
 

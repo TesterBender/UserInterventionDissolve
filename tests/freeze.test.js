@@ -586,6 +586,20 @@ describe('seal policy', () => {
     for (const span of state.frozen) expect(span.words).toBeLessThanOrEqual(FINAL_MAX_WORDS);
   });
 
+  it('reports no seal for a refused seal push and loses no text', () => {
+    const state = createState();
+    const chat = chatOf(150, 100);
+    const stranded = 'w0 w1 no terminal punctuation';
+    state.units.push({ text: stranded, words: 9000, createdAt: 1 });
+
+    const { result, text } = compileExactly(state, chat, 3500);
+
+    expect(result.seals).toEqual([{ frozenIndex: 0, words: 12500 }]);
+    expect(state.frozen).toHaveLength(1);
+    expect(state.frozen[0].text).toBe(`${stranded}${BLOCK_DELIMITER}${text}`);
+    expect(state.units).toEqual([]);
+  });
+
   it('seals a lone overrun unit at or above the floor', () => {
     const state = createState();
     const chat = chatOf(150, 100);

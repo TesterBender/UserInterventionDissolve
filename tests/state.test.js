@@ -257,6 +257,16 @@ describe('sealUnits', () => {
     expect(state).toEqual(createState());
   });
 
+  it('keeps the units and returns false when the joined span is refused', () => {
+    const state = createState();
+    state.units.push({ text: INCOMPLETE, words: 5, createdAt: 1 });
+    const before = JSON.parse(JSON.stringify(state));
+
+    expect(sealUnits(state)).toBe(false);
+    expect(state.units).toEqual(before.units);
+    expect(state.frozen).toEqual([]);
+  });
+
   it('joins the units into one final span, clears them and returns the new index', () => {
     const state = createState();
     pushUnit(state, { text: 'One.', words: 1 });
