@@ -3,7 +3,7 @@ import fs from 'node:fs';
 import path from 'node:path';
 import { installFakeContext, uninstall, makeAssistantMessage, makeMessage } from './helpers/fake-context.js';
 import { classifyOutcome, onMessageReceived } from '../src/recovery.js';
-import { onMessageReceived as boundaryMessageReceived, resetBoundaryState } from '../src/boundary.js';
+import { onMessageReceived as boundaryMessageReceived, resetBoundaryState } from '../src/boundary-host.js';
 import { createState } from '../src/state.js';
 import { deriveFrontier } from '../src/derive.js';
 import { METADATA_KEY } from '../src/constants.js';

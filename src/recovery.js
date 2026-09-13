@@ -3,7 +3,7 @@ import { METADATA_KEY } from './constants.js';
 import { isTrailingBlockComplete, truncateToLastCompleteBlock } from './grammar.js';
 import { reservedLiteral, findBoundary, trimAtBoundary } from './boundary.js';
 import { assignIds, deriveFrontier } from './derive.js';
-import { getState, save } from './state.js';
+import { getState, save } from './state-host.js';
 import { compileUnit } from './freeze.js';
 
 // duplicated-eligibility: same list as boundary, wired independently → docs/modules/recovery.md#ordering

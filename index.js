@@ -1,19 +1,19 @@
 import { getCtx, requireKeys, EVENT } from './src/host.js';
 import { LOG_PREFIX, INTERCEPTOR_GLOBAL, REQUIRED_KEYS } from './src/constants.js';
-import { getState } from './src/state.js';
+import { getState } from './src/state-host.js';
 import {
   onGenerationStarted,
   onChatCompletionSettings,
   onTextCompletionSettings,
   onStreamToken,
   onMessageReceived,
-} from './src/boundary.js';
-import { interceptGeneration } from './src/frontier.js';
+} from './src/boundary-host.js';
+import { interceptGeneration } from './src/frontier-host.js';
 import { armSolo, consumeSoloFlag } from './src/solo.js';
 import { renderSettings, refreshReservedLiteral, notify } from './src/ui/settings.js';
 import { recompile, formatRecompileSummary } from './src/recompile.js';
 import { onMessageReceived as onRecoveryMessageReceived } from './src/recovery.js';
-import { noticeFrozenEdit } from './src/freeze.js';
+import { noticeFrozenEdit } from './src/freeze-host.js';
 
 // interceptor-body: one delegating call, every decision lives in frontier → docs/modules/frontier.md#interceptor-body
 globalThis[INTERCEPTOR_GLOBAL] = async function (chat, contextSize, abort, type) {

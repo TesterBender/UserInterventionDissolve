@@ -1,10 +1,5 @@
-import { getCtx } from './host.js';
 import { METADATA_KEY, BLOCK_DELIMITER } from './constants.js';
 import { CONTINUATION_CONTROL } from './prompt.js';
-import { getState } from './state.js';
-import { deriveFrontier } from './derive.js';
-import { reservedLiteral } from './boundary.js';
-import { consumeSoloFlag, resolveSoloControl } from './solo.js';
 
 // five-fields: name/is_user/is_system/mes/extra, nothing time-varying → docs/modules/frontier.md#shape
 function reconstructed(name, isUser, mes) {
@@ -58,26 +53,4 @@ export function regeneratesLastMessage(type) {
 // skipped-generation-types: quiet and impersonate only; unknown types reconstruct → docs/modules/frontier.md#skipped-generation-types
 export function shouldReconstruct(type) {
   return type !== 'quiet' && type !== 'impersonate';
-}
-
-// interceptor-body: four steps, contextSize ignored, abort never called → docs/modules/frontier.md#interceptor-body
-// dryrun-parity: token-count preview stays stale until the parity brief → docs/modules/frontier.md#dryrun-parity
-export async function interceptGeneration(chat, contextSize, abort, type, ctx = getCtx()) {
-  // solo-variant: skipped types clear the flag, armed ones resolve it once → docs/modules/frontier.md#solo-variant
-  if (!shouldReconstruct(type)) {
-    consumeSoloFlag();
-    return false;
-  }
-
-  const solo = consumeSoloFlag();
-  const state = getState(ctx);
-  // derived-frontier: rebuilt from chat[] per request, never persisted → docs/modules/derive.md#derivation-rule
-  const { text } = deriveFrontier(ctx.chat, state, reservedLiteral(ctx), {
-    excludeLastAssistant: regeneratesLastMessage(type),
-  });
-  const options = { frontier: text };
-  if (solo) options.control = resolveSoloControl(ctx);
-
-  const history = buildHistory(state, { name1: ctx.name1, name2: ctx.name2 }, options);
-  return applyToRequestChat(chat, history);
 }

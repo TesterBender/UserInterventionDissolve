@@ -165,7 +165,7 @@ describe('frozen-edit subscriptions', () => {
       },
     });
     vi.spyOn(console, 'log').mockImplementation(() => {});
-    const { FROZEN_EDIT_NOTICE } = await import('../src/freeze.js');
+    const { FROZEN_EDIT_NOTICE } = await import('../src/freeze-host.js');
     await import('../index.js');
 
     await ctx.eventSource.emit(ctx.eventTypes.MESSAGE_EDITED, 0);
@@ -233,7 +233,7 @@ describe('the /uidsolo slash command', () => {
     vi.spyOn(console, 'log').mockImplementation(() => {});
     const errSpy = vi.spyOn(console, 'error').mockImplementation(() => {});
     await import('../index.js');
-    const { interceptGeneration } = await import('../src/frontier.js');
+    const { interceptGeneration } = await import('../src/frontier-host.js');
     const { CONTINUATION_CONTROL } = await import('../src/prompt.js');
 
     const callback = registered(ctx);

@@ -2,7 +2,8 @@ import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
 import { readFileSync } from 'node:fs';
 import { REWRITE_INSTRUCTION, buildRewriteRequest, sanitiseRewrite, restructureStarter } from '../src/starter.js';
 import { MANUSCRIPT_SYSTEM_PROMPT } from '../src/prompt.js';
-import { reservedLiteral, resetBoundaryState, onChatCompletionSettings } from '../src/boundary.js';
+import { reservedLiteral } from '../src/boundary.js';
+import { resetBoundaryState, onChatCompletionSettings } from '../src/boundary-host.js';
 import { installFakeContext, uninstall } from './helpers/fake-context.js';
 
 const STARTER = 'Mara: She set the lamp down.\n\nAnton: "You came." He did not move from the door.\n\nThe rain went on.';

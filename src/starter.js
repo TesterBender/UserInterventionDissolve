@@ -1,5 +1,6 @@
 // starter-reformatter: prose starter → manuscript form, output only → docs/modules/starter.md#why
-import { reservedLiteral, suspendBoundary } from './boundary.js';
+import { reservedLiteral } from './boundary.js';
+import { suspendBoundary } from './boundary-host.js';
 import { LOG_PREFIX } from './constants.js';
 import { findTagLiteral, parseManuscript } from './grammar.js';
 import { getCtx } from './host.js';

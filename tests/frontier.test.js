@@ -4,7 +4,8 @@ import path from 'node:path';
 import { installFakeContext, uninstall, makeMessage, makeAssistantMessage } from './helpers/fake-context.js';
 import { METADATA_KEY, INTERCEPTOR_GLOBAL, BLOCK_DELIMITER } from '../src/constants.js';
 import { CONTINUATION_CONTROL } from '../src/prompt.js';
-import { buildHistory, applyToRequestChat, shouldReconstruct, regeneratesLastMessage, interceptGeneration } from '../src/frontier.js';
+import { buildHistory, applyToRequestChat, shouldReconstruct, regeneratesLastMessage } from '../src/frontier.js';
+import { interceptGeneration } from '../src/frontier-host.js';
 import { armSolo, consumeSoloFlag, resolveSoloControl } from '../src/solo.js';
 
 const NAMES = { name1: 'Mara', name2: 'Narrator' };

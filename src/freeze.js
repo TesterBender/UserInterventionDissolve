@@ -1,8 +1,6 @@
-import { getCtx } from './host.js';
 import { parseManuscript, groupSpans } from './grammar.js';
-import { getState, canPushSpan, pushUnit, sealUnits, advanceWatermark } from './state.js';
+import { canPushSpan, pushUnit, sealUnits, advanceWatermark } from './state.js';
 import {
-  METADATA_KEY,
   LOG_PREFIX,
   FREEZE_MIN_WORDS,
   FREEZE_MAX_WORDS,
@@ -93,7 +91,7 @@ function preferred(inBudget, blocks, spans, spanOf, cumWords, target) {
 
 // cut-selection: hard rules, then preferences, over a jittered target → docs/modules/freeze.md#candidates
 export function selectCut(frontierText, literal, opts = {}) {
-  const { min = FREEZE_MIN_WORDS, max = FREEZE_MAX_WORDS, jitterSeed } = opts;
+  const { min = FREEZE_MIN_WORDS, max = FREEZE_MAX_WORDS, jitterSeed, maxFrozenEnd } = opts;
   if (typeof frontierText !== 'string' || frontierText === '') return null;
 
   const blocks = parseManuscript(frontierText);
@@ -109,6 +107,8 @@ export function selectCut(frontierText, literal, opts = {}) {
     if (!blocks[i].complete) continue;
     if (cumWords[i] < min) continue;
     if (spans[spanOf[i]].reserved || spans[spanOf[i + 1]].reserved) continue;
+    // last-message-clamp: hard rule, a capped boundary is withheld → docs/modules/freeze.md#last-message-clamp
+    if (Number.isFinite(maxFrozenEnd) && blocks[i].end > maxFrozenEnd) continue;
 
     safe.push(i);
   }
@@ -208,17 +208,4 @@ export function compileUnit(state, derived, literal, opts = {}) {
     watermark: { messageId, offset },
     seals,
   };
-}
-
-// pinned-string: the only user-visible text in the freeze path → docs/modules/freeze.md#frozen-edit-notice
-export const FROZEN_EDIT_NOTICE = 'That part of the manuscript is already frozen; this edit stays in the log only.';
-
-// frozen-edit-notice: one toast, consumed messages only, writes nothing → docs/modules/freeze.md#frozen-edit-notice
-export function noticeFrozenEdit(index, ctx = getCtx()) {
-  const id = ctx.chat?.[index]?.extra?.[METADATA_KEY]?.id;
-  if (typeof id !== 'string') return false;
-  if (!getState(ctx).frozenIds.includes(id)) return false;
-
-  globalThis.toastr?.info(FROZEN_EDIT_NOTICE);
-  return true;
 }
