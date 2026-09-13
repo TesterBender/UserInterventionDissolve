@@ -93,7 +93,7 @@ function preferred(inBudget, blocks, spans, spanOf, cumWords, target) {
 
 // cut-selection: hard rules, then preferences, over a jittered target → docs/modules/freeze.md#candidates
 export function selectCut(frontierText, literal, opts = {}) {
-  const { min = FREEZE_MIN_WORDS, max = FREEZE_MAX_WORDS, jitterSeed } = opts;
+  const { min = FREEZE_MIN_WORDS, max = FREEZE_MAX_WORDS, jitterSeed, maxFrozenEnd } = opts;
   if (typeof frontierText !== 'string' || frontierText === '') return null;
 
   const blocks = parseManuscript(frontierText);
@@ -109,6 +109,8 @@ export function selectCut(frontierText, literal, opts = {}) {
     if (!blocks[i].complete) continue;
     if (cumWords[i] < min) continue;
     if (spans[spanOf[i]].reserved || spans[spanOf[i + 1]].reserved) continue;
+    // last-message-clamp: hard rule, a capped boundary is withheld → docs/modules/freeze.md#last-message-clamp
+    if (Number.isFinite(maxFrozenEnd) && blocks[i].end > maxFrozenEnd) continue;
 
     safe.push(i);
   }
