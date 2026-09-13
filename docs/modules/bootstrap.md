@@ -87,7 +87,7 @@ Both payloads are the message id-as-index (`docs/api/sillytavern.md#message-life
 
 ## Slash commands {#slash-commands}
 
-`init()` registers exactly one slash command, `/uidsolo`, after the event wiring and before `renderSettings(ctx)`:
+`init()` registers two slash commands, `/uidsolo` and `/uidrecompile`, after the event wiring and before `renderSettings(ctx)`:
 
 ```js
 const { SlashCommandParser, SlashCommand } = ctx;
@@ -99,6 +99,8 @@ Both classes are read off `getContext()`, never imported from ST's own modules (
 The callback arms a one-shot solo continuation (`docs/modules/frontier.md#solo-variant`) and then calls `await ctx.generate('normal')` — the real `Generate`, which runs the same pipeline as pressing Send on an empty composer: no user message is pushed and the reply continues from the existing history (`docs/api/sillytavern.md#generate-normal-from-slash`). Pushing a message instead would put a visible user turn into the live chat, which is exactly the transport evidence the protocol removes. The resolved value is ignored and not inspected: `Generate` resolves to the reply text on a completed run but to `undefined` when it is blocked early, so nothing may be inferred from it. The callback returns `''` because a slash-command callback's return value is what the parser substitutes into the command's output.
 
 If `ctx.generate` throws or rejects, the callback consumes and discards the flag, logs one error and still returns `''` — a failed start must never leave a solo armed for whatever the collaborator does next.
+
+`/uidrecompile` is registered in the same guarded block, in the same `addCommandObject(SlashCommand.fromProps({…}))` form, under the same availability guard — including its `ctx.generate === undefined` clause, which stays as written for `/uidsolo` rather than growing a second guard shape for one extra command. Its callback awaits `recompile()` with no cached context (`docs/modules/recompile.md#what-it-is`), raises one toast with the summary through the drawer's shared guarded `notify` helper (`docs/modules/ui-settings.md#notifications`), and returns that same summary string, which is what the parser substitutes into the command's output. When the guard fires, the one warning line names both commands.
 
 Registration is guarded like the event wiring, not gated like a required key: if `ctx.SlashCommandParser`, `ctx.SlashCommand` or `ctx.generate` is absent, `init()` logs one `console.warn` and skips registration. Their absence costs the collaborator one convenience command; it does not stop the extension from reconstructing history, so they are deliberately not in `REQUIRED_KEYS` (see [Capability gate](#capability-gate)). There is no retry and no throw.
 

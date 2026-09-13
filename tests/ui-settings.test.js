@@ -87,6 +87,7 @@ describe('the rendered drawer', () => {
 
     expect(listened.map((entry) => `${entry.target.id}:${entry.type}`)).toEqual([
       'uid_install_preset:click',
+      'uid_recompile:click',
       'uid_starter_input:input',
       'uid_starter_restructure:click',
       'uid_starter_copy:click',
@@ -107,7 +108,12 @@ describe('the rendered drawer', () => {
     expect(hint).toContain('README');
 
     const buttons = root.querySelectorAll('button');
-    expect([...buttons].map((b) => b.id)).toEqual(['uid_install_preset', 'uid_starter_restructure', 'uid_starter_copy']);
+    expect([...buttons].map((b) => b.id)).toEqual([
+      'uid_install_preset',
+      'uid_recompile',
+      'uid_starter_restructure',
+      'uid_starter_copy',
+    ]);
     for (const b of buttons) {
       expect(b.type).toBe('button');
       expect(b.classList.contains('menu_button')).toBe(true);
@@ -123,6 +129,50 @@ describe('the rendered drawer', () => {
 
     expect(root.querySelectorAll('input, select')).toHaveLength(0);
     expect([...root.querySelectorAll('textarea')].map((t) => t.id)).toEqual(['uid_starter_input', 'uid_starter_output']);
+  });
+});
+
+describe('the Recompile button', () => {
+  beforeEach(() => {
+    clear();
+    addContainer('extensions_settings2');
+    delete globalThis.toastr;
+  });
+
+  afterEach(() => {
+    uninstall();
+    delete globalThis.toastr;
+  });
+
+  it('renders exactly one enabled button in the actions row with the pinned label and hint', () => {
+    const root = renderSettings(fakeCtx());
+    const buttons = root.querySelectorAll('#uid_recompile');
+    expect(buttons).toHaveLength(1);
+    const rebuild = buttons[0];
+    expect(rebuild.textContent).toBe('Recompile');
+    expect(rebuild.type).toBe('button');
+    expect(rebuild.disabled).toBe(false);
+    expect(rebuild.classList.contains('menu_button')).toBe(true);
+    expect(rebuild.classList.contains('uid-recompile')).toBe(true);
+    expect(rebuild.parentElement.classList.contains('uid-settings-actions')).toBe(true);
+    expect(rebuild.parentElement.querySelector('#uid_install_preset')).not.toBeNull();
+
+    const hints = [...root.querySelectorAll('.uid-settings-note')].map((n) => n.textContent);
+    expect(hints).toContain('Rebuilds the compiled history from the chat as it is now.');
+  });
+
+  it('recompiles the live chat on click and reports the summary through notify', async () => {
+    const ctx = installFakeContext();
+    const toastr = { success: vi.fn() };
+    globalThis.toastr = toastr;
+    renderSettings(fakeCtx());
+
+    document.getElementById('uid_recompile').click();
+    for (let i = 0; i < 6; i += 1) await Promise.resolve();
+
+    expect(ctx.saveMetadata).toHaveBeenCalledTimes(1);
+    expect(toastr.success).toHaveBeenCalledTimes(1);
+    expect(toastr.success.mock.calls[0][0]).toBe('Recompiled: 0 spans, 0 words frozen');
   });
 });
 

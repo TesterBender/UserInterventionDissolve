@@ -3,6 +3,7 @@ import { reservedLiteral } from '../boundary.js';
 import { LOG_PREFIX } from '../constants.js';
 import { buildPresets, PRESET_NAME, OPENAI_PRESET_FILE } from '../preset-template.js';
 import { restructureStarter } from '../starter.js';
+import { recompile, formatRecompileSummary } from '../recompile.js';
 
 const ROOT_ID = 'uid_settings';
 const STATUS_ID = 'uid_reserved_literal';
@@ -10,14 +11,17 @@ const STARTER_INPUT_ID = 'uid_starter_input';
 const STARTER_OUTPUT_ID = 'uid_starter_output';
 const RESTRUCTURE_ID = 'uid_starter_restructure';
 const COPY_ID = 'uid_starter_copy';
+const RECOMPILE_ID = 'uid_recompile';
 const DISPLAY_NAME = 'User Intervention Dissolve';
 const NO_PERSONA = 'No persona name is set, so no tag is reserved.';
 const PASTE_HINT = "Paste into the character's Alternate Greetings.";
+// pinned-string: button hint, same lane as the summary line → docs/modules/ui-settings.md#recompile-button
+const RECOMPILE_HINT = 'Rebuilds the compiled history from the chat as it is now.';
 
 let rewriting = false;
 
 // notifications: guarded toastr(message, title), console fallback → docs/modules/ui-settings.md#notifications
-function notify(kind, message) {
+export function notify(kind, message) {
   if (globalThis.toastr?.[kind] === undefined) {
     console.log(`${LOG_PREFIX} ${message}`);
     return;
@@ -61,10 +65,18 @@ export function renderSettings(ctx) {
   button.addEventListener('click', () => {
     installReferencePreset(ctx).catch(() => {});
   });
-  actions.append(button);
+  // recompile-button: second action in the same row, always enabled → docs/modules/ui-settings.md#recompile-button
+  const rebuild = el('button', 'menu_button uid-recompile', 'Recompile');
+  rebuild.id = RECOMPILE_ID;
+  rebuild.type = 'button';
+  rebuild.addEventListener('click', () => {
+    runRecompile().catch(() => {});
+  });
+  actions.append(button, rebuild);
   preset.append(
     el('div', 'uid-settings-note', `By hand: AI Response Configuration → Chat Completion Presets → Import preset → presets/${OPENAI_PRESET_FILE}. The README lists the same steps.`),
     actions,
+    el('div', 'uid-settings-note', RECOMPILE_HINT),
   );
 
   const status = el('div', 'uid-settings-section');
@@ -156,6 +168,11 @@ async function copyStarterOutput() {
   output.select();
   output.setSelectionRange(0, output.value.length);
   notify('info', 'The restructured starter is selected, ready to copy.');
+}
+
+// recompile-handler: fresh context per click, one success toast → docs/modules/ui-settings.md#recompile-button
+async function runRecompile() {
+  notify('success', formatRecompileSummary(await recompile()));
 }
 
 // install-preset: savePreset(name, shared template); saving does not activate → docs/modules/ui-settings.md#install-preset

@@ -41,9 +41,19 @@ When `reservedLiteral` returns `''` there is no persona name, so the line reads 
 
 The literal is recomputed per call and never cached, because the persona can change with the chat and `getContext()` reads live values at call time (`docs/api/sillytavern.md#getcontext`). That is why the refresh hangs off CHAT_CHANGED (`docs/modules/bootstrap.md#settings-drawer-wiring`) rather than off a stored value. Calling it before any drawer has been rendered is a silent no-op — the element is simply absent.
 
+## Recompile button {#recompile-button}
+
+`#uid_recompile`, labelled **Recompile**, sits in the existing `uid-settings-actions` row beside **Install reference preset** — it is a second action in the same group, not a sixth group, and it needs no new stylesheet rule because the row already lays out adjacent `menu_button`s. Under the row sits one `uid-settings-note` reading `Rebuilds the compiled history from the chat as it is now.` Both strings are pinned: do not reword them during implementation; a change goes through the pinned-string lane (`docs/workflow/workflow.md#pinned-string-lane`) as a brief amendment.
+
+The handler calls `recompile()` with no argument, so the context is read fresh at click time, and reports `formatRecompileSummary(...)` through `notify('success', …)` — the same function and the same summary the slash command uses (`docs/modules/recompile.md#summary`).
+
+There is no confirm step: the operation does not alter the visible chat, it is repeatable, and the hint already says what it does, so a dialog would only add a click. There is no disabled state either — the button stays enabled during generation, because SillyTavern exposes no `isGenerating` (`docs/api/sillytavern.md#context-keys-absent`) and inventing a proxy for one would be guesswork. Nothing else is shown: no spinner, no per-span toast, no console listing of the cut positions.
+
 ## Notifications {#notifications}
 
 One module-local helper calls `globalThis.toastr?.[kind](message, title, options)`. The verified call form is `toastr.<success|error|info|warning>(message, title, options)` with both trailing arguments optional, and `toastr` is a page global loaded by a plain `<script>` tag, so on a real install it is always there (`docs/api/sillytavern.md#toastr`). The optional-chained guard and the `console` fallback are kept anyway: a jsdom test renders the drawer with no page globals at all, and a notification helper that throws would turn a cosmetic absence into a failed install.
+
+The helper is exported so `index.js` can report the recompile summary through it (`docs/modules/bootstrap.md#slash-commands`). Exporting the one guarded helper is the alternative to a second `toastr` call site: there is exactly one place in the extension that decides how a toast is raised.
 
 ## Starter reformatter {#starter-group}
 
@@ -54,3 +64,4 @@ Enablement is recomputed in one place, `updateStarterControls()`, and nowhere el
 Both handlers are thin wrappers over `src/starter.js` (`docs/modules/starter.md#rewrite-request`). Restructure disables, awaits `restructureStarter(input.value, ctx)`, fills and unhides the output on a non-empty result, notifies an error on an empty one, and re-enables in a `finally`. Copy calls `navigator.clipboard.writeText` — a browser API, not an ST API — and when the clipboard is absent or rejects, falls back to selecting the output text and saying so, so the collaborator can always finish the copy by hand.
 
 Nothing in this group persists. The input textarea is empty every time the drawer is built; that is the specification, not an omission, and `renderSettings` stays idempotent because of it. The extension also never writes the greeting itself: no `merge-attributes` call, no `characters` read, no `CHARACTER_EDITED` emit. The verified alternate-greetings write path exists and is deliberately unused (user ruling, 2026-09-12) — moving the text is the collaborator's own act in SillyTavern's character editor.
+

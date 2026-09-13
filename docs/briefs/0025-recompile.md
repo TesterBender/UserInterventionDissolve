@@ -1,5 +1,5 @@
 # Brief 0025 — Recompile: reset canonical state and re-freeze under current rules
-Status: draft
+Status: implemented
 Complexity: high
 PLAN sections: §10 (editorial authority is manuscript-wide inside the mutable frontier and is distinct from the capture path — a deliberate rebuild is the collaborator exercising it); §16 (freezing is append-only and old spans "are not *normally* re-cut" — the reasons given are cache prefixes, historical demonstrations and transport statistics, all of which a deliberate, whole-chat rebuild resets together rather than disturbing piecemeal); §17 (cut selection rules, applied unchanged by the re-freeze loop).
 Invariants touched: INV-6, INV-7, INV-10
@@ -56,17 +56,17 @@ A recompile is not a re-cut of a frozen span. INV-6 forbids freezing through the
 - (none)
 
 ## Acceptance
-- [ ] After `recompile()` on a chat with existing spans, `ctx.chatMetadata[METADATA_KEY]` deep-equals `createState()` except for spans the loop itself pushed: `version` is the current `STATE_VERSION`, and with an empty `chat` the whole object deep-equals `createState()` (`frozen: []`, `frozenIds: []`, `watermark: { messageId: null, offset: 0 }`).
-- [ ] An ~8,000-word synthetic chat recompiles into ≥ 2 frozen spans and the loop terminates; `state.frozen.length` equals the returned `spans`, and the returned `words` equals the sum of the spans' `words`.
-- [ ] Idempotent: running `recompile()` twice on an unchanged chat yields identical `{ spans, words }` and byte-identical span texts.
-- [ ] `save(ctx)` (i.e. `ctx.saveMetadata`) is called exactly once per `recompile()` call, including the empty-chat case.
-- [ ] The visible chat is untouched: every `chat[i].mes`, `is_user`, `swipes` and message order is byte/reference-identical before and after, and no existing `extra[METADATA_KEY].id` value changes. Messages that had no id gain one, and `ctx.saveChat` is called once in exactly that case and not otherwise.
-- [ ] A chat where every derived cut candidate is refused (too short) resets, freezes nothing, saves once, and returns `{ spans: 0, words: 0 }`.
-- [ ] `formatRecompileSummary` produces `Recompiled: 2 spans, 7,940 words frozen`, the singular forms, and the zero form, independent of host locale.
-- [ ] `init()` registers a command named `uidrecompile` alongside `uidsolo` (assert by inclusion, not by array position or length); its callback returns the summary string and raises one toast with the same text.
-- [ ] The drawer renders exactly one `#uid_recompile` button inside the existing actions row, with the pinned label and the pinned hint text present; clicking it calls `recompile` and reports through `notify`.
-- [ ] `npm run check` passes
-- [ ] every new pointer comment resolves (`node tools/check-comments.mjs`)
+- [x] After `recompile()` on a chat with existing spans, `ctx.chatMetadata[METADATA_KEY]` deep-equals `createState()` except for spans the loop itself pushed: `version` is the current `STATE_VERSION`, and with an empty `chat` the whole object deep-equals `createState()` (`frozen: []`, `frozenIds: []`, `watermark: { messageId: null, offset: 0 }`).
+- [x] An ~8,000-word synthetic chat recompiles into ≥ 2 frozen spans and the loop terminates; `state.frozen.length` equals the returned `spans`, and the returned `words` equals the sum of the spans' `words`.
+- [x] Idempotent: running `recompile()` twice on an unchanged chat yields identical `{ spans, words }` and byte-identical span texts.
+- [x] `save(ctx)` (i.e. `ctx.saveMetadata`) is called exactly once per `recompile()` call, including the empty-chat case.
+- [x] The visible chat is untouched: every `chat[i].mes`, `is_user`, `swipes` and message order is byte/reference-identical before and after, and no existing `extra[METADATA_KEY].id` value changes. Messages that had no id gain one, and `ctx.saveChat` is called once in exactly that case and not otherwise.
+- [x] A chat where every derived cut candidate is refused (too short) resets, freezes nothing, saves once, and returns `{ spans: 0, words: 0 }`.
+- [x] `formatRecompileSummary` produces `Recompiled: 2 spans, 7,940 words frozen`, the singular forms, and the zero form, independent of host locale.
+- [x] `init()` registers a command named `uidrecompile` alongside `uidsolo` (assert by inclusion, not by array position or length); its callback returns the summary string and raises one toast with the same text.
+- [x] The drawer renders exactly one `#uid_recompile` button inside the existing actions row, with the pinned label and the pinned hint text present; clicking it calls `recompile` and reports through `notify`.
+- [x] `npm run check` passes
+- [x] every new pointer comment resolves (`node tools/check-comments.mjs`)
 
 ## Docs to write/update
 - `docs/modules/recompile.md` — new file with anchors for every pointer comment the module needs. Must explain: what a recompile is and is not (reset + rebuild, never a re-cut of a surviving span); why the message ids survive the reset and why that makes them inert rather than stale; why missing ids are filled first and why that is the one write to `chat[]`; the loop and its termination argument (monotone consumption, plus the 1000-iteration bound as a hard stop); why `{}` options are passed so the live cut rules apply; why `save` runs once even when nothing froze; the protocol note above (§10 authority, INV-6 per span, cache-prefix loss as the accepted, user-chosen cost); and the pinned summary string with the lane clause.

@@ -195,15 +195,19 @@ describe('the /uidsolo slash command', () => {
     delete globalThis[INTERCEPTOR_GLOBAL];
   });
 
-  function registered(ctx) {
-    expect(ctx.SlashCommand.fromProps).toHaveBeenCalledTimes(1);
-    const props = ctx.SlashCommand.fromProps.mock.calls[0][0];
-    expect(props.name).toBe('uidsolo');
-    expect(typeof props.callback).toBe('function');
-    expect(ctx.SlashCommandParser.addCommandObject).toHaveBeenCalledTimes(1);
+  function propsFor(ctx, name) {
+    const call = ctx.SlashCommand.fromProps.mock.calls.find((c) => c[0].name === name);
+    expect(call).toBeDefined();
+    const index = ctx.SlashCommand.fromProps.mock.calls.indexOf(call);
     expect(ctx.SlashCommandParser.addCommandObject).toHaveBeenCalledWith(
-      ctx.SlashCommand.fromProps.mock.results[0].value,
+      ctx.SlashCommand.fromProps.mock.results[index].value,
     );
+    return call[0];
+  }
+
+  function registered(ctx) {
+    const props = propsFor(ctx, 'uidsolo');
+    expect(typeof props.callback).toBe('function');
     return props.callback;
   }
 
@@ -251,6 +255,39 @@ describe('the /uidsolo slash command', () => {
     expect(mod.isReady()).toBe(true);
     expect(errSpy).not.toHaveBeenCalled();
     expect(warnSpy.mock.calls.filter((call) => String(call[0]).includes('uidsolo'))).toHaveLength(1);
+    expect(warnSpy.mock.calls.filter((call) => String(call[0]).includes('uidrecompile'))).toHaveLength(1);
+  });
+
+  it('registers uidrecompile alongside uidsolo, with the pinned help string', async () => {
+    const ctx = installFakeContext();
+    vi.spyOn(console, 'log').mockImplementation(() => {});
+    await import('../index.js');
+
+    const names = ctx.SlashCommand.fromProps.mock.calls.map((call) => call[0].name);
+    expect(names).toContain('uidsolo');
+    expect(names).toContain('uidrecompile');
+
+    const props = propsFor(ctx, 'uidrecompile');
+    expect(props.helpString).toBe('Rebuild the compiled history from the chat as it is now.');
+    expect(props.returns).toBe('a one-line summary');
+    expect(typeof props.callback).toBe('function');
+  });
+
+  it('returns the summary and raises one toast with the same text', async () => {
+    const ctx = installFakeContext();
+    const toastr = { success: vi.fn() };
+    globalThis.toastr = toastr;
+    vi.spyOn(console, 'log').mockImplementation(() => {});
+    await import('../index.js');
+
+    const callback = propsFor(ctx, 'uidrecompile').callback;
+    const summary = await callback({}, '');
+
+    expect(summary).toBe('Recompiled: 0 spans, 0 words frozen');
+    expect(ctx.saveMetadata).toHaveBeenCalledTimes(1);
+    expect(toastr.success).toHaveBeenCalledTimes(1);
+    expect(toastr.success.mock.calls[0][0]).toBe(summary);
+    delete globalThis.toastr;
   });
 });
 

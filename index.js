@@ -10,7 +10,8 @@ import {
 } from './src/boundary.js';
 import { interceptGeneration } from './src/frontier.js';
 import { armSolo, consumeSoloFlag } from './src/solo.js';
-import { renderSettings, refreshReservedLiteral } from './src/ui/settings.js';
+import { renderSettings, refreshReservedLiteral, notify } from './src/ui/settings.js';
+import { recompile, formatRecompileSummary } from './src/recompile.js';
 import { onMessageReceived as onRecoveryMessageReceived } from './src/recovery.js';
 import { noticeFrozenEdit } from './src/freeze.js';
 
@@ -87,7 +88,7 @@ export function init() {
   // slash-commands: one guarded registration, warn and skip when absent → docs/modules/bootstrap.md#slash-commands
   const { SlashCommandParser, SlashCommand } = ctx;
   if (SlashCommandParser === undefined || SlashCommand === undefined || ctx.generate === undefined) {
-    console.warn(`${LOG_PREFIX} slash commands unavailable: /uidsolo not registered`);
+    console.warn(`${LOG_PREFIX} slash commands unavailable: /uidsolo and /uidrecompile not registered`);
   } else {
     SlashCommandParser.addCommandObject(
       SlashCommand.fromProps({
@@ -95,6 +96,14 @@ export function init() {
         callback: soloCallback,
         helpString: 'Continue once with your figure present in the scene but not written.',
         returns: 'nothing',
+      }),
+    );
+    SlashCommandParser.addCommandObject(
+      SlashCommand.fromProps({
+        name: 'uidrecompile',
+        callback: recompileCallback,
+        helpString: 'Rebuild the compiled history from the chat as it is now.',
+        returns: 'a one-line summary',
       }),
     );
   }
@@ -112,6 +121,13 @@ async function soloCallback() {
     console.error(`${LOG_PREFIX} solo continuation failed to start`, error);
   }
   return '';
+}
+
+// recompile-callback: fresh context, one toast, the summary as output → docs/modules/bootstrap.md#slash-commands
+async function recompileCallback() {
+  const summary = formatRecompileSummary(await recompile());
+  notify('success', summary);
+  return summary;
 }
 
 export function isReady() {
