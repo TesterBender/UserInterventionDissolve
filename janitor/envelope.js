@@ -1,3 +1,5 @@
+import { isObject } from './shape.js';
+
 // bridge-window: 5 s, long enough for one generation, too short to cross chats → docs/modules/janitor-transport.md#conversation-binding
 export const ROUTE_BINDING_FALLBACK_MS = 5_000;
 
@@ -10,10 +12,6 @@ let latestCapture = null;
 
 function token(value) {
   return String(value ?? '').trim();
-}
-
-function isObject(value) {
-  return typeof value === 'object' && value !== null;
 }
 
 function normalizedRoutePath(pathname) {

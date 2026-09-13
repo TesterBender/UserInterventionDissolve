@@ -121,10 +121,6 @@ function token(value) {
   return String(value ?? '').trim();
 }
 
-function isObject(value) {
-  return typeof value === 'object' && value !== null;
-}
-
 function normalizedRoutePath(pathname) {
   const path = String(pathname || '/').replace(/\/{2,}/g, '/');
   return path.length > 1 ? path.replace(/\/$/, '') : path;

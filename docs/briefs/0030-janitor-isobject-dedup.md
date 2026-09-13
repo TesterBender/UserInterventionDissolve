@@ -1,5 +1,5 @@
 # Brief 0030 — Deduplicate `isObject` across `janitor/shape.js` and `janitor/envelope.js`
-Status: draft
+Status: implemented
 Complexity: low  (two files in `janitor/`, one new export, no behaviour change; the build tool and its failure rule already exist)
 PLAN sections: §23 (host requirements are behavioural; a userscript host is legitimate — this change only keeps that host buildable), §27 (the final criterion — this change is invisible to the model; nothing model-facing moves)
 Invariants touched: none. No protocol logic, no model-visible string, no transport behaviour changes.
@@ -43,14 +43,14 @@ Notes that bound the work:
 - (empty) No SillyTavern API and no Janitor runtime fact is involved. Do not launch `st-api-verifier`.
 
 ## Acceptance
-- [ ] `isObject` is declared exactly once under `janitor/` (`grep -n "function isObject" janitor/` returns one line, in `shape.js`, carrying `export`).
-- [ ] `janitor/envelope.js` imports `isObject` from `./shape.js` and contains no local declaration of it.
-- [ ] `npm run build:janitor` exits 0 on the `janitor/` tree and writes `dist/janitor-manuscript-dissolve.user.js`; the duplicate-top-level-name failure no longer fires.
-- [ ] The rebuilt `dist/janitor-manuscript-dissolve.user.js` is byte-identical when `npm run build:janitor` is run a second time with no source change.
-- [ ] The bundle contains exactly one `function isObject` and no `import `/`export ` statement, and `new Function(bundle)` parses.
-- [ ] All existing `tests/janitor/**` tests pass unmodified; if any test file was changed, the diff is reported and justified line by line.
-- [ ] `npm run check` passes.
-- [ ] every new pointer comment resolves (`node tools/check-comments.mjs`)
+- [x] `isObject` is declared exactly once under `janitor/` (`grep -n "function isObject" janitor/` returns one line, in `shape.js`, carrying `export`).
+- [x] `janitor/envelope.js` imports `isObject` from `./shape.js` and contains no local declaration of it.
+- [x] `npm run build:janitor` exits 0 on the `janitor/` tree and writes `dist/janitor-manuscript-dissolve.user.js`; the duplicate-top-level-name failure no longer fires.
+- [x] The rebuilt `dist/janitor-manuscript-dissolve.user.js` is byte-identical when `npm run build:janitor` is run a second time with no source change.
+- [x] The bundle contains exactly one `function isObject` and no `import `/`export ` statement, and `new Function(bundle)` parses.
+- [x] All existing `tests/janitor/**` tests pass unmodified; no test file was changed.
+- [x] `npm run check` passes.
+- [x] every new pointer comment resolves (`node tools/check-comments.mjs`) — no new pointer comments were added.
 
 ## Docs to write/update
 - none expected. Only if a pointer comment is added on the exported `isObject`: `docs/modules/janitor-transport.md#chat-shape-adapter` gains one sentence saying `shape.js` owns the shared `isObject` predicate for the `janitor/` tree because a top-level name declared twice is a hard build failure (`docs/modules/janitor-build.md#supported-module-syntax`).
