@@ -1,6 +1,6 @@
 {
   "name": "user-intervention-dissolve",
-  "version": "0.0.0",
+  "version": "0.1.0",
   "private": true,
   "description": "SillyTavern extension implementing the Collaborative Manuscript Protocol with hidden interaction boundaries (PLAN.txt).",
   "type": "module",

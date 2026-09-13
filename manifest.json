@@ -6,7 +6,7 @@
   "js": "index.js",
   "css": "style.css",
   "author": "mrdanger2nd",
-  "version": "0.0.0",
+  "version": "0.1.0",
   "minimum_client_version": "1.18.0",
   "homePage": "https://example.invalid/user-intervention-dissolve",
   "auto_update": false,

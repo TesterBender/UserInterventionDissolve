@@ -37,7 +37,7 @@ describe('manifest.json', () => {
     expect(manifest.js).toBe('index.js');
     expect(manifest.css).toBe('style.css');
     expect(manifest.author).toBe('mrdanger2nd');
-    expect(manifest.version).toBe('0.0.0');
+    expect(manifest.version).toBe('0.1.0');
     expect(manifest.minimum_client_version).toBe('1.18.0');
     expect(manifest.auto_update).toBe(false);
     expect(manifest.generate_interceptor).toBe(INTERCEPTOR_GLOBAL);

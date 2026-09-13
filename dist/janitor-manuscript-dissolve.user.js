@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         Janitor Manuscript Dissolve
 // @namespace    http://tampermonkey.net/
-// @version      0.0.0
+// @version      0.1.0
 // @description  Carries the User Intervention Dissolve protocol onto JanitorAI proxy requests: one continuous manuscript, hidden interaction boundaries.
 // @match        https://janitorai.com/*
 // @match        https://*.janitorai.com/*
