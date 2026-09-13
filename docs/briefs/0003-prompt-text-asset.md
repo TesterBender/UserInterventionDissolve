@@ -192,4 +192,4 @@ User-approved replacement of `MANUSCRIPT_SYSTEM_PROMPT` ("let it be"), assembled
 
 - [x] constant equals the approved text verbatim
 - [x] presets regenerated
-- [ ] tests updated as above; `npm run check` passes
+- [x] tests updated as above; `npm run check` passes

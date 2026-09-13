@@ -66,9 +66,15 @@ const EXPECTED_TAKE_STOCK = 'Before the next stretch, take stock of the room: wh
 const SOURCE = readFileSync('src/prompt.js', 'utf8');
 
 const FENCE_LINES = MANUSCRIPT_SYSTEM_PROMPT.split('\n');
-const FENCE_START = FENCE_LINES.indexOf('```');
-const FENCE_END = FENCE_LINES.indexOf('```', FENCE_START + 1);
-const LADDER = FENCE_LINES.slice(FENCE_START + 1, FENCE_END).filter((line) => line.length > 0);
+const FENCE_INDICES = FENCE_LINES.reduce((acc, line, i) => {
+  if (line === '```') acc.push(i);
+  return acc;
+}, []);
+const LADDER_BLOCK = FENCE_LINES.slice(FENCE_INDICES[0] + 1, FENCE_INDICES[1]);
+const EXAMPLE_BLOCK = FENCE_LINES.slice(FENCE_INDICES[2] + 1, FENCE_INDICES[3]);
+const isHeaderLine = (line) => /^[^\n:]{1,40}:$/.test(line);
+const LADDER_HEADERS = LADDER_BLOCK.filter(isHeaderLine);
+const EXAMPLE_HEADERS = EXAMPLE_BLOCK.filter(isHeaderLine);
 
 describe('approved texts', () => {
   it('ships MANUSCRIPT_SYSTEM_PROMPT byte-for-byte', () => {
@@ -150,7 +156,7 @@ describe('MANUSCRIPT_SYSTEM_PROMPT says nothing of mechanics', () => {
 
   it('confines the sole "continue" occurrence to the documented exemption', () => {
     const matches = MANUSCRIPT_SYSTEM_PROMPT.match(/\bcontinue\b/gi) ?? [];
-    expect(matches).toHaveLength(620);
+    expect(matches).toHaveLength(1);
     expect(MANUSCRIPT_SYSTEM_PROMPT).toContain(CONTINUE_EXEMPT_PHRASE);
   });
 
@@ -162,36 +168,42 @@ describe('MANUSCRIPT_SYSTEM_PROMPT says nothing of mechanics', () => {
     expect(MANUSCRIPT_SYSTEM_PROMPT).not.toContain('{{');
     expect(MANUSCRIPT_SYSTEM_PROMPT).not.toContain('Mara');
     const capitalised = new Set(MANUSCRIPT_SYSTEM_PROMPT.match(/[A-Z][A-Za-z'’]*/g));
-    const notPersonalNames = ['This', 'Write', 'The', 'A', 'Everything', 'It', 'If', 'No', 'Guards', 'Narration', 'Once', 'Beyond', 'Noticing', 'When', 'Everyone'];
+    const notPersonalNames = ['This', 'Write', 'The', 'A', 'Everything', 'It', 'If', 'No', 'Guards', 'Narration', 'Once', 'Beyond', 'Noticing', 'When', 'Everyone', 'Description', 'For', 'Sometimes', 'Those', 'Use', 'Whatever', 'Rain', 'Down', 'He', 'She', 'They', 'You\'ll'];
     for (const word of notPersonalNames) capitalised.delete(word);
     expect([...capitalised]).toEqual(['Idris']);
   });
 });
 
 describe('the tag ladder', () => {
-  it('is exactly four fenced example lines', () => {
-    expect(LADDER).toHaveLength(4);
-    for (const line of LADDER) {
-      expect(line).toMatch(/^[^\n:]{1,40}: .+$/);
+  it('is exactly four own-line headers, each followed by a one-line sentence', () => {
+    expect(LADDER_HEADERS).toHaveLength(4);
+    for (const header of LADDER_HEADERS) {
+      const headerIndex = LADDER_BLOCK.indexOf(header);
+      expect(LADDER_BLOCK[headerIndex + 1]).toMatch(/\S/);
     }
   });
 
   it('escalates to a collective and a non-personal agent', () => {
-    const tags = LADDER.map((line) => line.trim().split(':')[0]);
+    const tags = LADDER_HEADERS.map((header) => header.slice(0, -1));
     expect(tags).toEqual(['Idris', 'The tall one', 'Guards', 'The dog']);
   });
 
   it('offers no environmental-force tag', () => {
-    const tags = LADDER.map((line) => line.trim().split(':')[0]);
+    const tags = LADDER_HEADERS.map((header) => header.slice(0, -1));
     for (const tag of tags) {
       expect(tag).not.toMatch(/fire|flame|smoke|wind|storm|rain|weather|tide|sea|river|night|dark|cold/i);
     }
+  });
+
+  it('has a second worked-example block with exactly one ∅ header', () => {
+    expect(EXAMPLE_HEADERS).toEqual(['Idris:', '∅:', 'The clerk:']);
+    expect(EXAMPLE_HEADERS.filter((header) => header === '∅:')).toHaveLength(1);
   });
 });
 
 describe('the grammar commitments', () => {
   it('gives a tagged block every kind of interiority', () => {
-    const sentence = MANUSCRIPT_SYSTEM_PROMPT.split('\n').find((line) => line.includes('belongs to that figure:'));
+    const sentence = MANUSCRIPT_SYSTEM_PROMPT.split('\n').find((line) => line.includes('until the next header:'));
     for (const item of ['what they say', 'what they do', 'what they choose', 'what they notice', 'what they intend', 'how they understand what is happening']) {
       expect(sentence).toContain(item);
     }
@@ -202,16 +214,16 @@ describe('the grammar commitments', () => {
     expect(MANUSCRIPT_SYSTEM_PROMPT).toContain('If the story later gives them a name, the tag can change with it.');
   });
 
-  it('states blank-line separation, single ownership, integrating narration and anonymous-only groups', () => {
-    expect(MANUSCRIPT_SYSTEM_PROMPT).toContain('The text is written in blocks, with a blank line between each one.');
-    expect(MANUSCRIPT_SYSTEM_PROMPT).toContain('Everything inside that block belongs to that figure');
-    expect(MANUSCRIPT_SYSTEM_PROMPT).toContain('it should not quietly make a new decision on someone\'s behalf.');
+  it('states own-line headers, single header per passage, ∅ for world passages and anonymous-only groups', () => {
+    expect(MANUSCRIPT_SYSTEM_PROMPT).toContain('A figure takes the passage with a header on its own line');
+    expect(MANUSCRIPT_SYSTEM_PROMPT).toContain('The header appears once');
+    expect(MANUSCRIPT_SYSTEM_PROMPT).toContain('Those passages open with ∅: on its own line');
     expect(MANUSCRIPT_SYSTEM_PROMPT).toContain('A group tag can stand for several figures while they are still moving together');
     expect(MANUSCRIPT_SYSTEM_PROMPT).toContain('their actions and choices belong to them separately');
   });
 
   it('stays short', () => {
-    expect(MANUSCRIPT_SYSTEM_PROMPT.match(/[A-Za-z'’]+/g)).toHaveLength(462);
+    expect(MANUSCRIPT_SYSTEM_PROMPT.match(/[A-Za-z'’]+/g)).toHaveLength(620);
   });
 });
 
@@ -229,8 +241,9 @@ describe('src/prompt.js', () => {
   });
 
   it('touches no host', () => {
-    for (const forbidden of ['SillyTavern', 'getContext', 'window', 'document', 'import']) {
+    for (const forbidden of ['SillyTavern', 'getContext', 'document', 'import']) {
       expect(SOURCE).not.toContain(forbidden);
     }
+    expect(SOURCE).not.toMatch(/\bwindow\b/);
   });
 });
