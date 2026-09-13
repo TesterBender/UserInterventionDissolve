@@ -1,5 +1,5 @@
 # Brief 0031 — `selectCut` last-message clamp (option)
-Status: draft
+Status: implemented
 Complexity: high  (touches INV-6 and INV-7 in the module that owns them; one `src/` module, but every existing cut-selection test is downstream of it)
 PLAN sections: §16 (freezing is append-only, old spans are not re-cut; the target is advisory and belongs to the compiler — a clamp that only *withholds* candidates is inside what §16 licenses), §17 (cut selection: hard safety rules first, preferences after; the clamp is a new hard rule and therefore goes in the hard-rule loop, never into the preference tiers)
 Invariants touched: INV-6 (cut point — the clamp narrows where a cut may land, never widens it), INV-7 (cut selection — the clamp must not be expressible as a preference, or a dense-external-character frontier could cut through the protected region anyway)
@@ -41,15 +41,15 @@ Scope source: `TamperContainment/PLAN-janitor.md` — "Per-generation pipeline" 
 - (empty) No SillyTavern API and no Janitor runtime fact is involved. The Janitor behaviour that motivates the clamp — a regenerate restarts from the latest user message with the replaced assistant message absent — is an answered ledger item (`docs/api/janitor.md#regenerate-drops-the-replaced-assistant-message`, 2026-09-13). Do not launch `st-api-verifier`.
 
 ## Acceptance
-- [ ] With no `maxFrozenEnd`, `selectCut` returns exactly what it returns today for a corpus of at least three frontier texts, including one that triggers the overrun path; asserted on the full returned object.
-- [ ] With `maxFrozenEnd` set to the start offset of the final block of a long frontier, no returned cut has `frozenEnd > maxFrozenEnd`, and the chosen boundary is a legal one below the cap.
-- [ ] With `maxFrozenEnd` set below `FREEZE_MIN_WORDS`' worth of text, `selectCut` returns `null` (refusal is normal, `docs/modules/freeze.md#overrun`).
-- [ ] The clamp survives overrun: with a frontier whose only safe boundaries are past `FREEZE_MAX_WORDS`, and a `maxFrozenEnd` below the first of them, the result is `null` rather than an overrun cut past the cap.
-- [ ] The clamp is a hard rule, not a preference: a frontier where the only neutral-span-start boundary sits past the cap yields a cut below the cap (a lower tier wins), not the preferred one.
-- [ ] `compileUnit(state, derived, literal, { maxFrozenEnd })` forwards the option with no edit to `compileUnit`, and a clamped-to-`null` cut leaves the state byte-identical.
-- [ ] A non-finite `maxFrozenEnd` (`undefined`, `null`, `NaN`, `'120'`) is ignored rather than treated as `0`.
-- [ ] `npm run check` passes
-- [ ] every new pointer comment resolves (`node tools/check-comments.mjs`)
+- [x] With no `maxFrozenEnd`, `selectCut` returns exactly what it returns today for a corpus of at least three frontier texts, including one that triggers the overrun path; asserted on the full returned object.
+- [x] With `maxFrozenEnd` set to the start offset of the final block of a long frontier, no returned cut has `frozenEnd > maxFrozenEnd`, and the chosen boundary is a legal one below the cap.
+- [x] With `maxFrozenEnd` set below `FREEZE_MIN_WORDS`' worth of text, `selectCut` returns `null` (refusal is normal, `docs/modules/freeze.md#overrun`).
+- [x] The clamp survives overrun: with a frontier whose only safe boundaries are past `FREEZE_MAX_WORDS`, and a `maxFrozenEnd` below the first of them, the result is `null` rather than an overrun cut past the cap.
+- [x] The clamp is a hard rule, not a preference: a frontier where the only neutral-span-start boundary sits past the cap yields a cut below the cap (a lower tier wins), not the preferred one.
+- [x] `compileUnit(state, derived, literal, { maxFrozenEnd })` forwards the option with no edit to `compileUnit`, and a clamped-to-`null` cut leaves the state byte-identical.
+- [x] A non-finite `maxFrozenEnd` (`undefined`, `null`, `NaN`, `'120'`) is ignored rather than treated as `0`.
+- [x] `npm run check` passes
+- [x] every new pointer comment resolves (`node tools/check-comments.mjs`)
 
 ## Docs to write/update
 - `docs/modules/freeze.md#candidates` — add `maxFrozenEnd` to the three hard requirements as a fourth, conditional one, in the same voice.

@@ -32,6 +32,7 @@ A boundary is the gap between two blocks — the blank line that PLAN §5 makes 
 - `i <= blocks.length - 2`. The last block is never a cut point: the frontier must retain at least one block, and the trailing block is the only one that may still be in progress.
 - `blocks[i].complete === true`. INV-6 and PLAN §5: "the compiler never freezes through the middle of a complete block". Only the trailing block can ever be incomplete, so in practice this is belt and braces — but it is the check that makes the invariant local to this module instead of an argument about the parser.
 - cumulative words up to `blocks[i].end` are at least `min`.
+- when the caller passes a finite `maxFrozenEnd`, `blocks[i].end` is at or below it. This fourth requirement is conditional — absent the option there is no cap and nothing is withheld — but wherever it applies it is as hard as the other three and never a preference: see [Last-message clamp](#last-message-clamp).
 
 A frontier of fewer than two blocks therefore has no candidate at all, and neither does a frontier that has not yet reached `min`; both return `null`, which means "do not freeze" and is a normal outcome.
 
@@ -79,6 +80,16 @@ Two implementation facts belong here. `SENTENCE_FINAL` is a deliberate copy of g
 PLAN §16 makes the ceiling advisory: the compiler "may overrun it to reach a better block boundary". When every safe candidate is past `FREEZE_MAX_WORDS`, `selectCut` returns the **first** safe boundary past the ceiling with `overrun: true` and does not look further. The preferences (c) and (d) are not applied to an overrun choice — overrunning is licensed to *reach* a safe boundary, not to shop for a nicer one, and searching on would let a dense external-character passage stretch the span arbitrarily.
 
 A refusal is not an error. `selectCut` returns `null` when no boundary survives rule (a) at all: the manuscript is simply not ready to be cut, and the frontier keeps growing until it is. The other refusal belongs to the apply step, wherever it lives — `canPushSpan` can decline a span (`docs/modules/state.md#can-push-span`), and a declined span must leave the watermark exactly where it was, because the mutable region is never shortened without a corresponding compiled unit. `compileUnit` runs that test *before* any mutation, so a declined span leaves the whole state byte-identical: no unit, no watermark move and no seal.
+
+## Last-message clamp {#last-message-clamp}
+
+`maxFrozenEnd` is an optional character offset into `frontierText` — into the derived frontier the call was given, not a message index and not a message count. `selectCut` knows nothing about messages ([Purity and INV-10](#purity)), so the caller that owns the message list computes the offset and passes a plain number; deriving it from `derived.segments` is that caller's job. The option is off by default: when it is absent, `null`, `NaN` or a string, `Number.isFinite` rejects it and the candidate list is exactly what it was before the option existed. The SillyTavern host never sets it, so its behaviour is unchanged.
+
+It is a **hard rule**, tested in the same loop as completeness, `min` and the reserved-span test, and never a preference tier. A preference can be overridden by the tier below it: were the clamp expressed as "prefer boundaries under the cap", a frontier with no preferred candidate under the cap — a dense external-character passage, say — would fall through to a lower tier and cut straight through the protected region, which is the one thing the clamp exists to prevent. As a hard rule it only ever *withholds* candidates, so it narrows where a cut may land and never widens it (INV-6, INV-7).
+
+It applies to the overrun path too. [Overrun and refusal](#overrun) draws its choice from `safe[0]`, and `safe` is already clamped, so an overrun cut cannot reach past the cap either. If no boundary under the cap survives the other rules, the result is `null` — a refusal, which is a normal outcome: the frontier keeps growing until a legal boundary appears below the cap.
+
+The host reason it exists: on a host where the provider request is the only view of history, a regenerate can replace the trailing assistant message *after* its head was already compiled, leaving a compiled head in the frozen record plus a fresh full message in the next request — the same passage twice, from two different drafts. With the cap set to the start of the last non-sentinel message, a message is compiled only once the human has sent a turn past it, which is also the moment that host can no longer regenerate it. `selectCut` on its own protects only the last *block*, which is not the same boundary. The deviation is recorded in `docs/decisions/0007-janitor-host-deviations.md`.
 
 ## Seal policy {#seal-policy}
 

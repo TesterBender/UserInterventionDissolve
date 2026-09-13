@@ -781,3 +781,111 @@ describe('defaults', () => {
     expect(FREEZE_MAX_WORDS).toBe(4200);
   });
 });
+
+describe('maxFrozenEnd clamp', () => {
+  const PLAIN = manuscript([
+    buf(100), buf(100), buf(100), buf(100), buf(100), buf(100), buf(100), buf(100),
+  ]);
+  const PLAIN_OPTS = { min: 250, max: 650, jitterSeed: 3 };
+
+  const NEUTRAL_LATE = manuscript([buf(100), buf(100), buf(100), `∅: ${buf(99)}`, buf(100)]);
+  const NEUTRAL_OPTS = { min: 150, max: 450, jitterSeed: 0 };
+
+  const OVERRUN = manuscript([
+    buf(100), buf(100), tag('Mara', 100), buf(100), tag('Anton', 100),
+    buf(100), buf(100), buf(100), buf(100), buf(100),
+  ]);
+  const OVERRUN_OPTS = { min: 150, max: 450, jitterSeed: 11 };
+
+  function assistant(mes, id) {
+    return { name: 'Anton', is_user: false, is_system: false, mes, extra: { [METADATA_KEY]: { id } } };
+  }
+
+  it('returns exactly the unclamped cut when the option is absent', () => {
+    expect(selectCut(PLAIN, LITERAL, PLAIN_OPTS)).toEqual({
+      blockIndex: 4, frozenEnd: 1958, index: 1960, words: 500, target: 495, overrun: false,
+    });
+    expect(selectCut(NEUTRAL_LATE, LITERAL, NEUTRAL_OPTS)).toEqual({
+      blockIndex: 2, frozenEnd: 1174, index: 1176, words: 300, target: 252, overrun: false,
+    });
+    expect(selectCut(OVERRUN, LITERAL, OVERRUN_OPTS)).toEqual({
+      blockIndex: 4, frozenEnd: 1963, index: 1965, words: 500, target: 368, overrun: true,
+    });
+  });
+
+  it('ignores a cap that is not a finite number rather than treating it as 0', () => {
+    const reference = selectCut(PLAIN, LITERAL, PLAIN_OPTS);
+    for (const maxFrozenEnd of [undefined, null, NaN, '120', Infinity]) {
+      expect(selectCut(PLAIN, LITERAL, { ...PLAIN_OPTS, maxFrozenEnd })).toEqual(reference);
+    }
+  });
+
+  it('never reaches past the cap and stays on a legal boundary', () => {
+    const blocks = parseManuscript(PLAIN);
+    const maxFrozenEnd = blocks.at(-1).start;
+
+    for (let seed = 0; seed < 60; seed += 1) {
+      const cut = selectCut(PLAIN, LITERAL, { ...PLAIN_OPTS, jitterSeed: seed, maxFrozenEnd });
+      expect(cut).not.toBeNull();
+      expect(cut.frozenEnd).toBeLessThanOrEqual(maxFrozenEnd);
+      expect(blocks[cut.blockIndex].complete).toBe(true);
+      expect(cut.frozenEnd).toBe(blocks[cut.blockIndex].end);
+    }
+
+    const tight = { ...PLAIN_OPTS, maxFrozenEnd: blocks[2].end };
+    expect(selectCut(PLAIN, LITERAL, tight)).toEqual({
+      blockIndex: 2, frozenEnd: 1174, index: 1176, words: 300, target: 495, overrun: false,
+    });
+  });
+
+  it('refuses when the cap sits below min words', () => {
+    const blocks = parseManuscript(PLAIN);
+    expect(selectCut(PLAIN, LITERAL, { ...PLAIN_OPTS, maxFrozenEnd: blocks[1].end })).toBeNull();
+    expect(selectCut(PLAIN, LITERAL, { ...PLAIN_OPTS, maxFrozenEnd: 0 })).toBeNull();
+  });
+
+  it('refuses rather than overrunning past the cap', () => {
+    const blocks = parseManuscript(OVERRUN);
+    const free = selectCut(OVERRUN, LITERAL, OVERRUN_OPTS);
+
+    expect(free.overrun).toBe(true);
+    expect(free.frozenEnd).toBe(blocks[4].end);
+    expect(selectCut(OVERRUN, LITERAL, { ...OVERRUN_OPTS, maxFrozenEnd: blocks[3].end })).toBeNull();
+  });
+
+  it('is a hard rule, not a preference: a lower tier below the cap wins', () => {
+    const blocks = parseManuscript(NEUTRAL_LATE);
+    const spans = groupSpans(blocks, { reservedActor: 'Mara' });
+    const neutralStarts = spans.filter((span) => span.neutral).map((span) => span.blockIndices[0]);
+    expect(neutralStarts).toEqual([3]);
+
+    for (let seed = 0; seed < 40; seed += 1) {
+      const opts = { ...NEUTRAL_OPTS, jitterSeed: seed };
+      expect(selectCut(NEUTRAL_LATE, LITERAL, opts).blockIndex).toBe(2);
+
+      const cut = selectCut(NEUTRAL_LATE, LITERAL, { ...opts, maxFrozenEnd: blocks[1].end });
+      expect(cut.blockIndex).toBe(1);
+      expect(cut.frozenEnd).toBeLessThanOrEqual(blocks[1].end);
+    }
+  });
+
+  it('is forwarded by compileUnit, and a clamped refusal leaves the state byte-identical', () => {
+    const chat = [assistant(buf(100), 'a'), assistant(buf(100), 'b'), assistant(buf(100), 'c'), assistant(buf(100), 'd')];
+    const opts = { min: 150, max: 350 };
+
+    const clamped = createState();
+    const derivedClamped = deriveFrontier(chat, clamped, LITERAL);
+    const blocks = parseManuscript(derivedClamped.text);
+    const result = compileUnit(clamped, derivedClamped, LITERAL, { ...opts, maxFrozenEnd: blocks[1].end });
+
+    expect(result.blockIndex).toBe(1);
+    expect(clamped.units[0].text).toBe(derivedClamped.text.slice(0, blocks[1].end));
+
+    const refused = createState();
+    const derivedRefused = deriveFrontier(chat, refused, LITERAL);
+    const before = JSON.parse(JSON.stringify(refused));
+
+    expect(compileUnit(refused, derivedRefused, LITERAL, { ...opts, maxFrozenEnd: blocks[0].end })).toBeNull();
+    expect(refused).toEqual(before);
+  });
+});
