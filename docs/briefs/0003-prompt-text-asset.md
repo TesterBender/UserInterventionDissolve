@@ -177,3 +177,19 @@ Continue naturally from where the manuscript leaves off, with the full preceding
 - [x] constant equals the user's text verbatim
 - [x] solo variant = new text + unchanged solo sentence
 - [x] `npm run check` passes
+
+## Amendment 4 (2026-09-13) — agency-span prompt
+
+User-approved replacement of `MANUSCRIPT_SYSTEM_PROMPT` ("let it be"), assembled from the user's text plus the span rewrite, the own-line ladder, the `∅:` paragraph and one worked example (Idris / `∅:` / the clerk); 620 words by `/[A-Za-z'’]+/g`. The constant and the test's `EXPECTED_PROMPT` were swapped by the orchestrator's script; presets regenerated. The Restructure instruction is unchanged by user decision.
+
+### Test updates required (in-place, tests/prompt.test.js only)
+- Word-count freeze → 620; the `continue`-exemption assertion stays `toHaveLength(1)` (the swap script wrongly changed it — restore).
+- Ladder: the first fenced block now has four own-line headers (`Idris:`, `The tall one:`, `Guards:`, `The dog:`) each followed by a one-line sentence; there is a second fenced block (the worked example) containing `Idris:`, `∅:`, `The clerk:` headers. Rewrite the ladder assertions for the own-line form and assert the second block contains exactly one `∅:` header.
+- Grammar-commitment assertions: replace the "The text is written in blocks…" / "A block is either tagged…" / "Narration sits between…" expectations with the new sentences ("A figure takes the passage with a header on its own line", "The header appears once", "Those passages open with ∅: on its own line"); keep the noticing / page-may-wait / group-tag / intention assertions (intention paragraph is byte-identical to Amendment 2).
+- Capitalised-word allowlist: add the new sentence-initial and example words (Description, For, Sometimes, Those, Use, Whatever, Rain, Down, He, She, It, They, You'll, and any other non-name the new text introduces); `Idris` remains the only permitted personal name.
+- "touches no host": the prompt text contains the English word "windows"; scope that assertion to `window.`/`globalThis`/`SillyTavern`/`document` as identifiers (e.g. `\bwindow\b` followed by `.` or a word-boundary check on the source minus the template literal), not the substring.
+- Forbidden-word lists unchanged and must still pass.
+
+- [x] constant equals the approved text verbatim
+- [x] presets regenerated
+- [ ] tests updated as above; `npm run check` passes

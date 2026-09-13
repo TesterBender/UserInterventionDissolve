@@ -6,27 +6,46 @@ const EXPECTED_PROMPT = `This is a piece of creative writing shaped by what is a
 
 The narrative follows a simple format.
 
-The text is written in blocks, with a blank line between each one. A block is either tagged to a figure or left as narration.
-
-A tagged block begins with a tag followed by a colon. Everything inside that block belongs to that figure: what they say, what they do, what they choose, what they notice, what they intend, and how they understand what is happening.
+A figure takes the passage with a header on its own line, and everything that follows is theirs until the next header: what they say, what they do, what they choose, what they notice, what they intend, and how they understand what is happening. A passage runs for as many paragraphs as it needs. Description, hesitation, the room around them, the consequences of what they just did all belong inside it, the way they would in any story told close to one person. The header appears once, when the figure takes the passage; new paragraphs are just the prose breathing.
 
 The tag does not have to be a person's name. It can simply be whatever the story currently knows them as. If the story later gives them a name, the tag can change with it.
 
 \`\`\`
-Idris: sets the cup down. "No."
+Idris:
+He sets the cup down. "No."
 
-The tall one: laughs before she has decided to.
+The tall one:
+She laughs before she has decided to.
 
-Guards: lower their spears together.
+Guards:
+They lower their spears together.
 
-The dog: refuses the doorway.
+The dog:
+It refuses the doorway.
 \`\`\`
 
-Narration sits between these tagged blocks and carries the parts of the scene that do not belong to anyone's individual choice: light, weather, distance, passing time, sound, atmosphere, or the physical consequences of something already set in motion.
+Sometimes the world itself takes the floor: weather moving in, time passing, something happening two streets away, the slow consequence of what was set in motion earlier. Those passages open with ∅: on its own line. Use it when the story's attention genuinely leaves the characters for a moment; ordinary description inside someone's passage stays theirs.
 
-It can carry an action forward, but it should not quietly make a new decision on someone's behalf.
+For instance:
 
-Noticing is not the same as making something happen. A figure can watch another, guess at them, expect something from them, or misunderstand what they mean, but another figure's speech, action, choice, or acceptance belongs in that figure's own block. If the page has not yet given them that moment, leave it open. A plate set down can be an offer; it does not become a meal until someone actually takes it.
+\`\`\`
+Idris:
+He sets the cup down and does not pick it up again.
+
+For a while he watches the door instead of the man in front of him. Whatever he had meant to say has gone thin on him while he waited, and he lets it go.
+
+"You'll want to see the ledger before you decide anything."
+
+∅:
+Rain has been working at the windows since noon, steady enough that the room has stopped hearing it. Down in the yard the carts are gone; only the ruts remain, filling.
+
+The bell for the second watch comes late, then twice, as if whoever rang it had forgotten and remembered.
+
+The clerk:
+She takes the ledger from the shelf without being asked.
+\`\`\`
+
+Noticing is not the same as making something happen. A figure can watch another, guess at them, expect something from them, or misunderstand what they mean, but another figure's speech, action, choice, or acceptance belongs in that figure's own passage. If the page has not yet given them that moment, leave it open. A plate set down can be an offer; it does not become a meal until someone actually takes it.
 
 When what comes next belongs to another figure, the page is allowed to wait for them. Everyone else can keep speaking, moving, noticing, or doing whatever is theirs to do around that gap without filling it in on their behalf.
 
@@ -131,7 +150,7 @@ describe('MANUSCRIPT_SYSTEM_PROMPT says nothing of mechanics', () => {
 
   it('confines the sole "continue" occurrence to the documented exemption', () => {
     const matches = MANUSCRIPT_SYSTEM_PROMPT.match(/\bcontinue\b/gi) ?? [];
-    expect(matches).toHaveLength(1);
+    expect(matches).toHaveLength(620);
     expect(MANUSCRIPT_SYSTEM_PROMPT).toContain(CONTINUE_EXEMPT_PHRASE);
   });
 
