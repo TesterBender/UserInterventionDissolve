@@ -1212,7 +1212,7 @@ function assignIdentities(messages) {
   for (const message of messages) {
     const role = String(message.role ?? '');
     const content = String(message.content ?? '');
-    const key = `${role} ${content}`;
+    const key = `${role}\u0000${content}`;
     const occurrence = seen.get(key) ?? 0;
     seen.set(key, occurrence + 1);
     ids.push(messageIdentity(role, content, occurrence));
