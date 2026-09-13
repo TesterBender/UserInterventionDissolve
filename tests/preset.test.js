@@ -3,7 +3,7 @@ import { readFileSync, readdirSync, statSync } from 'node:fs';
 import { join } from 'node:path';
 import { execFileSync } from 'node:child_process';
 import { buildPresets } from '../src/preset-template.js';
-import { MANUSCRIPT_SYSTEM_PROMPT, CONTINUATION_CONTROL } from '../src/prompt.js';
+import { MANUSCRIPT_SYSTEM_PROMPT, CONTINUATION_CONTROL, TAKE_STOCK_PROMPT } from '../src/prompt.js';
 
 const PRESET_DIR = 'presets';
 const OPENAI_FILE = 'Manuscript Protocol.json';
@@ -11,7 +11,7 @@ const SYSPROMPT_FILE = 'manuscript-protocol.sysprompt.json';
 const PRESET_NAME = 'Manuscript Protocol';
 
 const DEFAULT_ORDER = [
-  'main', 'worldInfoBefore', 'personaDescription', 'charDescription', 'charPersonality', 'scenario',
+  'main', 'uidTakeStock', 'worldInfoBefore', 'personaDescription', 'charDescription', 'charPersonality', 'scenario',
   'enhanceDefinitions', 'nsfw', 'worldInfoAfter', 'dialogueExamples', 'chatHistory', 'jailbreak',
 ];
 
@@ -47,14 +47,21 @@ describe('openai preset', () => {
     expect('name' in preset).toBe(false);
   });
 
-  it('carries the system prompt verbatim in a single main entry', () => {
-    expect(preset.prompts).toEqual([{
+  it('carries the system prompt verbatim in the main entry and the take-stock text in a second entry', () => {
+    expect(preset.prompts).toHaveLength(2);
+    expect(preset.prompts[0]).toEqual({
       identifier: 'main',
       name: 'Main Prompt',
       role: 'system',
       system_prompt: true,
       content: MANUSCRIPT_SYSTEM_PROMPT,
-    }]);
+    });
+    expect(preset.prompts[1]).toEqual({
+      identifier: 'uidTakeStock',
+      name: 'Take stock (thinking models)',
+      role: 'system',
+      content: TAKE_STOCK_PROMPT,
+    });
   });
 
   it('targets the live openai dummyId 100001 as a number', () => {
@@ -62,11 +69,14 @@ describe('openai preset', () => {
     expect(preset.prompt_order[0].character_id).toBe(100001);
   });
 
-  it('writes out the stock order with enhanceDefinitions the only disabled entry', () => {
+  it('writes out the stock order with uidTakeStock immediately after main and enhanceDefinitions the only other disabled entry', () => {
     const { order } = preset.prompt_order[0];
+    expect(order).toHaveLength(13);
     expect(order.map((entry) => entry.identifier)).toEqual(DEFAULT_ORDER);
+    expect(order[1]).toEqual({ identifier: 'uidTakeStock', enabled: false });
     for (const entry of order) {
-      expect(entry.enabled).toBe(entry.identifier !== 'enhanceDefinitions');
+      const shouldBeEnabled = entry.identifier !== 'enhanceDefinitions' && entry.identifier !== 'uidTakeStock';
+      expect(entry.enabled).toBe(shouldBeEnabled);
     }
   });
 

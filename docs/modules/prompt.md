@@ -44,6 +44,8 @@ The text also says nothing about how the page is assembled or delivered (§27): 
 
 The one exemption, recorded by Amendment 1: the phrase "that can continue across later narration" uses the whole word `continue`, but in the sense of a fictional intention persisting on the page (§6), not in the sense of a continuation-control instruction crossing a transport seam. The word describes what a tagged figure's intention does inside the story, not what the extension does between requests, so it does not leak mechanics.
 
+The one exception to "no instruction about how to spend reasoning" is `TAKE_STOCK_PROMPT`, a separate opt-in text (see [Take stock](#take-stock)); `MANUSCRIPT_SYSTEM_PROMPT`, the always-on text, still says nothing about reasoning.
+
 ## Continuation control
 
 `CONTINUATION_CONTROL` is one string, defined once, never composed at call time. It is byte-identical on every read because it goes into frozen history: if the live seam and the frozen record ever differed by a character, the history would record where an intervention happened (§13, INV-5). There is exactly one variant; `host-mapping.md#s13-continuation` permits a second only if a brief justifies it, and none does.
@@ -80,3 +82,15 @@ The sentence keeps the register of the canonical string: it is a plain request f
 The constant stores the literal `{{user}}` and is never stored resolved. Resolution is per-request and depends on the persona that is current at that moment (`src/solo.js`); a constant holding a resolved name would be wrong the moment the persona changed, and would put a real name into a module-level value that other code could copy into canonical state.
 
 This sentence is a pinned string. Rewording it — including punctuation — is a user decision that goes through the pinned-string lane (`docs/workflow/workflow.md#pinned-string-lane`) as an amendment to `docs/briefs/0019-solo-continuation-variant.md`, never an implementation choice.
+
+## Take stock {#take-stock}
+
+`TAKE_STOCK_PROMPT` is a second, opt-in text asking for PLAN §22's state-reconstruction-then-forward-propagation: before the next stretch, reconstruct who is where, what each figure knows and does not know, what is still in motion, and who has reason to act, and let what follows grow out of that rather than out of a desired ending.
+
+It is a separate text from `MANUSCRIPT_SYSTEM_PROMPT` rather than a paragraph folded into it, because it is heavier-handed than the light touch the always-on prompt keeps to (user decision, 2026-09-13: "it is an option to change for sure, the thinking. I think it is a more, stronger prompt mode compared to the lighter hand."). Some models benefit from being told directly to reconstruct state before writing; others write better without a reasoning instruction in view at all. Splitting the two lets a user choose per model instead of forcing every model through the stronger mode.
+
+It ships as a disabled `prompts[]` entry in the reference preset (`docs/modules/preset.md#template-fields`) so importing the preset changes nothing until the user enables it themselves in SillyTavern's own prompt manager. It is ranked immediately after `main` and must never be placed after `chatHistory`: a relative entry ranked past `chatHistory` would land after every history message including the injected continuation user turn, displacing the continuation seam from the edge of the request (INV-5), and would leave the transcript ending on a `system`-role message, which some backends reject or warn on for a trailing turn.
+
+The same forbidden-word lists that bind `MANUSCRIPT_SYSTEM_PROMPT` (see [Says nothing of mechanics](#says-nothing-of-mechanics)) bind this text too, with no exemption — it names no character, embeds no macro, and is a single line.
+
+`TAKE_STOCK_PROMPT` is a pinned string. Rewording it — including punctuation — is a user decision that goes through the pinned-string lane (`docs/workflow/workflow.md#pinned-string-lane`) as an amendment to `docs/briefs/0023-take-stock-prompt-entry.md`, never an implementation choice.

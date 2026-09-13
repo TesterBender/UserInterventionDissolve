@@ -1,6 +1,6 @@
 import { describe, it, expect } from 'vitest';
 import { readFileSync } from 'node:fs';
-import { MANUSCRIPT_SYSTEM_PROMPT, CONTINUATION_CONTROL } from '../src/prompt.js';
+import { MANUSCRIPT_SYSTEM_PROMPT, CONTINUATION_CONTROL, TAKE_STOCK_PROMPT } from '../src/prompt.js';
 
 const EXPECTED_PROMPT = `This is a piece of creative writing shaped by what is already on the page: the voices, the unfinished gestures, the things characters have begun but not yet completed. Write it as prose that feels particular and sensory, and let it be strange when the story wants to be strange.
 
@@ -42,6 +42,8 @@ The story ends when it has reached its ending.`;
 
 const EXPECTED_CONTROL = 'Continue naturally from where the manuscript leaves off, with the full preceding context in mind. Let what has already been established—character intentions, scene dynamics, tone, and unfolding circumstances—inform what follows, while staying consistent with the existing voice and perspective.';
 
+const EXPECTED_TAKE_STOCK = 'Before the next stretch, take stock of the room: who is where, what each of them knows and does not know, what is still in motion from earlier, and who has a reason to move now. Let what comes next grow out of that, not out of where the story ought to end up.';
+
 const SOURCE = readFileSync('src/prompt.js', 'utf8');
 
 const FENCE_LINES = MANUSCRIPT_SYSTEM_PROMPT.split('\n');
@@ -64,24 +66,61 @@ describe('approved texts', () => {
     expect(CONTINUATION_CONTROL).not.toMatch(/[\r\n]/);
     expect(CONTINUATION_CONTROL).toBe(CONTINUATION_CONTROL.trim());
   });
+
+  it('ships TAKE_STOCK_PROMPT byte-for-byte', () => {
+    expect(TAKE_STOCK_PROMPT).toBe(EXPECTED_TAKE_STOCK);
+  });
+
+  it('keeps TAKE_STOCK_PROMPT a single stable line naming no character', () => {
+    expect(TAKE_STOCK_PROMPT).not.toMatch(/[\r\n]/);
+    expect(TAKE_STOCK_PROMPT).toBe(TAKE_STOCK_PROMPT.trim());
+    expect(TAKE_STOCK_PROMPT).not.toContain('{{');
+  });
+});
+
+// forbidden-word-lists: shared between MANUSCRIPT_SYSTEM_PROMPT and TAKE_STOCK_PROMPT → docs/modules/prompt.md#take-stock
+const WHOLE_WORDS = [
+  'edge',
+  'boundary',
+  'continue',
+  'generation',
+  'turn',
+  'reply',
+  'respond',
+  'user',
+  'model',
+  'reasoning',
+  'thinking',
+  'privileged',
+];
+
+const SUBSTRINGS = [
+  'assistant',
+  'chat',
+  'message',
+  'prompt',
+  'token',
+  'span',
+  'chunk',
+  'freeze',
+  'summarize',
+  'recap',
+  'bold',
+  'italic',
+  'markdown',
+];
+
+describe('TAKE_STOCK_PROMPT says nothing of mechanics', () => {
+  it.each(WHOLE_WORDS)('contains no whole word %s', (word) => {
+    expect(TAKE_STOCK_PROMPT).not.toMatch(new RegExp(`\\b${word}\\b`, 'i'));
+  });
+
+  it.each(SUBSTRINGS)('contains no occurrence of %s', (word) => {
+    expect(TAKE_STOCK_PROMPT.toLowerCase()).not.toContain(word);
+  });
 });
 
 describe('MANUSCRIPT_SYSTEM_PROMPT says nothing of mechanics', () => {
-  const WHOLE_WORDS = [
-    'edge',
-    'boundary',
-    'continue',
-    'generation',
-    'turn',
-    'reply',
-    'respond',
-    'user',
-    'model',
-    'reasoning',
-    'thinking',
-    'privileged',
-  ];
-
   // continue-exemption: fictional persistence phrase, not transport → docs/modules/prompt.md#says-nothing-of-mechanics
   const CONTINUE_EXEMPT_PHRASE = 'that can continue across later narration';
 
@@ -95,22 +134,6 @@ describe('MANUSCRIPT_SYSTEM_PROMPT says nothing of mechanics', () => {
     expect(matches).toHaveLength(1);
     expect(MANUSCRIPT_SYSTEM_PROMPT).toContain(CONTINUE_EXEMPT_PHRASE);
   });
-
-  const SUBSTRINGS = [
-    'assistant',
-    'chat',
-    'message',
-    'prompt',
-    'token',
-    'span',
-    'chunk',
-    'freeze',
-    'summarize',
-    'recap',
-    'bold',
-    'italic',
-    'markdown',
-  ];
 
   it.each(SUBSTRINGS)('contains no occurrence of %s', (word) => {
     expect(MANUSCRIPT_SYSTEM_PROMPT.toLowerCase()).not.toContain(word);
@@ -174,12 +197,13 @@ describe('the grammar commitments', () => {
 });
 
 describe('src/prompt.js', () => {
-  it('exports exactly three constants and declares no function', async () => {
+  it('exports exactly four constants and declares no function', async () => {
     const module = await import('../src/prompt.js');
     expect(Object.keys(module).sort()).toEqual([
       'CONTINUATION_CONTROL',
       'MANUSCRIPT_SYSTEM_PROMPT',
       'SOLO_CONTINUATION_CONTROL',
+      'TAKE_STOCK_PROMPT',
     ]);
     for (const value of Object.values(module)) expect(typeof value).toBe('string');
     expect(SOURCE).not.toMatch(/\bfunction\b|=>/);

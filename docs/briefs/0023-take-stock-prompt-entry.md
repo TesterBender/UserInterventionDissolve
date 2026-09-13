@@ -1,5 +1,5 @@
 # Brief 0023 — Optional §22 "take stock" prompt entry, shipped disabled
-Status: draft
+Status: implemented
 Complexity: high
 PLAN sections: §22 (reasoning should reconstruct current fictional state — who is where, what each knows, active motives, earlier causes still propagating, unresolved consequences, who has reason to act — and propagate forward from causes, not backward from a desired outcome); §13 (continuation control is a reconstructed user turn, byte-identical, not preset material — this brief must not disturb it)
 Invariants touched: INV-5 (the continuation seam must stay the last thing in the request and stay byte-identical), INV-9 (semantics live in prompt text, not code)
@@ -49,15 +49,15 @@ The reference chat-completion preset carries a second `prompts[]` entry, `uidTak
 - (empty)
 
 ## Acceptance
-- [ ] `TAKE_STOCK_PROMPT` matches the pinned text byte-for-byte in `src/prompt.js` and in every generated preset file.
-- [ ] `TAKE_STOCK_PROMPT` passes the same whole-word and substring forbidden lists as `MANUSCRIPT_SYSTEM_PROMPT`, with no exemption.
-- [ ] `buildPresets()['Manuscript Protocol.json'].prompts` has exactly two entries; the second is `{identifier:'uidTakeStock', name:'Take stock (thinking models)', role:'system', content: TAKE_STOCK_PROMPT}` and nothing more.
-- [ ] `prompt_order[0].order` has 13 entries; `order[1]` is `uidTakeStock` with `enabled: false`; `enhanceDefinitions` is the only other disabled entry; `chatHistory` and `jailbreak` keep their stock trailing positions.
-- [ ] Committed `presets/*.json` are byte-identical to the generator output (existing deep-equal and serialise-twice tests still pass).
-- [ ] `CONTINUATION_CONTROL` still appears in no generated file, in whole or by sentence, and is imported by neither the generator nor the template.
-- [ ] `README.md` states the entry exists, is off by default, and is enabled in the prompt manager.
-- [ ] `npm run check` passes.
-- [ ] every new pointer comment resolves (`node tools/check-comments.mjs`).
+- [x] `TAKE_STOCK_PROMPT` matches the pinned text byte-for-byte in `src/prompt.js` and in every generated preset file.
+- [x] `TAKE_STOCK_PROMPT` passes the same whole-word and substring forbidden lists as `MANUSCRIPT_SYSTEM_PROMPT`, with no exemption.
+- [x] `buildPresets()['Manuscript Protocol.json'].prompts` has exactly two entries; the second is `{identifier:'uidTakeStock', name:'Take stock (thinking models)', role:'system', content: TAKE_STOCK_PROMPT}` and nothing more.
+- [x] `prompt_order[0].order` has 13 entries; `order[1]` is `uidTakeStock` with `enabled: false`; `enhanceDefinitions` is the only other disabled entry; `chatHistory` and `jailbreak` keep their stock trailing positions.
+- [x] Committed `presets/*.json` are byte-identical to the generator output (existing deep-equal and serialise-twice tests still pass).
+- [x] `CONTINUATION_CONTROL` still appears in no generated file, in whole or by sentence, and is imported by neither the generator nor the template.
+- [x] `README.md` states the entry exists, is off by default, and is enabled in the prompt manager.
+- [x] `npm run check` passes.
+- [x] every new pointer comment resolves (`node tools/check-comments.mjs`).
 
 ## Docs to write/update
 - docs/modules/prompt.md#take-stock — what §22 asks of reasoning; why an opt-in second text instead of a paragraph in the always-on prompt; why disabled by default; why it is ranked after `main` and must never trail `chatHistory` (INV-5 and the trailing-user-turn requirement); the shared forbidden-word lists; pinned-string status and the lane for rewording.

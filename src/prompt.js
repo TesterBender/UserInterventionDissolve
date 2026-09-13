@@ -46,3 +46,6 @@ export const CONTINUATION_CONTROL =
 
 // solo-continuation: canonical string by reference plus one pinned sentence → docs/modules/prompt.md#solo-continuation
 export const SOLO_CONTINUATION_CONTROL = `${CONTINUATION_CONTROL} For this stretch, {{user}} is in the scene but stays out of the writing; let the others carry it.`;
+
+// take-stock: opt-in §22 state-reconstruction paragraph, disabled by default → docs/modules/prompt.md#take-stock
+export const TAKE_STOCK_PROMPT = 'Before the next stretch, take stock of the room: who is where, what each of them knows and does not know, what is still in motion from earlier, and who has a reason to move now. Let what comes next grow out of that, not out of where the story ought to end up.';
