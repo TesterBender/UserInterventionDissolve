@@ -17,7 +17,7 @@ It is safe to repeat, too. Freezing at request build is idempotent in the sense 
 
 On the Janitor host a regenerate restarts from the latest user message with the replaced assistant message absent (`docs/api/janitor.md#regenerate-drops-the-replaced-assistant-message`). Combined with freezing at request build, that lets the head of a trailing assistant message be compiled and then the message itself be replaced by a different draft — a compiled head plus a fresh full message, the same passage twice from two drafts. `selectCut` alone does not prevent it: its last-block rule protects the last *block* of the frontier, not the last *message*.
 
-The fix is an **option on `selectCut`, not a fork of it**: `maxFrozenEnd`, a character offset into the frontier text past which no boundary may be taken, enforced as a hard rule alongside completeness, `min` and the reserved-span test (`docs/modules/freeze.md#last-message-clamp`). It is off by default and the SillyTavern host never sets it, so that host's behaviour is unchanged.
+The fix is an **option on `selectCut`, not a fork of it**: `maxFrozenEnd`, a character offset into the frontier text past which no boundary may be taken, enforced as a hard rule alongside completeness, `min` and the reserved-span test (`docs/modules/freeze.md#last-message-clamp`). It is off by default. The SillyTavern host left it unset until brief 0041 (decision 0008, 2026-09-14) found the same replayed-head failure on a swipe and set it at receipt too.
 
 ### Alternatives rejected (clamp)
 

@@ -1,5 +1,5 @@
 # Brief 0041 — Clamp the receipt-time compile to the start of the just-received message
-Status: implemented
+Status: done
 Complexity: high
 PLAN sections: §12 (normalisation happens every request; freezing only when the frontier reaches its transport target — the two must not be conflated, and an old draft must not survive into the next request), §14 (a receipt is classified and rolled back at MESSAGE_RECEIVED; the receipt is the only scheduled moment recovery acts), §16 (freezing is append-only and compiled text is never re-cut, so a compile of text that is about to be replaced cannot be undone), §17 (cut selection is hard rules first; a withholding rule only narrows where a cut may land)
 Invariants touched: INV-4, INV-6, INV-10
