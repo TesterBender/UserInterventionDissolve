@@ -15,6 +15,7 @@ import {
   JANITOR_STATE_FORMAT,
 } from '../../janitor/constants.js';
 import { stateKey } from '../../janitor/storage.js';
+import { prefixIdentity } from '../../janitor/identity.js';
 import {
   CHAT_ID,
   PERSONA,
@@ -316,6 +317,17 @@ describe('the request report', () => {
     expect(line).toMatch(/units \d+/);
     expect(line).toMatch(/frontier \d+ words/);
     expect(line).toMatch(/froze (?:yes|no)/);
+    expect(line).toMatch(/boundary \d+/);
+    expect(line).toMatch(/rollback \d+/);
+  });
+
+  it('counts the messages whose text this request trimmed', async () => {
+    await dispatched([
+      { role: 'user', content: 'She pushed the door open.', id: 6201 },
+      { role: 'assistant', content: 'Keeper:\nThe lamp turned once.\n\nShe reached for the', id: 6202 },
+    ]);
+    expect(console.info.mock.calls[0][0]).toContain('rollback 1');
+    expect(console.info.mock.calls[0][0]).toContain('boundary 0');
   });
 });
 
@@ -446,6 +458,169 @@ describe('identity across edits, duplicates and regenerates', () => {
 
     expect(events).toEqual(['fetch']);
     expect(store.has(stateKey(CHAT_ID))).toBe(false);
+  });
+});
+
+describe('the derivation-time rollback', () => {
+  const ANSWER = 'Keeper:\nThe lamp turned once.\n\nThe rain kept on.';
+  const DEBRIS = 'She reached for the';
+  const withDebris = [
+    { role: 'user', content: 'She pushed the door open.', id: 6001 },
+    { role: 'assistant', content: `${ANSWER}\n\n${DEBRIS}`, id: 6002 },
+  ];
+
+  function frontierOf(body) {
+    return body.messages.at(-2).content;
+  }
+
+  it('cuts an incomplete trailing block back before the derivation sees it', async () => {
+    const body = await dispatched(withDebris);
+    expect(frontierOf(body)).toContain(ANSWER);
+    expect(JSON.stringify(body)).not.toContain(DEBRIS);
+  });
+
+  it('leaves a message on record as a boundary stop byte-identical', async () => {
+    seed(storedState({ boundaries: ['6002'] }));
+    const body = await dispatched(withDebris);
+    expect(frontierOf(body)).toContain(`${ANSWER}\n\n${DEBRIS}`);
+  });
+
+  it('removes a block-start literal and everything after it', async () => {
+    const turns = [
+      { role: 'user', content: 'She pushed the door open.', id: 6011 },
+      { role: 'assistant', content: `${ANSWER}\n\n${LITERAL}\nShe let the door swing shut.`, id: 6012 },
+    ];
+    const body = await dispatched(turns);
+    expect(frontierOf(body)).toContain(ANSWER);
+    expect(JSON.stringify(body)).not.toContain('She let the door swing shut.');
+  });
+
+  it('leaves a mid-paragraph occurrence of the literal alone', async () => {
+    const line = `Keeper:\nHe read the label aloud: ${LITERAL} two crates, and shrugged.`;
+    const turns = [
+      { role: 'user', content: 'She pushed the door open.', id: 6021 },
+      { role: 'assistant', content: line, id: 6022 },
+    ];
+    const body = await dispatched(turns);
+    expect(frontierOf(body)).toContain(line);
+  });
+
+  it('never trims a human turn, mid-sentence or otherwise', async () => {
+    const turns = [
+      { role: 'user', content: 'She pushed the door open and', id: 6031 },
+      { role: 'assistant', content: ANSWER, id: 6032 },
+    ];
+    const body = await dispatched(turns);
+    expect(frontierOf(body)).toContain(`${LITERAL}\nShe pushed the door open and`);
+  });
+});
+
+describe('the pending boundary marker', () => {
+  const pair = [
+    { role: 'user', content: 'She pushed the door open.', id: 8001 },
+    { role: 'assistant', content: 'The hinge complained.', id: 8002 },
+  ];
+
+  it('records the successor of the named id and saves without a freeze', async () => {
+    seed(storedState({ pendingBoundaryAfter: '8001' }));
+    await dispatched(pair);
+    expect(stateNow().boundaries).toEqual(['8002']);
+    expect(stateNow().pendingBoundaryAfter).toBe('');
+    expect(events).toEqual(['save', 'fetch']);
+  });
+
+  it('appends nothing when the named id is the last entry of the request', async () => {
+    seed(storedState({ pendingBoundaryAfter: '8002' }));
+    await dispatched(pair);
+    expect(stateNow().boundaries).toEqual([]);
+    expect(stateNow().pendingBoundaryAfter).toBe('');
+  });
+
+  it('appends nothing when the successor is a human turn', async () => {
+    seed(storedState({ pendingBoundaryAfter: '8002' }));
+    await dispatched([...pair, { role: 'user', content: 'And after that?', id: 8003 }]);
+    expect(stateNow().boundaries).toEqual([]);
+    expect(stateNow().pendingBoundaryAfter).toBe('');
+  });
+
+  it('appends nothing when the named id is absent from the request', async () => {
+    seed(storedState({ pendingBoundaryAfter: '8001' }));
+    await dispatched([{ role: 'assistant', content: 'Draft two stood in the doorway.', id: 8004 }]);
+    expect(stateNow().boundaries).toEqual([]);
+    expect(stateNow().pendingBoundaryAfter).toBe('');
+  });
+
+  it('appends nothing when the successor carries no envelope id', async () => {
+    const envelope = envelopeFor(pair);
+    delete envelope.chatMessages[1].id;
+    seed(storedState({ pendingBoundaryAfter: '8001' }));
+    await window.fetch(ALPHA_URL, jsonPost(JSON.stringify(envelope)));
+    calls.length = 0;
+    events.length = 0;
+    await send(bodyFor(pair));
+
+    expect(stateNow().boundaries).toEqual([]);
+    expect(stateNow().pendingBoundaryAfter).toBe('');
+  });
+
+  it('never records the same id twice', async () => {
+    seed(storedState({ boundaries: ['8002'], pendingBoundaryAfter: '8001' }));
+    await dispatched(pair);
+    expect(stateNow().boundaries).toEqual(['8002']);
+  });
+});
+
+describe('the watermark over trimmed text', () => {
+  const LONG = prose('body', 360);
+  const turns = [
+    { role: 'user', content: 'She pushed the door open.', id: 6101 },
+    { role: 'assistant', content: `${LONG}\n\nShe reached for the`, id: 6102 },
+    { role: 'user', content: 'And after that?', id: 6103 },
+    { role: 'assistant', content: 'The last message stands alone by itself.', id: 6104 },
+  ];
+
+  it('hashes the trimmed content and re-finds the message under a new id', async () => {
+    await dispatched(turns);
+    const state = stateNow();
+    expect(state.watermark.messageId).toBe('6102');
+    expect(state.watermark.offset).toBeGreaterThan(0);
+    expect(state.watermarkText).toBe(LONG);
+    expect(state.watermark.prefixHash).toBe(prefixIdentity(LONG, state.watermark.offset));
+
+    const regenerated = turns.map((turn) => (turn.id === 6102 ? { ...turn, id: 6202 } : turn));
+    const body = await dispatched(regenerated);
+    expect(JSON.stringify(body).split('body 0 the lamp turned').length - 1).toBe(1);
+    expect(JSON.stringify(body)).not.toContain('She reached for the');
+  });
+});
+
+describe('three consecutive transforms across a recorded boundary', () => {
+  const seeded = { text: prose('opening', 40), words: 40 * 12, createdAt: 1 };
+  const stopped = `${prose('body', 360)}\n\nShe reached for the`;
+  const base = [
+    { role: 'user', content: 'She pushed the door open.', id: 7001 },
+    { role: 'assistant', content: stopped, id: 7002 },
+  ];
+  const turnTwo = [...base, { role: 'user', content: 'And after that?', id: 7003 }, { role: 'assistant', content: prose('second', 120), id: 7004 }];
+  const turnThree = [...turnTwo, { role: 'user', content: 'And after that again?', id: 7005 }, { role: 'assistant', content: prose('third', 120), id: 7006 }];
+
+  function pairsOf(body) {
+    return body.messages.slice(2, -2);
+  }
+
+  it('keeps every surviving pair byte-identical', async () => {
+    seed(storedState({ frozen: [seeded], boundaries: ['7002'] }));
+    const first = await dispatched(base);
+    const second = await dispatched(turnTwo);
+    const third = await dispatched(turnThree);
+
+    const one = pairsOf(first);
+    const two = pairsOf(second);
+    expect(one.length).toBeGreaterThanOrEqual(2);
+    expect(two.slice(0, one.length)).toEqual(one);
+    expect(pairsOf(third).slice(0, two.length)).toEqual(two);
+    expect(stateNow().boundaries).toEqual(['7002']);
+    expect(JSON.stringify(third)).toContain('She reached for the');
   });
 });
 

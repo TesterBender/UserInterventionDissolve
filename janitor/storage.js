@@ -2,9 +2,16 @@ import { STATE_VERSION } from '../src/constants.js';
 import { createState } from '../src/state.js';
 import { STORAGE_KEY_PREFIX, JANITOR_STATE_FORMAT } from './constants.js';
 
-// janitor-fields: v3 state plus the four fields this layer owns → docs/modules/janitor-adapter.md#stored-state
+// janitor-fields: v3 state plus the five fields this layer owns → docs/modules/janitor-adapter.md#stored-state
 function freshState() {
-  return { ...createState(), janitorFormat: JANITOR_STATE_FORMAT, literal: '', boundaries: [], watermarkText: '' };
+  return {
+    ...createState(),
+    janitorFormat: JANITOR_STATE_FORMAT,
+    literal: '',
+    boundaries: [],
+    pendingBoundaryAfter: '',
+    watermarkText: '',
+  };
 }
 
 // per-chat-key: one entry per Janitor chat id, no global entry → docs/modules/janitor-adapter.md#stored-state

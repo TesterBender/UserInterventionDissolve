@@ -1,5 +1,5 @@
 # Brief 0037 — Janitor derivation-time rollback and boundary records
-Status: draft
+Status: implemented
 Complexity: high  (owns INV-8 on this host, adds a state field to the format brief 0036 pins, changes the order of the request pipeline and touches three `janitor/` modules plus the report line)
 PLAN sections: §14 (four termination outcomes; an incomplete trailing block is transport debris and is rolled back to the last complete block, while a deliberate handoff at the reserved literal is not), §8 (the reserved literal is bare and a boundary is an occurrence at a block start — the trim keys on that and nothing else), §10 (manuscript-wide editing inside the mutable frontier: the trim is applied on every derivation, so the text the frontier sees is always the trimmed text), §23 (this host cannot edit stored history, so every repair the ST host performs at receipt happens at the next request build), §27 (transport debris must never become a fictional event, and nothing about the trim may reach the model as narration)
 Invariants touched: INV-8 (this is the Janitor host's implementation of it), INV-2 (the derivation-time literal trim is the last line of defence when no stop string was honoured and no stream cut happened)
@@ -73,17 +73,17 @@ Every request the Janitor script builds derives from text that PLAN §14 says sh
 - (empty) The Janitor facts used are answered in `docs/api/janitor.md`: a regenerate drops the replaced assistant message and an edited message is re-sent with its new text (2026-09-13); `/generateAlpha` precedes every model invocation (2026-09-13); envelope entries carry database ids (2026-09-14); an empty completion is stored as an empty message (2026-09-13). Still-open ledger items that touch this area — the behaviour of a completion that ends at a stop sequence, and an early stream close with no terminal frames — belong to brief 0038 and block nothing here: this brief only reads a marker that brief 0038 writes. Do not launch `st-api-verifier`; it verifies SillyTavern only.
 
 ## Acceptance
-- [ ] An assistant history message with an incomplete trailing block reaches the derivation truncated to its last complete block; the same message whose id is in `state.boundaries` reaches it byte-identical.
-- [ ] A block-start occurrence of the bare literal in an assistant message is removed together with everything after it; a mid-paragraph occurrence is untouched; a user message is untouched in both cases.
-- [ ] The watermark's `prefixHash` written after a freeze equals `prefixIdentity(trimmedContent, offset)`, and a following request whose body no longer carries that message's id re-finds the watermark by that hash.
-- [ ] A seeded `pendingBoundaryAfter` whose successor is assistant appends exactly that successor's id to `boundaries`, clears the marker, and saves state on a request with no freeze; a body where the successor is missing or is a user turn appends nothing and clears the marker.
-- [ ] `state.boundaries` never gains a duplicate id and never gains `''`.
-- [ ] Three consecutive transforms across a seeded boundary produce a byte-identical `[final, control]` prefix.
-- [ ] Exactly one `console.info` per transformed request, now naming finals, units, frontier words, freeze, drift, `boundary` and `rollback`.
-- [ ] `src/**` is byte-identical; no file under `janitor/` imports `src/recovery.js` or references `SillyTavern`.
-- [ ] `npm run build:janitor` regenerates `dist/janitor-manuscript-dissolve.user.js`, the committed file matches a fresh build, and it parses via `new Function`.
-- [ ] `npm run check` passes
-- [ ] every new pointer comment resolves (`node tools/check-comments.mjs`)
+- [x] An assistant history message with an incomplete trailing block reaches the derivation truncated to its last complete block; the same message whose id is in `state.boundaries` reaches it byte-identical.
+- [x] A block-start occurrence of the bare literal in an assistant message is removed together with everything after it; a mid-paragraph occurrence is untouched; a user message is untouched in both cases.
+- [x] The watermark's `prefixHash` written after a freeze equals `prefixIdentity(trimmedContent, offset)`, and a following request whose body no longer carries that message's id re-finds the watermark by that hash.
+- [x] A seeded `pendingBoundaryAfter` whose successor is assistant appends exactly that successor's id to `boundaries`, clears the marker, and saves state on a request with no freeze; a body where the successor is missing or is a user turn appends nothing and clears the marker.
+- [x] `state.boundaries` never gains a duplicate id and never gains `''`.
+- [x] Three consecutive transforms across a seeded boundary produce a byte-identical `[final, control]` prefix.
+- [x] Exactly one `console.info` per transformed request, now naming finals, units, frontier words, freeze, drift, `boundary` and `rollback`.
+- [x] `src/**` is byte-identical; no file under `janitor/` imports `src/recovery.js` or references `SillyTavern`.
+- [x] `npm run build:janitor` regenerates `dist/janitor-manuscript-dissolve.user.js`, the committed file matches a fresh build, and it parses via `new Function`.
+- [x] `npm run check` passes
+- [x] every new pointer comment resolves (`node tools/check-comments.mjs`)
 
 ## Docs to write/update
 - `docs/modules/janitor-adapter.md` — new `## Derivation-time rollback {#derivation-rollback}`: that this host has no receipt hook, so PLAN §14's repair happens at the next request build on the text Janitor re-sends; the two steps and their order; why `src/recovery.js` and `classifyOutcome` are unavailable here (the bundler name collision, brief 0033) and why the two pure functions are the whole rule; that only assistant-role entries are trimmed; that the trim runs on every request and is therefore idempotent and hash-stable; and that the human-visible Janitor log keeps the debris while the model never sees it (§27).

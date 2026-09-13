@@ -14,6 +14,7 @@ import {
 import { loadJanitorState, saveJanitorState } from './storage.js';
 import { classifyMessages, toStShape, fromStShape } from './history.js';
 import { matchWatermark, classifyDrift, prefixIdentity } from './identity.js';
+import { rollbackHistory } from './rollback.js';
 
 // first-sentence-probe: computed from the import, never a copied literal → docs/modules/janitor-adapter.md#system-message
 const PROMPT_FIRST_SENTENCE = MANUSCRIPT_SYSTEM_PROMPT.slice(0, MANUSCRIPT_SYSTEM_PROMPT.indexOf('.') + 1);
@@ -51,7 +52,22 @@ function withinHorizon(messages) {
   return kept;
 }
 
-// request-pipeline: gate, classify, derive, freeze, reconstruct, trim, stop → docs/modules/janitor-adapter.md#request-pipeline
+// pending-marker: the successor of the named id, or nothing, then cleared → docs/modules/janitor-adapter.md#boundary-records
+function resolvePendingBoundary(state, entries) {
+  const pending = typeof state.pendingBoundaryAfter === 'string' ? state.pendingBoundaryAfter : '';
+  if (pending === '') return false;
+
+  state.pendingBoundaryAfter = '';
+  const named = entries.findIndex((entry) => entry.messageId === pending);
+  const successor = named === -1 ? undefined : entries[named + 1];
+  if (successor !== undefined && successor.role === 'assistant' && successor.messageId !== ''
+    && !state.boundaries.includes(successor.messageId)) {
+    state.boundaries.push(successor.messageId);
+  }
+  return true;
+}
+
+// request-pipeline: gate, classify, resolve, roll back, derive, freeze, reconstruct, stop → docs/modules/janitor-adapter.md#request-pipeline
 export function transformRequest(data, context) {
   const adapter = context.adapter;
   if (adapter.kind !== 'chat') return false;
@@ -70,7 +86,12 @@ export function transformRequest(data, context) {
   const messages = adapter.messagesContainer.messages;
   const { history, injections, systemIndex } = classifyMessages(messages, context.chatMessages, context.personaName);
   // sentinel-drop: exact match, every occurrence, before identities exist → docs/modules/janitor-adapter.md#sentinel
-  const kept = history.filter((entry) => !(entry.role === 'user' && entry.content === SENTINEL));
+  const aligned = history.filter((entry) => !(entry.role === 'user' && entry.content === SENTINEL));
+
+  const resolved = resolvePendingBoundary(state, aligned);
+  const literal = `${context.personaName}:`;
+  // derivation-rollback: the trimmed entries are all the rest of the pipeline sees → docs/modules/janitor-adapter.md#derivation-rollback
+  const { entries: kept, rollbacks } = rollbackHistory(aligned, literal, new Set(state.boundaries));
 
   const watermarkIndex = matchWatermark(kept, state.watermark);
   // watermark-rekey: a prefix-hash match moves the watermark onto the new id → docs/modules/janitor-adapter.md#prefix-hash-watermark
@@ -79,7 +100,6 @@ export function transformRequest(data, context) {
   }
   const drift = classifyDrift(kept, state);
 
-  const literal = `${context.personaName}:`;
   const shaped = toStShape(kept);
   let derived = deriveFrontier(shaped, state, literal);
 
@@ -99,6 +119,8 @@ export function transformRequest(data, context) {
       saveJanitorState(context.chatId, state);
     }
   }
+  // resolution-save: a cleared marker is a state change with no freeze → docs/modules/janitor-adapter.md#stored-state
+  if (!froze && resolved) saveJanitorState(context.chatId, state);
 
   const janitorText = systemIndex === -1 ? '' : String(messages[systemIndex].content ?? '');
   // prefill-drop: the trailing assistant injection is the prefill, never folded → docs/modules/janitor-adapter.md#prefill-strip
@@ -113,11 +135,12 @@ export function transformRequest(data, context) {
 
   applyStopStrings(adapter.requestContainer, literal, 'chat');
 
-  // request-report: four facts, one line, the only sign of life until the panel → docs/modules/janitor-adapter.md#request-report
+  // request-report: one line, the only sign of life until the panel → docs/modules/janitor-adapter.md#request-report
   console.info(
     `${LOG_PREFIX} finals ${state.frozen.length}, units ${state.units.length}, `
       + `frontier ${countWords(derived.text)} words, froze ${froze ? 'yes' : 'no'}, `
-      + `drift ${drift.editedCompiledIndexes.length}`,
+      + `drift ${drift.editedCompiledIndexes.length}, boundary ${state.boundaries.length}, `
+      + `rollback ${rollbacks}`,
   );
   return true;
 }

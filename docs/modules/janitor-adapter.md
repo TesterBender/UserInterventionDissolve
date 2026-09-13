@@ -42,6 +42,8 @@ A freeze cuts mid-message, so state records `{messageId, offset}` — the one pa
 
 `src/state.js` is unmodified by this layer, so `advanceWatermark` still writes `{messageId, offset}` and the caller writes `prefixHash` onto the watermark after it returns.
 
+The content the hash is taken over is the **trimmed** content ([Derivation-time rollback](#derivation-rollback)), because the rollback runs before identity and the compiled prefix is cut out of the trimmed text. That is consistent rather than fragile: the trim is a deterministic function of the message and the literal, and it runs on every request, so as long as Janitor sends the same bytes the entry hashes the same way on every request. Storing the hash of the raw text instead would be storing a hash of text no request ever derives from.
+
 ## Drift: edits to compiled text {#drift}
 
 `classifyDrift(entries, state)` is the Janitor counterpart of SillyTavern's `noticeFrozenEdit`. With identity supplied by the host's database rather than derived from the text, the test is exact rather than positional: it no longer infers an edit from *where* an unmatched message sits. It returns `{editedCompiledIndexes}`, the entries that are demonstrably no longer the text that was compiled:
@@ -57,11 +59,12 @@ It reports and no more: no re-keying, no span deletion, no recompile, no log lin
 
 The key is `STORAGE_KEY_PREFIX + chatId` — `uid-janitor-v1:<chat id>` — in `localStorage`, with the chat id taken from the `/generateAlpha` envelope (`docs/modules/janitor-transport.md#conversation-binding`). `janitor/storage.js` is the only file under `janitor/` that touches `localStorage`.
 
-The stored value is the v3 state shape (`docs/modules/state.md#shape`) plus exactly four fields:
+The stored value is the v3 state shape (`docs/modules/state.md#shape`) plus exactly five fields:
 
 - `literal` — the last recorded reserved literal, derived from the envelope's persona name. Stored because a completion request can arrive before this page has seen an envelope.
 - `boundaries` — envelope id strings ([Envelope-id identity](#envelope-id-identity)) of messages whose generation stopped at the reserved literal. Written response-side by a later brief; this layer only round-trips it.
 - `janitorFormat` — `JANITOR_STATE_FORMAT`, this layer's own version of the stored shape, checked beside `version`.
+- `pendingBoundaryAfter` — a string, `''` when there is nothing pending: the envelope id whose successor the next derivation should record as a boundary stop ([Boundary records](#boundary-records)). A state written before that field existed simply lacks it, and the reader in `janitor/transform.js` treats a missing or non-string value as `''`; that is the one place the absence is handled, and there is no migration branch and no second format bump for it.
 - `watermarkText` — the full text of the watermark message. Insurance against Janitor dropping that message out of the request entirely (a long chat is trimmed from the front): with the text kept, the compiled prefix is still known when the message it came from is gone.
 
 `watermarkText` is unchanged by the move to envelope ids: it is keyed by nothing, it is the full raw text rather than an identity, and it is still the only thing that knows the compiled prefix on a turn where Janitor drops the watermark message out of the request entirely.
@@ -71,6 +74,8 @@ The stored value is the v3 state shape (`docs/modules/state.md#shape`) plus exac
 There is **no migration path**. A value that does not parse, or whose `version` is not `STATE_VERSION`, or whose `janitorFormat` is not `JANITOR_STATE_FORMAT`, is replaced by a fresh state with one `console.warn` — the same refusal to guess as `docs/modules/state.md#unknown-version`. Every state written before this brief lacks the field and is therefore discarded, which is the intended effect and not a regrettable side effect: its `frozenIds` are content hashes, they name no envelope id, and a state whose compiled set can never match anything would re-send the whole manuscript as frontier. Re-keying the old ids is impossible in the other direction too — the hashes were computed over text this request may no longer carry. A half-understood state on this host would silently re-send or silently drop compiled manuscript.
 
 `localStorage` is per browser and per origin. It does not travel with the chat the way SillyTavern's `chatMetadata` does, so a cleared browser profile is a lost manuscript; Export/Import — a later brief — is the only backup, and there is no cross-tab `storage` listener in this version. A write that throws (quota, storage disabled) is caught and warned, never raised at the caller: a failed save must not abort a generation in flight.
+
+A boundary resolution alone is enough to trigger a save: it is a state change even on a request that froze nothing. There is still at most one save per request — the freeze branch saves, or the resolution does, never both.
 
 A missing or empty chat id yields a fresh in-memory state and writes nothing. Keying state under a placeholder would merge two conversations into one manuscript, which is worse than losing one turn's persistence.
 
@@ -127,6 +132,8 @@ The id is also not a secret leaking outward: it is Janitor's own key for text Ja
 2. **State** is reloaded from `localStorage` on every request and never cached in a module variable. Another tab may have compiled a unit since the last request; the request body is the only thing that is guaranteed fresh, so the state read beside it must be too.
 3. **Classify** before anything else touches the array, because the envelope diff aligns against Janitor's `chatMessages` by exact content ([Envelope diff](#envelope-diff)) and any edit this layer made first would break the alignment.
 4. **Sentinel** drop ([The sentinel literal](#sentinel)) before identity, so a sentinel turn never enters the frontier and is never a candidate for the watermark.
+4b. **Boundary resolution** ([Boundary records](#boundary-records)): the pending marker left by the previous generation is turned into an entry of `state.boundaries` or discarded, before anything reads `boundaries`.
+4c. **Rollback** ([Derivation-time rollback](#derivation-rollback)): every assistant entry that is not a recorded boundary is trimmed, and the trimmed entries are what every later step sees. The reserved literal is built here rather than at step 7 because the trim needs it.
 5. **Identity** before derivation: `frozenIds` membership and the watermark slice are expressed over envelope ids, so `deriveFrontier` cannot decide what is already compiled until the watermark has been matched and, if it moved, re-keyed ([Envelope-id identity](#envelope-id-identity), [Prefix-hash watermark](#prefix-hash-watermark)). The drift report is computed here, while the state is still the one the ids were matched against ([Drift](#drift)).
 6. **System message** rewrite ([System message](#system-message)).
 7. **Derive** with the literal `` `${personaName}:` ``, built at this call site because `src/boundary.js`'s `reservedLiteral` reads a SillyTavern context and this host has none. Nothing else about the derivation differs between the two hosts.
@@ -136,6 +143,43 @@ The id is also not a secret leaking outward: it is Janitor's own key for text Ja
 11. **Lead-in** ([Lead-in turn](#lead-in)).
 12. **Stop** ([Stop array](#stop-array)).
 13. **Report** ([Request report](#request-report)).
+
+Steps 4b and 4c sit where they do because alignment reads the envelope's *untrimmed* text — the envelope diff matches provider content against Janitor's stored message byte for byte ([Envelope diff](#envelope-diff)) — so the trim must come after alignment and before identity, the watermark and the derivation, which all have to be computed over the text the model will actually be shown.
+
+## Derivation-time rollback {#derivation-rollback}
+
+PLAN §14 says a generation that ended mid-block is transport debris and must be rolled back to the last complete block. The SillyTavern host does that at receipt, by editing the message it just received. This host has no receipt hook it may use: Janitor's history lives on Janitor's server, the script may not write to it, and there is no post-receipt edit path at all (§23). The same guarantee is therefore met one step later, on the text the *next* request derives from: `rollbackHistory(entries, literal, boundaryIds)` in `janitor/rollback.js` runs on every request, right after the sentinel drop, and the rest of the pipeline sees only its output.
+
+The rule has two steps, in this order, and no classifier:
+
+1. `trimAtBoundary(content, literal)` (`src/boundary.js`) — everything from a block-start occurrence of the bare reserved literal onward is removed. Only a block start counts (`docs/modules/boundary.md#block-start-only`); a mid-paragraph mention is manuscript text.
+2. `truncateToLastCompleteBlock` (`src/grammar.js`) of that result, when `isTrailingBlockComplete` of it is false — the incomplete trailing block goes.
+
+Literal first, because a completion that ran past the stop string carries the literal *and* whatever fragment followed it; cutting at the literal first leaves a text whose trailing block is the model's own last complete block.
+
+`src/recovery.js`'s `classifyOutcome` — the ST host's four-outcome classifier — is not available here. `src/recovery.js` collides with `src/boundary.js` on a top-level name in the userscript concatenator (`docs/modules/janitor-build.md#supported-module-syntax`, brief 0033), so the file may not be imported from `janitor/`. Re-implementing the classifier would put a second definition of block completeness in the repository (`docs/modules/grammar.md#block-completeness`); the two pure functions above are the whole of what the rollback needs, and the four-outcome enum decides nothing on this host.
+
+Only `assistant`-role entries are trimmed. The human's turns are not generations: they never end in transport debris, and a human who writes the reserved literal or stops mid-sentence meant to. Injections are not touched either; they never reach the derivation.
+
+The trim is deterministic and runs on every request, so it is idempotent: the same stored message produces the same trimmed text on every request, which is what lets the watermark's prefix hash be taken over trimmed text ([Prefix-hash watermark](#prefix-hash-watermark)). An entry whose text neither step changes is passed through as the same object and does not count towards the request's `rollback` total.
+
+The human-visible Janitor log keeps the debris. Nothing here edits, deletes or re-saves a Janitor message; the two views already differ (persona headers, sentinels, reconstruction), and §27 only requires that the debris never reach the model as a fictional event — which it does not, because it is gone before the frontier is derived.
+
+## Boundary records {#boundary-records}
+
+A generation that stopped at the reserved literal stopped deliberately, and PLAN §14 keeps it: it is a handoff, not debris. Recording that fact needs the generated message's identity, and at the moment the generation ends that identity does not exist — the id is Janitor's database key, assigned when Janitor stores the row, and the script only learns it from the *next* `/generateAlpha` envelope ([Envelope-id identity](#envelope-id-identity)).
+
+So state carries one marker, `pendingBoundaryAfter`: the envelope id of the **last aligned message of the request that produced the generation**, i.e. the predecessor of the message that is about to be stored. The response side writes it (brief 0038); the next derivation resolves it at step 4b:
+
+- find the kept entry whose `messageId` equals the marker;
+- if that entry exists, the entry **directly after** it exists, has `role === 'assistant'` and a non-empty `messageId`, append that id to `state.boundaries` (never a duplicate, never `''`);
+- in every other case — the id is not in this request, it was the last entry, the next entry is a user turn, or the next entry has no id — append nothing.
+
+Either way the marker is cleared to `''`. It is never carried across two derivations, which is what the regenerate case needs: a regenerate drops the replaced assistant message (`docs/api/janitor.md#regenerate-drops-the-replaced-assistant-message`), so the successor in the next request is a *different* draft that did not stop at a boundary, and a marker that survived would attach a boundary record to it.
+
+`boundaries` holds envelope id strings and grows append-only; membership exempts a message from **both** rollback steps, not only from the incomplete-block step. A message recorded as a boundary stop already had its literal removed on the way in, and re-running the trim on it could only remove text the model meant to keep.
+
+Losing a marker costs one rollback of a deliberate stop: a message that ended at a handoff is trimmed back to its last complete block on the next request, the human-visible log still has the full text, and the model sees a slightly shorter manuscript. It is never a protocol violation — nothing about the boundary reaches the model either way.
 
 ## System message {#system-message}
 
@@ -193,6 +237,6 @@ Both reasons to want it gone hold. A trailing assistant turn re-creates the shap
 
 ## Request report {#request-report}
 
-Exactly one `console.info` per transformed request, prefixed with `LOG_PREFIX`: how many final spans and unsealed units the state holds, how many words the frontier carries, whether a unit was compiled this request, and how many messages carry text that is no longer the text that was compiled under their id ([Drift](#drift)). It is operator-facing and never part of the body.
+Exactly one `console.info` per transformed request, prefixed with `LOG_PREFIX`: how many final spans and unsealed units the state holds, how many words the frontier carries, whether a unit was compiled this request, how many messages carry text that is no longer the text that was compiled under their id ([Drift](#drift)), how many boundary stops are on record after this request's resolution ([Boundary records](#boundary-records)), and how many messages this request's trim changed ([Derivation-time rollback](#derivation-rollback)). It is operator-facing and never part of the body.
 
-Until the panel exists it is the only sign of life the script gives, which is why it is one line with the four facts that decide whether the protocol is working rather than a debug stream: it has to stay readable in a console Janitor itself writes to.
+Until the panel exists it is the only sign of life the script gives, which is why it is one line with the handful of facts that decide whether the protocol is working rather than a debug stream: it has to stay readable in a console Janitor itself writes to.
