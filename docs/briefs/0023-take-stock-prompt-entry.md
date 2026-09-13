@@ -1,5 +1,5 @@
 # Brief 0023 — Optional §22 "take stock" prompt entry, shipped disabled
-Status: implemented
+Status: done
 Complexity: high
 PLAN sections: §22 (reasoning should reconstruct current fictional state — who is where, what each knows, active motives, earlier causes still propagating, unresolved consequences, who has reason to act — and propagate forward from causes, not backward from a desired outcome); §13 (continuation control is a reconstructed user turn, byte-identical, not preset material — this brief must not disturb it)
 Invariants touched: INV-5 (the continuation seam must stay the last thing in the request and stay byte-identical), INV-9 (semantics live in prompt text, not code)
