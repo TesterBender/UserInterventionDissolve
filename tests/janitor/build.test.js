@@ -100,10 +100,9 @@ describe('janitor bundle refusals', () => {
       .toThrow(/build\/dup-function\/right\.js.*'helper'/);
   });
 
-  it('accepts a private helper duplicated byte-identically in two modules', () => {
-    const bundle = buildJanitorBundle(join(FIXTURES, 'same-helper', 'entry.js'));
-    expect(bundle.split("function helper(value) {\n  return String(value ?? '');\n}").length - 1).toBe(2);
-    expect(() => new Function(bundle)).not.toThrow();
+  it('rejects two same-named functions whose text is byte-identical', () => {
+    expect(() => buildJanitorBundle(join(FIXTURES, 'dup-identical', 'entry.js')))
+      .toThrow(/build\/dup-identical\/right\.js.*'helper'/);
   });
 
   it('rejects a bare specifier', () => {

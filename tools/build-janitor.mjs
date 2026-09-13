@@ -29,21 +29,6 @@ function underAnyRoot(path, roots) {
   });
 }
 
-// shared-private-helper: identical helpers may repeat, anything else collides → docs/modules/janitor-build.md#duplicate-top-level-names
-function functionText(body, start) {
-  const open = body.indexOf('{', start);
-  if (open < 0) return body.slice(start);
-  let depth = 0;
-  for (let i = open; i < body.length; i += 1) {
-    if (body[i] === '{') depth += 1;
-    else if (body[i] === '}') {
-      depth -= 1;
-      if (depth === 0) return body.slice(start, i + 1);
-    }
-  }
-  return body.slice(start);
-}
-
 // resolve-relative-only: no node_modules, no maps, no bare names → docs/modules/janitor-build.md#supported-module-syntax
 function parseModule(absPath, roots) {
   const label = relative(ROOT, absPath).split(sep).join('/');
@@ -85,24 +70,15 @@ function parseModule(absPath, roots) {
     .replace(/\n+$/, '\n');
 
   const declarations = [];
-  let cursor = 0;
   for (const text of body.split('\n')) {
     const match = TOP_LEVEL_NAME_RE.exec(text);
-    if (match) {
-      const isFunction = /^(?:async\s+)?function\b/.test(text);
-      declarations.push({
-        name: match[1],
-        isFunction,
-        text: isFunction ? functionText(body, cursor) : text,
-      });
-    }
-    cursor += text.length + 1;
+    if (match) declarations.push({ name: match[1] });
   }
 
   return { path: absPath, label, imports, body, declarations };
 }
 
-// post-order-graph: dependency before dependent, cycles rejected → docs/modules/janitor-build.md#bundle-shape
+// post-order-graph: dependency before dependent, cycles rejected → docs/modules/janitor-build.md#supported-module-syntax
 function collectModules(entry, roots) {
   const modules = [];
   const done = new Map();
@@ -130,10 +106,10 @@ function collectModules(entry, roots) {
   for (const module of modules) {
     for (const declaration of module.declarations) {
       const owner = owners.get(declaration.name);
-      if (owner && !(owner.isFunction && declaration.isFunction && owner.text === declaration.text)) {
+      if (owner) {
         fail(module.label, null, `top-level name '${declaration.name}' is already declared by ${owner.label}`);
       }
-      if (!owner) owners.set(declaration.name, { ...declaration, label: module.label });
+      owners.set(declaration.name, { ...declaration, label: module.label });
     }
   }
 

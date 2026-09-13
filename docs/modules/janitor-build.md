@@ -26,26 +26,11 @@ Everything else is a **hard failure with exit code 1**, never a best-effort bund
 specifiers, paths outside the allowed roots, `export default`, `export *`, the list form `export { … }`,
 `import … as …`, a default or side-effect import, dynamic `import(`, an import cycle, and a top-level
 name declared by two modules (concatenation would silently redeclare it). Every message names the file
-and the offending line. A module whose syntax defeats the tool is a scope gap to be reported, not a
-licence to rewrite the module.
-
-## Duplicate top-level names
-
-Concatenation puts every module's top-level declarations in one scope, so two modules declaring the
-same name is normally a silent redeclaration and the build refuses it, naming the second file. One
-narrow exception exists because `janitor/` already relies on it: two **byte-identical function
-declarations** (`janitor/envelope.js` and `janitor/shape.js` both carry the three-line private
-`isObject` helper). A repeated function declaration is legal in strict mode and, when the two texts
-match exactly, the concatenated result behaves identically to either module alone — so both copies are
-emitted verbatim rather than one being dropped or renamed, keeping the "no transformation" rule intact.
-Anything else collides: `const`/`let`/`class`/`var` duplicates always fail, and so do two functions of
-the same name whose text differs by a single byte. Extraction of a function's text is brace-matched; if
-that misreads a module, the texts stop matching and the build fails, which is the safe direction.
-
-Brief 0029 lists "a top-level name declared by two modules" as an unconditional failure, and its
-acceptance list also requires the tree as merged after brief 0028 to build. Both cannot hold: the
-exception above is the narrowest rule that satisfies the acceptance case without editing `janitor/`,
-which the brief forbids.
+and the offending line. The duplicate-name rule is unconditional — two top-level declarations of the
+same name collide even when their text is byte-identical, and the build names the second file — because
+the modules are emitted into one shared scope and the tool never drops or renames a declaration.
+A module whose syntax defeats the tool is a scope gap to be reported, not a licence to rewrite the
+module.
 
 ## Bundle shape
 

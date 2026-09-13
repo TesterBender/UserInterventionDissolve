@@ -49,7 +49,6 @@ Scope source: `TamperContainment/PLAN-janitor.md#layout-and-build` — source tr
 - [x] Every string literal from a bundled `src/` module appears in the bundle byte-identical to the source (asserted on at least one literal from a bundled module, or on the whole stripped module body).
 - [x] Two consecutive builds produce identical bytes.
 - [x] Duplicate top-level names, a default export, an import cycle, and a bare specifier each fail the build with a message naming the file; none of them silently produces a bundle.
-  Deviation, deliberate: two **byte-identical function declarations** are allowed through, because `janitor/envelope.js` and `janitor/shape.js` both carry the same private `isObject` helper and this brief forbids editing `janitor/**` — without the exception acceptance item 1 is unreachable. Rationale and limits: `docs/modules/janitor-build.md#duplicate-top-level-names`.
 - [x] `new Function(bundle)` parses the output.
 - [x] `dist/` is tracked by git and absent from `.gitignore`; eslint ignores it.
 - [x] `npm run check` passes.
