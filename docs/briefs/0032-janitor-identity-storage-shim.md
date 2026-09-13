@@ -1,5 +1,5 @@
 # Brief 0032 — Janitor identity, storage and the ST-shape shim (pure, unwired)
-Status: partial
+Status: done
 Complexity: high  (four new modules, a new persistence format, and the identity scheme INV-10 is argued over; nothing here is wired, but everything in brief 0033 is built on it)
 PLAN sections: §3 (interaction-topology non-identifiability — the identity scheme and the stored state must persist no transport topology that can reach the model), §9 (human input is transformed into manuscript text, never preserved as a character-bearing user turn — the shim is what lets `deriveFrontier` do that on provider messages), §10 (editing is manuscript-wide within the mutable frontier — the prefix-hash watermark exists so a tail edit of the watermark message still re-derives instead of re-sending compiled text), §23 (a host reconstructs model-visible history from separately stored canonical state when native history editing is unavailable; on this host it is unavailable, so the store *is* the manuscript), §27 (no transport information reaches the model: ids and hashes live in private state only)
 Invariants touched: INV-3 (the shim is what routes user turns through `toManuscriptBlock`), INV-10 (content hashes and the stored state must never surface in the model-visible output)
@@ -81,5 +81,7 @@ Every top-level name in this file must differ from every top-level name in `src/
 - `docs/README.md` — index line for `docs/modules/janitor-adapter.md`.
 
 ## SCOPE_GAP
+
+Resolved 2026-09-14 by brief 0034 (host-free pure core split): the isolation test now permits `src/` imports that do not reach `src/host.js`; all cases pass.
 
 `tests/janitor/isolation.test.js` — its `CORE_IMPORT` assertion (`/from\s+.[^.]*\/src\//`) forbids every file under `janitor/` and `tests/janitor/` from importing `src/`, which is exactly what this brief mandates (`METADATA_KEY`/`STATE_VERSION` from `src/constants.js`, `createState` from `src/state.js`, and `deriveFrontier`/`buildHistory` in the shim test). The file is not in this brief allowlist, so it was left alone; three of its cases now fail (`janitor/storage.js`, `janitor/history.js`, `tests/janitor/history.test.js`). The `SillyTavern` half of the same test still passes. Note also that importing `createState` from `src/state.js` drags `src/host.js` into any future bundle that reaches it, which is the isolation concern the assertion was guarding.
