@@ -461,7 +461,6 @@ describe('identity across edits, duplicates and regenerates', () => {
   });
 });
 
-
 describe('the derivation-time rollback', () => {
   const ANSWER = 'Keeper:\nThe lamp turned once.\n\nThe rain kept on.';
   const DEBRIS = 'She reached for the';

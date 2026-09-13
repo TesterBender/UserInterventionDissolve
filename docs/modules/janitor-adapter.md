@@ -157,8 +157,6 @@ The rule has two steps, in this order, and no classifier:
 
 Literal first, because a completion that ran past the stop string carries the literal *and* whatever fragment followed it; cutting at the literal first leaves a text whose trailing block is the model's own last complete block.
 
-
-
 `src/recovery.js`'s `classifyOutcome` — the ST host's four-outcome classifier — is not available here. `src/recovery.js` collides with `src/boundary.js` on a top-level name in the userscript concatenator (`docs/modules/janitor-build.md#supported-module-syntax`, brief 0033), so the file may not be imported from `janitor/`. Re-implementing the classifier would put a second definition of block completeness in the repository (`docs/modules/grammar.md#block-completeness`); the two pure functions above are the whole of what the rollback needs, and the four-outcome enum decides nothing on this host.
 
 Only `assistant`-role entries are trimmed. The human's turns are not generations: they never end in transport debris, and a human who writes the reserved literal or stops mid-sentence meant to. Injections are not touched either; they never reach the derivation.

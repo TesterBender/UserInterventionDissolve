@@ -9,8 +9,7 @@ export function rollbackHistory(entries, literal, boundaryIds) {
     // boundary-not-rolled-back: a deliberate stop keeps every byte → docs/modules/recovery.md#boundary-not-rolled-back
     if (entry.messageId !== '' && boundaryIds.has(entry.messageId)) return entry;
 
-    const content = String(entry.content ?? '');
-    const cut = literal === '' ? content : trimAtBoundary(content, literal);
+    const cut = literal === '' ? entry.content : trimAtBoundary(entry.content, literal);
     const text = isTrailingBlockComplete(cut) ? cut : truncateToLastCompleteBlock(cut);
     if (text === entry.content) return entry;
 
