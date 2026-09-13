@@ -135,6 +135,35 @@ describe('hard rules', () => {
     }
   });
 
+  // reserved-opener: protection cannot depend on TAG_HEADER parsing the name → docs/modules/grammar.md#reserved-spans
+  it('protects a reserved literal that TAG_HEADER cannot parse', () => {
+    const long = `${'N'.repeat(48)}`;
+    for (const actor of ['Anton_S', long, '"Quoted']) {
+      const parts = [];
+      for (let i = 0; i < 60; i += 1) parts.push(i % 7 === 0 ? `${actor}: ${buf(99)}` : buf(100, `b${i}w`));
+      const text = manuscript(parts);
+      const blocks = parseManuscript(text);
+      const literal = `${actor}:`;
+
+      expect(blocks.filter((block) => block.kind === 'tag')).toHaveLength(0);
+      for (let seed = 0; seed < 30; seed += 1) {
+        const cut = selectCut(text, literal, { min: 150, max: 6000, jitterSeed: seed });
+        if (cut === null) continue;
+        expect(blocks[cut.blockIndex].raw.startsWith(literal)).toBe(false);
+        expect(blocks[cut.blockIndex + 1].raw.startsWith(literal)).toBe(false);
+      }
+    }
+  });
+
+  it('reproduces the audit probe: every seventh block, parseable and unparseable name alike', () => {
+    for (const actor of ['Anton', 'Anton_S']) {
+      const parts = [];
+      for (let i = 0; i < 60; i += 1) parts.push(i % 7 === 0 ? `${actor}: ${buf(99)}` : buf(100, `b${i}w`));
+
+      expect(selectCut(manuscript(parts), `${actor}:`, { jitterSeed: 5 })).toBeNull();
+    }
+  });
+
   it('names no dense-run radius at all', () => {
     expect(SOURCE).not.toMatch(/DENSE|dense/);
   });

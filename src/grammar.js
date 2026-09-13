@@ -66,12 +66,20 @@ export function parseManuscript(text) {
   return blocks;
 }
 
+// reserved-opener: the caller's literal opens a span even when no header parses → docs/modules/grammar.md#reserved-spans
+function opensReserved(block, reservedActor) {
+  if (reservedActor === '') return false;
+  return findTagLiteral(block.raw, reservedActor).some((hit) => hit.atBlockStart);
+}
+
 // agency-spans: a header opens a span; every other block joins it → docs/modules/grammar.md#spans
-export function groupSpans(blocks) {
+export function groupSpans(blocks, options = {}) {
+  const reservedActor = typeof options.reservedActor === 'string' ? options.reservedActor : '';
   const spans = [];
   blocks.forEach((block, index) => {
     const neutral = NEUTRAL_HEADER.test(block.raw);
-    const opens = neutral || block.kind === 'tag';
+    const reserved = opensReserved(block, reservedActor);
+    const opens = neutral || reserved || block.kind === 'tag';
     if (!opens && spans.length > 0) {
       const current = spans[spans.length - 1];
       current.end = block.end;
@@ -79,8 +87,9 @@ export function groupSpans(blocks) {
       return;
     }
     spans.push({
-      header: neutral ? '∅' : block.actor,
+      header: reserved ? reservedActor : (neutral ? '∅' : block.actor),
       neutral,
+      reserved,
       start: block.start,
       end: block.end,
       blockIndices: [index],

@@ -1,5 +1,5 @@
 import { getCtx } from './host.js';
-import { parseManuscript, findTagLiteral, groupSpans } from './grammar.js';
+import { parseManuscript, groupSpans } from './grammar.js';
 import { getState, pushFrozen, advanceWatermark } from './state.js';
 import { METADATA_KEY, FREEZE_MIN_WORDS, FREEZE_MAX_WORDS } from './constants.js';
 
@@ -27,22 +27,9 @@ function jitterOffset(seed, span) {
   return x % (span + 1);
 }
 
-// reserved-spans: literal at the span's first block start, never a parsed actor → docs/modules/freeze.md#salience-heuristics
-function reservedSpans(text, literal, spans) {
-  const reserved = new Set();
-  if (typeof literal !== 'string') return reserved;
-  const actor = literal.replace(/:$/, '');
-  if (actor === '') return reserved;
-
-  const starts = new Set(
-    findTagLiteral(text, actor)
-      .filter((hit) => hit.atBlockStart)
-      .map((hit) => hit.index),
-  );
-  spans.forEach((span, k) => {
-    if (starts.has(span.start)) reserved.add(k);
-  });
-  return reserved;
+// reserved-actor: the literal minus its colon, handed to grammar → docs/modules/freeze.md#salience-heuristics
+function reservedActor(literal) {
+  return typeof literal === 'string' ? literal.replace(/:$/, '') : '';
 }
 
 function isAllCaps(line) {
@@ -106,16 +93,15 @@ export function selectCut(frontierText, literal, opts = {}) {
   if (blocks.length < 2) return null;
 
   const cumWords = blocks.map((block) => countWords(frontierText.slice(0, block.end)));
-  const spans = groupSpans(blocks);
+  const spans = groupSpans(blocks, { reservedActor: reservedActor(literal) });
   const spanOf = [];
   spans.forEach((span, k) => span.blockIndices.forEach((i) => { spanOf[i] = k; }));
-  const reserved = reservedSpans(frontierText, literal, spans);
 
   const safe = [];
   for (let i = 0; i <= blocks.length - 2; i += 1) {
     if (!blocks[i].complete) continue;
     if (cumWords[i] < min) continue;
-    if (reserved.has(spanOf[i]) || reserved.has(spanOf[i + 1])) continue;
+    if (spans[spanOf[i]].reserved || spans[spanOf[i + 1]].reserved) continue;
 
     safe.push(i);
   }

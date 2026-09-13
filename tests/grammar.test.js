@@ -161,6 +161,28 @@ describe('groupSpans', () => {
     expect(spansOf('∅ the empty set.\n\nRain fell.').map((span) => span.neutral)).toEqual([false]);
   });
 
+  it('opens a reserved span on a literal TAG_HEADER cannot parse', () => {
+    for (const actor of ['Anton_S', 'N'.repeat(48), '"Quoted']) {
+      const text = `Rain fell.\n\n${actor}: he waits.\n\nStill nothing.`;
+      const blocks = parseManuscript(text);
+      expect(blocks.map((block) => block.kind)).toEqual(['buffer', 'buffer', 'buffer']);
+
+      const spans = groupSpans(blocks, { reservedActor: actor });
+      expect(spans.map((span) => span.blockIndices)).toEqual([[0], [1, 2]]);
+      expect(spans.map((span) => span.reserved)).toEqual([false, true]);
+      expect(spans[1].header).toBe(actor);
+
+      expect(groupSpans(blocks).map((span) => span.reserved)).toEqual([false]);
+    }
+  });
+
+  it('reserves nothing for an absent or empty reserved actor', () => {
+    const blocks = parseManuscript('Rain fell.\n\nAnton: he waits.');
+    for (const options of [{}, { reservedActor: '' }, { reservedActor: 42 }]) {
+      expect(groupSpans(blocks, options).every((span) => span.reserved === false)).toBe(true);
+    }
+  });
+
   it('gives a leading header-less run its own span with a null header', () => {
     const text = 'Rain fell.\n\nThe street emptied.\n\nAnton:\nHe waited.';
     const spans = spansOf(text);

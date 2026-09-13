@@ -2,7 +2,6 @@ import { METADATA_KEY, BLOCK_DELIMITER } from './constants.js';
 import { parseTagHeader } from './grammar.js';
 
 // own-line-header: one header, one span, paragraphs below it verbatim → docs/modules/derive.md#own-line-header
-// own-line-header: one header, one span, paragraphs below it verbatim → docs/modules/derive.md#own-line-header
 // transformation-rule: head the contribution, paragraphs byte-identical → docs/modules/derive.md#transformation-rule
 // reserved-literal: borrowed from boundary, empty name writes no tag → docs/modules/derive.md#reserved-literal
 export function toManuscriptBlock(text, literal) {

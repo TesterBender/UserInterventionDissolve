@@ -20,6 +20,11 @@ Everything else about spans stays prompt-level, as `docs/decisions/0001-prompt-l
 
 - PLAN §17's "avoid dense external-character runs" is **deliberately not implemented**: once adjacency counted spans, the old `FREEZE_DENSE_RADIUS` rule starved freezing entirely on manuscripts where the external character takes the floor every few spans, contradicting PLAN §18, and the user's decision was to delete the rule rather than tune it (`docs/modules/freeze.md#no-dense-run`).
 - `∅:` is a pinned literal in `src/grammar.js` (`NEUTRAL_HEADER`). Changing it is a pinned-string-lane amendment, not an implementation choice.
-- Cuts can no longer land inside a long external-character span, and the dense-run radius now counts spans, so freezing is postponed more often on manuscripts where the external character appears frequently. A postponed freeze is a normal outcome: the frontier keeps growing until a safe boundary exists.
+- Cuts can no longer land inside a long external-character span, so freezing is postponed more often on manuscripts where the external character appears frequently. A postponed freeze is a normal outcome: the frontier keeps growing until a safe boundary exists.
+- The reserved literal opens a span whether or not `TAG_HEADER` can parse it, so ownership protection does not depend on the persona name being spellable by the tag pattern (`docs/modules/grammar.md#reserved-spans`).
 - Old chats keep parsing unchanged, because the legacy inline header form still opens a span and `TAG_HEADER` is untouched.
 - Teaching the model the own-line header and `∅:` is prompt and seed work, which this decision does not do; until that lands, `∅:` simply never appears and the ladder falls through to its lower tiers.
+
+## Transition note
+
+Until the prompt and seed teach own-line headers and `∅:`, manuscripts are written in the old paragraph-per-commitment style, and unheaded model narration that follows the external character's block joins *that* span rather than standing on its own. Those paragraphs are therefore unavailable as cut points, and freezing will postpone more often in old-style chats than it did before this change. This is expected, not a defect: the frontier simply grows until a boundary outside the external character's span exists, and the effect resolves as the prompt lands and headers start appearing where the ownership actually changes.
