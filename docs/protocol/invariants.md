@@ -53,3 +53,6 @@ From §2: no attempt to hide stylistic authorship evidence; no schema-validated 
 
 ## Final criterion {#final-criterion}
 Every feature is judged by §27: does it make the model perceive a continuous fictional world rather than a conversational turn, and does it preserve fictional information while discarding transport information? A feature that makes the transport layer narratively legible is rejected.
+
+## Addendum: agency spans (2026-09-13) {#agency-spans}
+`PLAN-addendum-agency-spans.md` refines the grammar without changing the invariants. Decisions taken with the user: a character header sits on its own line and opens a **span** that persists across paragraphs until the next header; `∅:` is adopted as the neutral-narration header, taught by the prompt and the seed, never inserted by code; the application recognises headers only for the reserved literal (INV-2) and for cut selection (INV-7), and never judges prose as character vs neutral narration (addendum §3, §9, §14). Consequences: INV-1's "block" reads as "span"; INV-7 additionally forbids a cut inside the external character's span; advisory lint (addendum §10) is not implemented.
