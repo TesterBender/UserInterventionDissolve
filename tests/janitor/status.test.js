@@ -23,6 +23,7 @@ const WRITE = {
   rebuilt: false,
   stopSent: true,
   routerEnabled: false,
+  capturedContext: 'Nyx is a lighthouse keeper.',
 };
 
 describe('the request status snapshot', () => {
@@ -32,16 +33,24 @@ describe('the request status snapshot', () => {
     expect(status.getRequestStatus().at).toBeGreaterThan(0);
   });
 
+  it('starts with an empty captured context and carries the one that was written', () => {
+    expect(status.getRequestStatus().capturedContext).toBe('');
+    status.setRequestStatus(WRITE);
+    expect(status.getRequestStatus().capturedContext).toBe(WRITE.capturedContext);
+  });
+
   it('hands back a copy a renderer cannot write into', () => {
     status.noteDrift('chat-mx1', ['id-1']);
     status.setRequestStatus(WRITE);
 
     const taken = status.getRequestStatus();
     taken.finals = 99;
+    taken.capturedContext = 'rewritten by the renderer';
     taken.driftNotices.push('id-2');
 
     expect(status.getRequestStatus().finals).toBe(2);
     expect(status.getRequestStatus().driftNotices).toEqual(['id-1']);
+    expect(status.getRequestStatus().capturedContext).toBe(WRITE.capturedContext);
   });
 
   it('notifies the single listener once per write', () => {

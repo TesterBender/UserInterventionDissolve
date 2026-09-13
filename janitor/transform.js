@@ -12,6 +12,7 @@ import {
   JANITOR_LEAD_IN,
 } from './constants.js';
 import { loadJanitorState, saveJanitorState, freshState } from './storage.js';
+import { loadOverride } from './context-override.js';
 import { consumeRecompile, rebuildState, writeWatermarkInsurance } from './recompile.js';
 import { setRequestStatus, noteDrift } from './status.js';
 import { stopRouteKey, isStopRejected } from './stop-routes.js';
@@ -149,7 +150,10 @@ export function transformRequest(data, context) {
   // resolution-save: a cleared marker is a state change with no freeze → docs/modules/janitor-adapter.md#stored-state
   if (!froze && resolved) saveJanitorState(context.chatId, state);
 
-  const janitorText = systemIndex === -1 ? '' : String(messages[systemIndex].content ?? '');
+  const captured = systemIndex === -1 ? '' : String(messages[systemIndex].content ?? '');
+  // editable-unit: the saved override replaces Janitor's captured text whole → docs/modules/janitor-adapter.md#context-override
+  const override = loadOverride(context.chatId);
+  const janitorText = override === null ? captured : override.text;
   // prefill-drop: the trailing assistant injection is the prefill, never folded → docs/modules/janitor-adapter.md#prefill-strip
   const folded = injections.filter((entry) => !(entry.role === 'assistant' && entry.index === messages.length - 1));
   const reconstruction = fromStShape(
@@ -185,6 +189,7 @@ export function transformRequest(data, context) {
     rebuilt: rebuilding,
     stopSent,
     routerEnabled: context.janitorRouterEnabled,
+    capturedContext: captured,
   });
 
   const lastAlignedId = aligned.length === 0 ? '' : aligned[aligned.length - 1].messageId;

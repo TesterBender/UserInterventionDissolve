@@ -1,11 +1,18 @@
 import { STATE_VERSION } from '../src/constants.js';
-import { JANITOR_STATE_FORMAT } from './constants.js';
+import { JANITOR_STATE_FORMAT, JANITOR_OVERRIDE_FORMAT } from './constants.js';
 
 // export-kind: the wrapper carries no version of its own → docs/modules/janitor-adapter.md#state-transfer
 const EXPORT_KIND = 'uid-janitor-state';
 
-export function exportStateJson(chatId, state) {
-  return JSON.stringify({ kind: EXPORT_KIND, chatId, exportedAt: new Date().toISOString(), state }, null, 2);
+export function exportStateJson(chatId, state, override = null) {
+  return JSON.stringify({ kind: EXPORT_KIND, chatId, exportedAt: new Date().toISOString(), state, override }, null, 2);
+}
+
+// override-travels: a malformed or absent one is null, never a refusal → docs/modules/janitor-adapter.md#context-override
+function importedOverride(value) {
+  if (typeof value !== 'object' || value === null) return null;
+  if (value.janitorOverrideFormat !== JANITOR_OVERRIDE_FORMAT || typeof value.text !== 'string') return null;
+  return value;
 }
 
 // refuse-whole: no repair, no migration, no merge → docs/modules/janitor-adapter.md#state-transfer
@@ -29,5 +36,5 @@ export function importStateJson(text) {
   }
 
   // display-only-chat-id: the caller saves under the current chat's key → docs/modules/janitor-adapter.md#state-transfer
-  return { ok: true, chatId: parsed.chatId, state };
+  return { ok: true, chatId: parsed.chatId, state, override: importedOverride(parsed.override) };
 }

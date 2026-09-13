@@ -15,6 +15,7 @@ const snapshot = {
   stopSent: false,
   routerEnabled: false,
   driftNotices: [],
+  capturedContext: '',
   at: 0,
 };
 

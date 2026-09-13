@@ -573,6 +573,12 @@ const JANITOR_WORDS_PER_TOKEN = 1.4;
 // lead-in: pinned user-first turn for providers that demand one → docs/modules/janitor-adapter.md#lead-in
 const JANITOR_LEAD_IN = 'Write the manuscript.';
 
+// override-key: its own entry, never a chat state key → docs/modules/janitor-adapter.md#context-override
+const JANITOR_OVERRIDE_KEY_PREFIX = 'uid-janitor-context-v1:';
+
+// override-format: this entry's own version, checked like janitorFormat → docs/modules/janitor-adapter.md#context-override
+const JANITOR_OVERRIDE_FORMAT = 1;
+
 // ---- janitor/stop-routes.js ----
 let warnedStopRouteWrite = false;
 
@@ -1434,6 +1440,68 @@ function saveJanitorState(chatId, state, storage = localStorage) {
   }
 }
 
+// ---- janitor/context-override.js ----
+// override-key: its own entry, never a chat state key → docs/modules/janitor-adapter.md#context-override
+function overrideKey(chatId) {
+  return JANITOR_OVERRIDE_KEY_PREFIX + chatId;
+}
+
+function clearOverride(chatId, storage = localStorage) {
+  if (typeof chatId !== 'string' || chatId === '') return;
+  storage.removeItem(overrideKey(chatId));
+}
+
+// no-migration: a foreign or unreadable value is refused, never guessed → docs/modules/janitor-adapter.md#context-override
+function loadOverride(chatId, storage = localStorage) {
+  if (typeof chatId !== 'string' || chatId === '') return null;
+
+  const raw = storage.getItem(overrideKey(chatId));
+  if (raw == null) return null;
+
+  let stored = null;
+  try {
+    stored = JSON.parse(raw);
+  } catch {
+    stored = null;
+  }
+
+  if (typeof stored !== 'object' || stored === null
+    || stored.janitorOverrideFormat !== JANITOR_OVERRIDE_FORMAT
+    || typeof stored.text !== 'string' || stored.text.trim() === '') {
+    console.warn(`${LOG_PREFIX} the stored context override for ${chatId} is not readable as format ${JANITOR_OVERRIDE_FORMAT}; it is ignored.`);
+    return null;
+  }
+
+  return stored;
+}
+
+// empty-is-not-an-override: saving nothing is the same act as Clear → docs/modules/janitor-adapter.md#context-override
+function saveOverride(chatId, text, capturedText, storage = localStorage) {
+  if (typeof chatId !== 'string' || chatId === '') return;
+  if (text.trim() === '') {
+    clearOverride(chatId, storage);
+    return;
+  }
+
+  const stored = {
+    janitorOverrideFormat: JANITOR_OVERRIDE_FORMAT,
+    text,
+    capturedText,
+    savedAt: Date.now(),
+  };
+  // write-never-throws: a failed save must not abort a generation → docs/modules/janitor-adapter.md#stored-state
+  try {
+    storage.setItem(overrideKey(chatId), JSON.stringify(stored));
+  } catch (error) {
+    console.warn(`${LOG_PREFIX} could not save the context override for ${chatId}: ${error.message}`);
+  }
+}
+
+// drift-is-informational: exact inequality, reported and never acted on → docs/modules/janitor-adapter.md#context-override
+function overrideDrift(override, capturedText) {
+  return override !== null && override.capturedText !== capturedText;
+}
+
 // ---- janitor/identity.js ----
 // fnv1a32: dependency-free, allocation-free, stable across processes → docs/modules/janitor-adapter.md#prefix-hash-watermark
 function fnv1a32(text) {
@@ -1552,6 +1620,7 @@ const snapshot = {
   stopSent: false,
   routerEnabled: false,
   driftNotices: [],
+  capturedContext: '',
   at: 0,
 };
 
@@ -1825,7 +1894,10 @@ function transformRequest(data, context) {
   // resolution-save: a cleared marker is a state change with no freeze → docs/modules/janitor-adapter.md#stored-state
   if (!froze && resolved) saveJanitorState(context.chatId, state);
 
-  const janitorText = systemIndex === -1 ? '' : String(messages[systemIndex].content ?? '');
+  const captured = systemIndex === -1 ? '' : String(messages[systemIndex].content ?? '');
+  // editable-unit: the saved override replaces Janitor's captured text whole → docs/modules/janitor-adapter.md#context-override
+  const override = loadOverride(context.chatId);
+  const janitorText = override === null ? captured : override.text;
   // prefill-drop: the trailing assistant injection is the prefill, never folded → docs/modules/janitor-adapter.md#prefill-strip
   const folded = injections.filter((entry) => !(entry.role === 'assistant' && entry.index === messages.length - 1));
   const reconstruction = fromStShape(
@@ -1861,6 +1933,7 @@ function transformRequest(data, context) {
     rebuilt: rebuilding,
     stopSent,
     routerEnabled: context.janitorRouterEnabled,
+    capturedContext: captured,
   });
 
   const lastAlignedId = aligned.length === 0 ? '' : aligned[aligned.length - 1].messageId;
@@ -1877,8 +1950,15 @@ function transformRequest(data, context) {
 // export-kind: the wrapper carries no version of its own → docs/modules/janitor-adapter.md#state-transfer
 const EXPORT_KIND = 'uid-janitor-state';
 
-function exportStateJson(chatId, state) {
-  return JSON.stringify({ kind: EXPORT_KIND, chatId, exportedAt: new Date().toISOString(), state }, null, 2);
+function exportStateJson(chatId, state, override = null) {
+  return JSON.stringify({ kind: EXPORT_KIND, chatId, exportedAt: new Date().toISOString(), state, override }, null, 2);
+}
+
+// override-travels: a malformed or absent one is null, never a refusal → docs/modules/janitor-adapter.md#context-override
+function importedOverride(value) {
+  if (typeof value !== 'object' || value === null) return null;
+  if (value.janitorOverrideFormat !== JANITOR_OVERRIDE_FORMAT || typeof value.text !== 'string') return null;
+  return value;
 }
 
 // refuse-whole: no repair, no migration, no merge → docs/modules/janitor-adapter.md#state-transfer
@@ -1902,7 +1982,7 @@ function importStateJson(text) {
   }
 
   // display-only-chat-id: the caller saves under the current chat's key → docs/modules/janitor-adapter.md#state-transfer
-  return { ok: true, chatId: parsed.chatId, state };
+  return { ok: true, chatId: parsed.chatId, state, override: importedOverride(parsed.override) };
 }
 
 // ---- janitor/panel-text.js ----

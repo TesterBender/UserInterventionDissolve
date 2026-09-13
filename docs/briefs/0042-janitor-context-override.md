@@ -1,5 +1,5 @@
 # Brief 0042 — Janitor context override: per-chat store, request application, drift capture, transfer
-Status: draft
+Status: implemented
 Complexity: high  (it adds a second `localStorage` entry and its own format version, changes what the request pipeline's system-message step composes, changes the exported transfer shape, and adds a field to the status snapshot — four modules plus a new one)
 PLAN sections: §10 (editorial authority is manuscript-wide inside the mutable frontier and belongs to the human — the assembled context Janitor writes is the one piece of the outgoing body the human otherwise cannot touch on this host), §23 (the host supplies "merge external text into manuscript-bearing context"; on this host that merge is the first system message, and nothing in Janitor's own UI lets the human see what finally goes into it), §27 (the override is human-facing and its storage carries no transport information; what reaches the model is one system message whose composition order is fixed)
 Invariants touched: INV-10 (nothing about the override, its storage entry or its drift state may reach the model-visible history — it may only change the content of the one system message, which is not history)
@@ -85,18 +85,18 @@ A human can replace Janitor's assembled context for one chat, once, and have eve
 - (empty) No SillyTavern API is involved. No new Janitor fact is needed: the first-system-message layout and the injection classification are answered ledger items behind `docs/modules/janitor-adapter.md#envelope-diff` and `#system-message`. Do not launch `st-api-verifier`; it verifies SillyTavern only.
 
 ## Acceptance
-- [ ] With an override saved for the chat, the outgoing system message is the manuscript prompt, the override text and each folded injection in input order, joined by `BLOCK_DELIMITER`, and Janitor's own captured text appears nowhere in it.
-- [ ] `status.capturedContext` after a transformed request equals Janitor's incoming first system message exactly, and contains no injection text and no part of the manuscript prompt.
-- [ ] Adding, removing or rewording an injection between requests does not make `overrideDrift` true; changing Janitor's first system message does.
-- [ ] Three consecutive transforms of the same fixture with an override produce `===` system message contents.
-- [ ] `saveOverride` with empty or whitespace-only text removes the entry; after `clearOverride`, the outgoing system message is byte-identical to the no-override case.
-- [ ] `importStateJson(exportStateJson(id, state, override))` returns a deep-equal state and a deep-equal override; an export with no `override` key, and one whose `override` is malformed, both import the state with `override: null` and no new refusal reason.
-- [ ] A non-JSON, wrong-format or `text`-less override entry loads as `null` with no throw; a throwing `setItem` warns and does not throw.
-- [ ] `janitor/transform.js`'s step order, `console.info` line, stop handling, horizon, reconstruction and state writes are unchanged by this brief; `src/**` is byte-identical.
-- [ ] No file added or changed by this brief references `document`, `window` or `SillyTavern`.
-- [ ] `npm run build:janitor` regenerates `dist/janitor-manuscript-dissolve.user.js`, the committed file matches a fresh build, and it parses via `new Function`.
-- [ ] `npm run check` passes
-- [ ] every new pointer comment resolves (`node tools/check-comments.mjs`)
+- [x] With an override saved for the chat, the outgoing system message is the manuscript prompt, the override text and each folded injection in input order, joined by `BLOCK_DELIMITER`, and Janitor's own captured text appears nowhere in it.
+- [x] `status.capturedContext` after a transformed request equals Janitor's incoming first system message exactly, and contains no injection text and no part of the manuscript prompt.
+- [x] Adding, removing or rewording an injection between requests does not make `overrideDrift` true; changing Janitor's first system message does.
+- [x] Three consecutive transforms of the same fixture with an override produce `===` system message contents.
+- [x] `saveOverride` with empty or whitespace-only text removes the entry; after `clearOverride`, the outgoing system message is byte-identical to the no-override case.
+- [x] `importStateJson(exportStateJson(id, state, override))` returns a deep-equal state and a deep-equal override; an export with no `override` key, and one whose `override` is malformed, both import the state with `override: null` and no new refusal reason.
+- [x] A non-JSON, wrong-format or `text`-less override entry loads as `null` with no throw; a throwing `setItem` warns and does not throw.
+- [x] `janitor/transform.js`'s step order, `console.info` line, stop handling, horizon, reconstruction and state writes are unchanged by this brief; `src/**` is byte-identical.
+- [x] No file added or changed by this brief references `document`, `window` or `SillyTavern`.
+- [x] `npm run build:janitor` regenerates `dist/janitor-manuscript-dissolve.user.js`, the committed file matches a fresh build, and it parses via `new Function`.
+- [x] `npm run check` passes
+- [x] every new pointer comment resolves (`node tools/check-comments.mjs`)
 
 ## Docs to write/update
 - `docs/modules/janitor-adapter.md#system-message` — **amend** (do not rewrite the section): the message is composed as `[manuscript prompt] + [the editable unit] + [folded injections]`, where the editable unit is the saved override when one exists and Janitor's captured first system message otherwise; the capture is taken from the incoming array before the rewrite; the first-sentence probe applies to whichever text occupies the unit; injections are still appended last, which is what keeps the cached prefix stable and what makes the override's change detection immune to them.

@@ -8,6 +8,7 @@ import { BLOCK_DELIMITER } from '../../src/constants.js';
 import { countWords } from '../../src/freeze.js';
 import {
   SENTINEL,
+  JANITOR_OVERRIDE_FORMAT,
   JANITOR_LEAD_IN,
   JANITOR_HORIZON_TOKEN_BUDGET,
   JANITOR_HORIZON_HYSTERESIS,
@@ -15,6 +16,7 @@ import {
   JANITOR_STATE_FORMAT,
 } from '../../janitor/constants.js';
 import { stateKey } from '../../janitor/storage.js';
+import { overrideKey, loadOverride, overrideDrift } from '../../janitor/context-override.js';
 import { prefixIdentity } from '../../janitor/identity.js';
 import {
   CHAT_ID,
@@ -78,6 +80,12 @@ function stateNow(chatId = CHAT_ID) {
 
 function seed(state, chatId = CHAT_ID) {
   store.set(stateKey(chatId), JSON.stringify(state));
+}
+
+function seedOverride(text, capturedText = JANITOR_SYSTEM, chatId = CHAT_ID) {
+  store.set(overrideKey(chatId), JSON.stringify({
+    janitorOverrideFormat: JANITOR_OVERRIDE_FORMAT, text, capturedText, savedAt: 1,
+  }));
 }
 
 beforeEach(async () => {
@@ -216,6 +224,115 @@ describe('the system message', () => {
     const second = await dispatched(SHORT_TURNS, { system: first.messages[0].content });
     expect(second.messages[0].content).toBe(first.messages[0].content);
     expect(second.messages[0].content.split(MANUSCRIPT_SYSTEM_PROMPT)).toHaveLength(2);
+  });
+});
+
+describe('the system message under a saved context override', () => {
+  const OVERRIDE = 'Nyx keeps a lighthouse on a cold coast. Write it as prose.';
+  const injections = [
+    { at: 1, role: 'system', content: 'INJECTION ONE: keep the lamp lit.' },
+    { at: 3, role: 'user', content: 'INJECTION TWO: OOC, shorter paragraphs please.' },
+  ];
+
+  it('sends the prompt, the override and every injection in order, and nothing of the captured text', async () => {
+    seedOverride(OVERRIDE);
+    const body = await dispatched(SHORT_TURNS, { injections });
+
+    expect(body.messages[0].content).toBe([
+      MANUSCRIPT_SYSTEM_PROMPT,
+      OVERRIDE,
+      ...injections.map((injection) => injection.content),
+    ].join(BLOCK_DELIMITER));
+    expect(body.messages[0].content).not.toContain(JANITOR_SYSTEM);
+  });
+
+  it('captures the Janitor text alone, without the prompt or any injection', async () => {
+    const { getRequestStatus } = await import('../../janitor/status.js');
+    seedOverride(OVERRIDE);
+    await dispatched(SHORT_TURNS, { injections });
+
+    const { capturedContext } = getRequestStatus();
+    expect(capturedContext).toBe(JANITOR_SYSTEM);
+    expect(capturedContext).not.toContain(MANUSCRIPT_SYSTEM_PROMPT);
+    for (const injection of injections) expect(capturedContext).not.toContain(injection.content);
+  });
+
+  it('reports no drift when an injection is added, removed or reworded', async () => {
+    const { getRequestStatus } = await import('../../janitor/status.js');
+    seedOverride(OVERRIDE);
+
+    const variants = [
+      injections,
+      [injections[0]],
+      [{ at: 1, role: 'system', content: 'INJECTION ONE REWORDED: the lamp stays lit.' }],
+    ];
+    for (const variant of variants) {
+      await dispatched(SHORT_TURNS, { injections: variant });
+      expect(overrideDrift(loadOverride(CHAT_ID), getRequestStatus().capturedContext)).toBe(false);
+    }
+  });
+
+  it('reports drift when the Janitor first system message changes, and still sends the override', async () => {
+    const { getRequestStatus } = await import('../../janitor/status.js');
+    seedOverride(OVERRIDE);
+
+    await dispatched(SHORT_TURNS);
+    expect(overrideDrift(loadOverride(CHAT_ID), getRequestStatus().capturedContext)).toBe(false);
+
+    const moved = `${JANITOR_SYSTEM}
+
+Janitor changed its mind.`;
+    const body = await dispatched(SHORT_TURNS, { system: moved });
+
+    expect(overrideDrift(loadOverride(CHAT_ID), getRequestStatus().capturedContext)).toBe(true);
+    expect(body.messages[0].content).toBe(`${MANUSCRIPT_SYSTEM_PROMPT}${BLOCK_DELIMITER}${OVERRIDE}`);
+  });
+
+  it('is byte-identical across three consecutive requests', async () => {
+    seedOverride(OVERRIDE);
+    const first = await dispatched(SHORT_TURNS, { injections });
+    const second = await dispatched(SHORT_TURNS, { injections });
+    const third = await dispatched(SHORT_TURNS, { injections });
+
+    expect(second.messages[0].content).toBe(first.messages[0].content);
+    expect(third.messages[0].content).toBe(first.messages[0].content);
+  });
+
+  it('suppresses the prepend when the override itself carries the prompt', async () => {
+    seedOverride(`${MANUSCRIPT_SYSTEM_PROMPT}
+
+And keep the lamp lit.`);
+    const body = await dispatched(SHORT_TURNS);
+    expect(body.messages[0].content.split(MANUSCRIPT_SYSTEM_PROMPT)).toHaveLength(2);
+  });
+
+  it('restores the captured text byte-identically once the override is cleared', async () => {
+    const { clearOverride, saveOverride } = await import('../../janitor/context-override.js');
+    const plain = await dispatched(SHORT_TURNS, { injections });
+
+    seedOverride(OVERRIDE);
+    const overridden = await dispatched(SHORT_TURNS, { injections });
+    expect(overridden.messages[0].content).not.toBe(plain.messages[0].content);
+
+    clearOverride(CHAT_ID);
+    expect((await dispatched(SHORT_TURNS, { injections })).messages[0].content).toBe(plain.messages[0].content);
+
+    seedOverride(OVERRIDE);
+    saveOverride(CHAT_ID, '   ', JANITOR_SYSTEM);
+    expect(loadOverride(CHAT_ID)).toBe(null);
+    expect((await dispatched(SHORT_TURNS, { injections })).messages[0].content).toBe(plain.messages[0].content);
+  });
+
+  it('leaves the reconstructed history, the stop array and the report untouched', async () => {
+    const plain = await dispatched(SHORT_TURNS);
+    console.info.mockClear();
+
+    seedOverride(OVERRIDE);
+    const overridden = await dispatched(SHORT_TURNS);
+
+    expect(overridden.messages.slice(1)).toEqual(plain.messages.slice(1));
+    expect(overridden.stop).toEqual(plain.stop);
+    expect(console.info.mock.calls[0][0]).not.toContain(OVERRIDE);
   });
 });
 
