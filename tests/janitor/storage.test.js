@@ -28,7 +28,7 @@ describe('stateKey', () => {
 });
 
 describe('loadJanitorState', () => {
-  it('returns a fresh v3 state with the four Janitor fields when nothing is stored', () => {
+  it('returns a fresh v3 state with the five Janitor fields when nothing is stored', () => {
     const state = loadJanitorState('chat-7f3', fakeStorage());
     expect(state).toEqual({
       version: 3,
@@ -39,6 +39,7 @@ describe('loadJanitorState', () => {
       watermark: { messageId: null, offset: 0 },
       literal: '',
       boundaries: [],
+      pendingBoundaryAfter: '',
       watermarkText: '',
     });
     expect(warn).not.toHaveBeenCalled();
