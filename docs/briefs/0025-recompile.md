@@ -1,5 +1,5 @@
 # Brief 0025 — Recompile: reset canonical state and re-freeze under current rules
-Status: implemented
+Status: done
 Complexity: high
 PLAN sections: §10 (editorial authority is manuscript-wide inside the mutable frontier and is distinct from the capture path — a deliberate rebuild is the collaborator exercising it); §16 (freezing is append-only and old spans "are not *normally* re-cut" — the reasons given are cache prefixes, historical demonstrations and transport statistics, all of which a deliberate, whole-chat rebuild resets together rather than disturbing piecemeal); §17 (cut selection rules, applied unchanged by the re-freeze loop).
 Invariants touched: INV-6, INV-7, INV-10
