@@ -6,7 +6,7 @@ import { classifyOutcome, onMessageReceived } from '../src/recovery.js';
 import { onMessageReceived as boundaryMessageReceived, resetBoundaryState } from '../src/boundary-host.js';
 import { createState } from '../src/state.js';
 import { deriveFrontier } from '../src/derive.js';
-import { METADATA_KEY } from '../src/constants.js';
+import { METADATA_KEY, BLOCK_DELIMITER } from '../src/constants.js';
 
 const SOURCE = fs.readFileSync(path.join(process.cwd(), 'src/recovery.js'), 'utf8');
 
@@ -334,6 +334,51 @@ describe('onMessageReceived — freeze hook-up', () => {
 
     expect(state.units).toHaveLength(1);
     expect(ctx.saveMetadata).toHaveBeenCalledTimes(1);
+  });
+
+  function blocks(n, label) {
+    const parts = [];
+    for (let i = 0; i < n; i += 1) parts.push(words(100, `${label}p${i}w`));
+    return parts.join(BLOCK_DELIMITER);
+  }
+
+  it('withholds the just-received message from the cut even when the cut can only land inside it', async () => {
+    const ctx = installFakeContext({ name1: 'Mara' });
+    const state = seed(ctx);
+    for (let i = 0; i < 29; i += 1) {
+      ctx.chat.push(makeAssistantMessage({ mes: words(100, `b${i}w`) }));
+    }
+    ctx.chat.push(makeAssistantMessage({ mes: blocks(8, 'last') }));
+    const last = ctx.chat[ctx.chat.length - 1];
+
+    await onMessageReceived(ctx.chat.length - 1, 'normal');
+
+    const lastId = last.extra[METADATA_KEY].id;
+    const compiled = [...state.units, ...state.frozen].map((span) => span.text).join(' ');
+    expect(state.frozenIds).not.toContain(lastId);
+    expect(state.watermark.messageId).not.toBe(lastId);
+    expect(compiled).not.toContain('lastp0w0');
+    expect(compiled).toBe('');
+  });
+
+  it('compiles at a later receipt the message it withheld at an earlier one', async () => {
+    const ctx = installFakeContext({ name1: 'Mara' });
+    const state = seed(ctx);
+    for (let i = 0; i < 29; i += 1) {
+      ctx.chat.push(makeAssistantMessage({ mes: words(100, `b${i}w`) }));
+    }
+    ctx.chat.push(makeAssistantMessage({ mes: blocks(8, 'last') }));
+    const withheld = ctx.chat[ctx.chat.length - 1];
+
+    await onMessageReceived(ctx.chat.length - 1, 'normal');
+    expect(state.units).toEqual([]);
+
+    ctx.chat.push(makeAssistantMessage({ mes: words(100, 'after') }));
+    await onMessageReceived(ctx.chat.length - 1, 'normal');
+
+    expect(state.units).toHaveLength(1);
+    expect(state.units[0].text).toContain('lastp0w0');
+    expect(state.watermark.messageId).toBe(withheld.extra[METADATA_KEY].id);
   });
 
   it('saves metadata once for a receipt whose compile also seals a final span', async () => {

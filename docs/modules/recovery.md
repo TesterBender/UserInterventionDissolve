@@ -69,8 +69,15 @@ The attempt runs after the receipt markers are written and after `assignIds(ctx.
 
 ```js
 const state = getState(ctx);
-const result = compileUnit(state, deriveFrontier(ctx.chat, state, literal), literal, {});
+const derived = deriveFrontier(ctx.chat, state, literal);
+const result = derived.segments.length < 2
+  ? null
+  : compileUnit(state, derived, literal, { maxFrozenEnd: derived.segments.at(-1).start });
 ```
+
+The derivation is held in a local so the cut can be **clamped to the start of its trailing segment** (`docs/modules/freeze.md#last-message-clamp`). The consequence is that the just-received message is never compiled at its own receipt: every candidate boundary inside it is withheld, so a cut lands only in text a message ahead of it, and compilation of that message is deferred until a later receipt has put a segment past it. A derivation with fewer than two segments has nothing behind its trailing message at all, so no compile is attempted. Nothing is retried and nothing is scheduled to catch up — the next receipt re-derives and compiles what has become eligible. The cost is that the frontier runs a little past the 3,000–4,200-word target before a cut lands, which PLAN §16 makes advisory and which the model cannot see.
+
+That deferral is what makes the swipe path safe. On a swipe the replaced draft stays in `chat[]` and `excludeLastAssistant` drops it from the *derivation* (`docs/modules/derive.md#regeneration-scope`), but `buildHistory` replays `state.frozen` and `state.units` unconditionally (`docs/modules/frontier.md#interceptor-body`), so an exclusion cannot un-compile a head that an earlier receipt already sealed — and the watermark that cut would leave behind would slice the *new* draft at the old draft's offset. Freezing is append-only (INV-6) and compiled text is never re-cut, so the only defence is not to compile that message in the first place. The reasoning and the rejected alternatives are in `docs/decisions/0008-st-host-receipt-clamp.md`.
 
 The frontier handed to `compileUnit` is derived fresh from the live chat (`docs/modules/derive.md#derivation-rule`); this module keeps no copy of it and passes the `{ text, segments }` object straight through, because the segments are what let the chosen cut be mapped back to a `(messageId, offset)` watermark (`docs/modules/freeze.md#watermark-mapping`). `compileUnit` may also **seal** the units it just extended into a final span (`docs/modules/freeze.md#seal-policy`); that is still one call and still one save, and this module has no branch for it. `result === null` means no unit was pushed — no candidate, a refused cut, or a cut inside a non-offset-preserving block — and in that case canonical state is untouched and **no metadata save happens**. Only a real freeze costs a `saveMetadata()`; the `saveChat()` this handler already performs is unrelated and unconditional.
 

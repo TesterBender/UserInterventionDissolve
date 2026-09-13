@@ -1,5 +1,5 @@
 # Brief 0041 — Clamp the receipt-time compile to the start of the just-received message
-Status: draft
+Status: implemented
 Complexity: high
 PLAN sections: §12 (normalisation happens every request; freezing only when the frontier reaches its transport target — the two must not be conflated, and an old draft must not survive into the next request), §14 (a receipt is classified and rolled back at MESSAGE_RECEIVED; the receipt is the only scheduled moment recovery acts), §16 (freezing is append-only and compiled text is never re-cut, so a compile of text that is about to be replaced cannot be undone), §17 (cut selection is hard rules first; a withholding rule only narrows where a cut may land)
 Invariants touched: INV-4, INV-6, INV-10
@@ -46,14 +46,14 @@ On the SillyTavern host, a swipe of the newest assistant message must never send
 - (empty — no new ST fact is required; the change is entirely inside extension code.)
 
 ## Acceptance
-- [ ] `src/recovery.js` contains exactly one `compileUnit(` call, and it passes `{ maxFrozenEnd: derived.segments.at(-1).start }`; a derivation with fewer than two segments compiles nothing.
-- [ ] `tests/recovery.test.js`: a receipt over a frontier well past `FREEZE_MIN_WORDS` never puts the received message's id in `frozenIds`, never sets `watermark.messageId` to it, and never pushes its text into `state.units` or `state.frozen`.
-- [ ] `tests/frontier.test.js`: from a state whose `units` hold the last assistant message's head, a `'swipe'` reconstruction dispatches a history containing none of that head text and a frontier turn that is not sliced at a stale watermark offset.
-- [ ] A normal (non-swipe) sequence still compiles: the message withheld at one receipt is compiled at a later one, proved by a test that drives two receipts.
-- [ ] `docs/decisions/0008-st-host-receipt-clamp.md` exists, follows the `docs/decisions/README.md` template, and is listed in `docs/decisions/README.md#records`.
-- [ ] No file outside the allowlist is modified; `src/freeze.js` and `src/frontier.js` are byte-identical to `main`.
-- [ ] `npm run check` passes.
-- [ ] every new pointer comment resolves (`node tools/check-comments.mjs`).
+- [x] `src/recovery.js` contains exactly one `compileUnit(` call, and it passes `{ maxFrozenEnd: derived.segments.at(-1).start }`; a derivation with fewer than two segments compiles nothing.
+- [x] `tests/recovery.test.js`: a receipt over a frontier well past `FREEZE_MIN_WORDS` never puts the received message's id in `frozenIds`, never sets `watermark.messageId` to it, and never pushes its text into `state.units` or `state.frozen`.
+- [x] `tests/frontier.test.js`: from a state whose `units` hold the last assistant message's head, a `'swipe'` reconstruction dispatches a history containing none of that head text and a frontier turn that is not sliced at a stale watermark offset.
+- [x] A normal (non-swipe) sequence still compiles: the message withheld at one receipt is compiled at a later one, proved by a test that drives two receipts.
+- [x] `docs/decisions/0008-st-host-receipt-clamp.md` exists, follows the `docs/decisions/README.md` template, and is listed in `docs/decisions/README.md#records`.
+- [x] No file outside the allowlist is modified; `src/freeze.js` and `src/frontier.js` are byte-identical to `main`.
+- [x] `npm run check` passes.
+- [x] every new pointer comment resolves (`node tools/check-comments.mjs`).
 
 ## Docs to write/update
 - `docs/modules/freeze.md#last-message-clamp` — delete the "off by default and the SillyTavern host never sets it, so that host's behaviour is unchanged" claim (line 86) and generalise the host-reason paragraph (line 92): both hosts now clamp, Janitor at request build and SillyTavern at receipt, for the same reason — the trailing assistant message can still be replaced by a different draft (swipe on ST, regenerate on Janitor). Keep the hard-rule argument and the "the caller that owns the message list computes the offset" split unchanged.
