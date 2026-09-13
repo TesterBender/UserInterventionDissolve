@@ -72,7 +72,7 @@ Every top-level name in this file must differ from every top-level name in `src/
 - [x] A message whose id is in `state.frozenIds` is dropped by `deriveFrontier` through the shim with no special-casing in `janitor/`.
 - [x] `loadJanitorState` round-trips `frozen`, `units`, `frozenIds`, `watermark` (including `prefixHash`), `literal`, `boundaries` and `watermarkText`; a `version: 2` blob, a foreign JSON object and an unparseable string each yield a fresh state and exactly one `console.warn`; a throwing `setItem` warns and does not throw.
 - [x] No file under `janitor/` references `SillyTavern`; `janitor/main.js` is byte-identical to its state after brief 0028 and `dist/` is unchanged.
-- [ ] `npm run check` passes — blocked by tests/janitor/isolation.test.js (SCOPE_GAP below); lint, the 47 new tests, `check:comments` and `check:docs` all pass
+- [x] `npm run check` passes — blocked by tests/janitor/isolation.test.js (SCOPE_GAP below); lint, the 47 new tests, `check:comments` and `check:docs` all pass (resolved 2026-09-14 by brief 0034)
 - [x] every new pointer comment resolves (`node tools/check-comments.mjs`)
 
 ## Docs to write/update
