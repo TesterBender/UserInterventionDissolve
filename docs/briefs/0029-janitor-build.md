@@ -1,5 +1,5 @@
 # Brief 0029 — Janitor userscript build (`tools/build-janitor.mjs`)
-Status: implemented
+Status: done
 Complexity: high  (touches `tools/`, `package.json`, a new committed build product and a new doc; flattening an ESM graph into one IIFE without a bundler is where the errors hide)
 PLAN sections: §23 (host requirements are behavioural, so a userscript is a legitimate host; the build only decides how that host receives the code), §27 (final criterion — the build adds nothing model-visible; its only protocol duty is that model-facing strings lifted from `src/` reach the bundle byte-identical)
 Invariants touched: none directly. INV-5's byte-identical continuation control depends on the bundle not rewriting string literals from `src/`; the acceptance list pins that.

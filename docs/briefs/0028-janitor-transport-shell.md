@@ -1,5 +1,5 @@
 # Brief 0028 — Janitor transport shell (fetch-only)
-Status: implemented
+Status: done
 Complexity: high  (>1 module: `janitor/` shell + envelope + shape + detector, new test tree, new docs; the response wrapper and the route binding are subtle)
 PLAN sections: §23 (host requirements: a host needs the listed *behaviours*, not an API; "the protocol depends on behavior, not on any particular API role names or extension system" — this brief builds none of those behaviours, it only gives them a seam), §27 (final criterion: a feature must not make the transport layer narratively legible — the shell adds nothing model-visible, so the pass-through proof *is* its §27 compliance)
 Invariants touched: none. No protocol logic exists in this brief; the model-visible request is byte-identical to Janitor's own.

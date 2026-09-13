@@ -1,5 +1,5 @@
 # Brief 0030 — Deduplicate `isObject` across `janitor/shape.js` and `janitor/envelope.js`
-Status: implemented
+Status: done
 Complexity: low  (two files in `janitor/`, one new export, no behaviour change; the build tool and its failure rule already exist)
 PLAN sections: §23 (host requirements are behavioural; a userscript host is legitimate — this change only keeps that host buildable), §27 (the final criterion — this change is invisible to the model; nothing model-facing moves)
 Invariants touched: none. No protocol logic, no model-visible string, no transport behaviour changes.
