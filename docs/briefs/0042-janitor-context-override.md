@@ -1,5 +1,5 @@
 # Brief 0042 — Janitor context override: per-chat store, request application, drift capture, transfer
-Status: implemented
+Status: done
 Complexity: high  (it adds a second `localStorage` entry and its own format version, changes what the request pipeline's system-message step composes, changes the exported transfer shape, and adds a field to the status snapshot — four modules plus a new one)
 PLAN sections: §10 (editorial authority is manuscript-wide inside the mutable frontier and belongs to the human — the assembled context Janitor writes is the one piece of the outgoing body the human otherwise cannot touch on this host), §23 (the host supplies "merge external text into manuscript-bearing context"; on this host that merge is the first system message, and nothing in Janitor's own UI lets the human see what finally goes into it), §27 (the override is human-facing and its storage carries no transport information; what reaches the model is one system message whose composition order is fixed)
 Invariants touched: INV-10 (nothing about the override, its storage entry or its drift state may reach the model-visible history — it may only change the content of the one system message, which is not history)
