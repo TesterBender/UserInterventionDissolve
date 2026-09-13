@@ -33,7 +33,7 @@ Each iteration derives the frontier afresh — `deriveFrontier(ctx.chat, state, 
 
 Termination follows from the state: an accepted freeze consumes at least `FREEZE_MIN_WORDS` of a finite frontier and always advances `frozenIds` or the watermark offset, so the next derivation is strictly shorter. A hard cap of 1,000 iterations is nevertheless the loop bound, so the function cannot hang on any input; reaching the cap simply ends the loop, and the result is reported in the usual way.
 
-There is **no post-loop seal step**. The loop ends when `compileUnit` returns `null`, and any units still unsealed at that point are by construction below the seal policy's thresholds (`docs/modules/freeze.md#seal-policy`) — sealing them anyway would manufacture a final span the live path would never have produced, and the next receipt that does compile a unit will seal them under the ordinary rule.
+There is **no post-loop seal step**. The loop ends when `compileUnit` returns `null`, and any units still unsealed at that point are either below the seal policy's thresholds or held by a stalled seal (docs/modules/freeze.md#seal-policy) (`docs/modules/freeze.md#seal-policy`) — sealing them anyway would manufacture a final span the live path would never have produced, and the next receipt that does compile a unit will seal them under the ordinary rule.
 
 The options object is `{}` — the same empty object `recovery` passes — so the live default target, jitter seed and salience rules apply unchanged. Recompiling under the current rules is the entire point; a frozen or captured set of options would defeat it.
 

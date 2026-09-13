@@ -1,5 +1,5 @@
 # Brief 0026 — Hierarchical compilation: Tier-1 units, sealed final spans, interleaved continuations
-Status: implemented
+Status: done
 Complexity: high
 PLAN sections: §12 (the mutable frontier is reconstructed every request so earlier live seams cannot survive), §13 (continuation control is a neutral host constant; frozen history uses one byte-identical string), §16 (freezing is append-only, old spans are not re-cut; 3,000–4,200 words with jitter is an advisory transport target the compiler may overrun for a better boundary), §17 (cuts may correlate with low-salience structure, never with authorship or high-salience fiction). Governing spec for this brief: `PLAN-addendum-hierarchical-compilation.md` (§1–§16), read in full.
 Invariants touched: INV-4, INV-5, INV-6, INV-7, INV-10
