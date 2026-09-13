@@ -1,5 +1,5 @@
 # Brief 0040 — Janitor panel: shadow-DOM launcher, status line, Recompile, Export/Import, cross-tab listener
-Status: draft
+Status: implemented
 Complexity: high  (it adds the script's first DOM surface and its first cross-tab listener, and it wires a second install call into the build entry)
 PLAN sections: §10 (the rebuild is editorial authority and must be collaborator-initiated — this is the only place a human can ask for it), §23 (the host contract includes giving the human a way to see and keep canonical state, which this host otherwise hides in `localStorage`), §27 (the panel is human-facing and sits outside the model's world; nothing it renders may ever enter a request)
 Invariants touched: INV-6 (the panel reports an edit to compiled text and offers a rebuild; it never repairs a span), INV-10 (the exported JSON and everything the panel renders stay on the page — no id, hash or offset may reach a request through this surface)
@@ -72,16 +72,16 @@ A human running the userscript on janitorai.com sees one small launcher that ope
 - (empty) No SillyTavern API is involved, and no new Janitor fact is needed: the panel renders facts other briefs already captured or computed. The open ledger item behind the router warning (proxy-mode-only, plan reality 1) is exactly what the warning exists to make visible to the human, so it blocks nothing. Do not launch `st-api-verifier`; it verifies SillyTavern only.
 
 ## Acceptance
-- [ ] `statusLines` renders the literal, finals, units and frontier words from a snapshot; says `stop` when `stopSent` is true and the stream cut when it is false; adds the router warning only when `routerEnabled`; renders one line per drift notice; and returns the single "nothing seen yet" line for an empty snapshot.
-- [ ] Each `importStateJson` reason and the success case map to a distinct non-empty sentence; the standing notes state both the next-message rule and last-writer-wins.
-- [ ] `janitor/panel.js` contains no string literal that is shown to a human other than element names, ids, CSS and the constant host id — every rendered sentence comes from `panel-text.js`.
-- [ ] `janitor/panel.js` contains no conditional other than element presence and the storage-key filter; no `src/` import; no `SillyTavern`.
-- [ ] `installPanel()` called twice creates exactly one host element; the host is a shadow root and the script adds no style rule outside it.
-- [ ] The `storage` listener re-renders only for keys under `STORAGE_KEY_PREFIX` matching the current chat, and performs no state write.
-- [ ] No test imports `janitor/panel.js`; `package.json` is byte-identical and no test file names jsdom or sets a DOM environment.
-- [ ] `npm run build:janitor` regenerates `dist/janitor-manuscript-dissolve.user.js`, the committed file matches a fresh build, and it parses via `new Function`.
-- [ ] `npm run check` passes
-- [ ] every new pointer comment resolves (`node tools/check-comments.mjs`)
+- [x] `statusLines` renders the literal, finals, units and frontier words from a snapshot; says `stop` when `stopSent` is true and the stream cut when it is false; adds the router warning only when `routerEnabled`; renders one line per drift notice; and returns the single "nothing seen yet" line for an empty snapshot.
+- [x] Each `importStateJson` reason and the success case map to a distinct non-empty sentence; the standing notes state both the next-message rule and last-writer-wins.
+- [x] `janitor/panel.js` contains no string literal that is shown to a human other than element names, ids, CSS and the constant host id — every rendered sentence comes from `panel-text.js`.
+- [x] `janitor/panel.js` contains no conditional other than element presence and the storage-key filter; no `src/` import; no `SillyTavern`.
+- [x] `installPanel()` called twice creates exactly one host element; the host is a shadow root and the script adds no style rule outside it.
+- [x] The `storage` listener re-renders only for keys under `STORAGE_KEY_PREFIX` matching the current chat, and performs no state write.
+- [x] No test imports `janitor/panel.js`; `package.json` is byte-identical and no test file names jsdom or sets a DOM environment.
+- [x] `npm run build:janitor` regenerates `dist/janitor-manuscript-dissolve.user.js`, the committed file matches a fresh build, and it parses via `new Function`.
+- [x] `npm run check` passes
+- [x] every new pointer comment resolves (`node tools/check-comments.mjs`)
 
 ## Docs to write/update
 - `docs/modules/janitor-panel.md` (new) — header block in the house form (`Owns:` nothing; `PLAN:` §10, §23, §27; `Depends on:` `janitor/status.js`, `janitor/recompile.js`, `janitor/portable.js`, `janitor/storage.js`), then:

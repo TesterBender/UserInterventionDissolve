@@ -1873,9 +1873,258 @@ function transformRequest(data, context) {
   };
 }
 
+// ---- janitor/portable.js ----
+// export-kind: the wrapper carries no version of its own → docs/modules/janitor-adapter.md#state-transfer
+const EXPORT_KIND = 'uid-janitor-state';
+
+function exportStateJson(chatId, state) {
+  return JSON.stringify({ kind: EXPORT_KIND, chatId, exportedAt: new Date().toISOString(), state }, null, 2);
+}
+
+// refuse-whole: no repair, no migration, no merge → docs/modules/janitor-adapter.md#state-transfer
+function importStateJson(text) {
+  let parsed = null;
+  try {
+    parsed = JSON.parse(text);
+  } catch {
+    return { ok: false, reason: 'unreadable' };
+  }
+  if (typeof parsed !== 'object' || parsed === null) return { ok: false, reason: 'unreadable' };
+
+  const state = parsed.state;
+  if (parsed.kind !== EXPORT_KIND || typeof state !== 'object' || state === null
+    || !Array.isArray(state.frozen) || !Array.isArray(state.units) || !Array.isArray(state.frozenIds)
+    || typeof state.watermark !== 'object' || state.watermark === null) {
+    return { ok: false, reason: 'not-a-state' };
+  }
+  if (state.version !== STATE_VERSION || state.janitorFormat !== JANITOR_STATE_FORMAT) {
+    return { ok: false, reason: 'wrong-format' };
+  }
+
+  // display-only-chat-id: the caller saves under the current chat's key → docs/modules/janitor-adapter.md#state-transfer
+  return { ok: true, chatId: parsed.chatId, state };
+}
+
+// ---- janitor/panel-text.js ----
+// panel-sentences: every human-facing string and every panel decision lives here → docs/modules/janitor-panel.md#untested-dom
+const PANEL_LABELS = {
+  launcher: 'Manuscript',
+  title: 'Manuscript',
+  close: 'Close',
+  recompile: 'Recompile',
+  exportHeading: 'Export — copy this somewhere safe',
+  importHeading: 'Import — paste an export here',
+  importButton: 'Replace this chat from the pasted text',
+};
+
+const NOTHING_SEEN = 'No request seen on this page yet. Send a message in this chat and the panel fills in.';
+const RECOMPILE_UNAVAILABLE = 'Nothing to rebuild yet: the panel has not seen a request, so it does not know which chat you are in.';
+
+function hasSnapshot(status) {
+  return status.at !== 0 && status.chatId !== '';
+}
+
+function transportLine(status) {
+  return status.stopSent
+    ? 'The boundary is carried by the stop parameter: the provider halts the model at the right place.'
+    : 'The boundary is carried by the stream cut: this provider refused the parameter, so the script ends the reply itself. A little extra text may be generated and thrown away.';
+}
+
+// router-blind: proxy mode only, and only the human can change it → docs/modules/janitor-panel.md#status-line
+function routerLines(status) {
+  if (!status.routerEnabled) return [];
+  return ['Janitor is running this model call on its own servers, so the script sees nothing and changes nothing. Point Janitor at a proxy for the manuscript to work.'];
+}
+
+function driftLines(status) {
+  return status.driftNotices.map((messageId) => `The text of an already-sealed message changed (${messageId}). The sealed copy is what the model keeps reading; the panel reports this and never rewrites it. Recompile if you want the edit to count.`);
+}
+
+function statusLines(status) {
+  if (!hasSnapshot(status)) return [NOTHING_SEEN];
+
+  return [
+    `Chat: ${status.chatId}`,
+    `Your reserved name: ${status.literal}`,
+    `Sealed spans: ${status.finals} · unsealed units: ${status.units} · live scene: ${status.frontierWords} words`,
+    transportLine(status),
+    ...routerLines(status),
+    ...driftLines(status),
+  ];
+}
+
+function recompileAvailability(status) {
+  const ready = hasSnapshot(status);
+  return { disabled: !ready, note: ready ? '' : RECOMPILE_UNAVAILABLE };
+}
+
+function recompileRequestedText() {
+  return 'Rebuild requested. It happens on your next message, not now, and it can only use the messages Janitor still sends — anything older than its window is gone from the manuscript.';
+}
+
+function staticNotes() {
+  return [
+    'A rebuild takes effect on the next message you send, and rebuilds only from what Janitor still sends.',
+    'Two tabs open on the same chat overwrite each other: the last one to write wins. Keep one tab per chat.',
+  ];
+}
+
+const TRANSFER_FAILURES = {
+  unreadable: 'That is not readable JSON. Paste the whole export, from the first brace to the last.',
+  'not-a-state': 'That JSON is not a manuscript export. Nothing was changed.',
+  'wrong-format': 'That export was written by a different version of the script and cannot be read. Nothing was changed.',
+};
+
+function transferResultText(result) {
+  if (result.ok) return 'Imported. This chat now holds the manuscript from that export; whatever it held before is gone.';
+  return TRANSFER_FAILURES[result.reason];
+}
+
+// import-decision: the sentence and the save target in one place, so panel.js branches on nothing → docs/modules/janitor-panel.md#transfer
+function importOutcome(result, chatId) {
+  const foreign = result.ok && result.chatId !== chatId
+    ? ` The export came from chat ${result.chatId}; it was imported into this one anyway.`
+    : '';
+  return {
+    message: transferResultText(result) + foreign,
+    saveChatId: result.ok ? chatId : '',
+    state: result.ok ? result.state : null,
+  };
+}
+
+// ---- janitor/panel.js ----
+// panel-host: one id, one consumer, appended to the document element → docs/modules/janitor-panel.md#what-it-is
+const PANEL_HOST_ID = 'uid-manuscript-panel-host';
+
+const PANEL_CSS = `
+:host { all: initial; }
+.launcher, .panel { position: fixed; right: 12px; font: 12px/1.5 system-ui, sans-serif; color: #e8e8e8; }
+.launcher { bottom: 12px; z-index: 2147483647; background: #23252b; border: 1px solid #4a4d55; border-radius: 6px; padding: 4px 10px; cursor: pointer; }
+.panel { bottom: 48px; width: 420px; max-height: 70vh; overflow: auto; z-index: 2147483646; background: #17181c; border: 1px solid #4a4d55; border-radius: 6px; padding: 12px; }
+.head { display: flex; justify-content: space-between; align-items: baseline; margin-bottom: 8px; }
+.title { font-weight: 600; }
+.status { white-space: pre-wrap; font-family: ui-monospace, monospace; background: #101114; border: 1px solid #33353c; border-radius: 4px; padding: 8px; }
+.notes, .message { white-space: pre-wrap; margin-top: 8px; color: #b6b8bf; }
+.section { margin-top: 12px; }
+.section-head { font-weight: 600; margin-bottom: 4px; }
+textarea { width: 100%; height: 96px; box-sizing: border-box; font-family: ui-monospace, monospace; font-size: 11px; background: #101114; color: #e8e8e8; border: 1px solid #33353c; border-radius: 4px; padding: 6px; }
+button { font: inherit; background: #23252b; color: #e8e8e8; border: 1px solid #4a4d55; border-radius: 4px; padding: 3px 8px; cursor: pointer; }
+button[disabled] { opacity: 0.5; cursor: default; }
+`;
+
+const ui = {};
+
+function makeElement(tag, className, text) {
+  const element = document.createElement(tag);
+  element.className = className;
+  element.textContent = text;
+  return element;
+}
+
+function renderPanel() {
+  const status = getRequestStatus();
+  const availability = recompileAvailability(status);
+
+  ui.status.textContent = statusLines(status).join('\n');
+  ui.recompile.disabled = availability.disabled;
+  ui.recompile.title = availability.note;
+  ui.exportArea.value = exportStateJson(status.chatId, loadJanitorState(status.chatId));
+}
+
+function onRecompile() {
+  requestRecompile(getRequestStatus().chatId);
+  ui.message.textContent = recompileRequestedText();
+}
+
+function onImport() {
+  const outcome = importOutcome(importStateJson(ui.importArea.value), getRequestStatus().chatId);
+  saveJanitorState(outcome.saveChatId, outcome.state);
+  ui.message.textContent = outcome.message;
+  renderPanel();
+}
+
+// same-chat-only: the cross-tab filter, and the only other branch in this file → docs/modules/janitor-panel.md#cross-tab
+function onStorage(event) {
+  if (!event.key?.startsWith(STORAGE_KEY_PREFIX)) return;
+  if (event.key !== stateKey(getRequestStatus().chatId)) return;
+  renderPanel();
+}
+
+function buildPanel() {
+  const panel = makeElement('section', 'panel', '');
+  panel.hidden = true;
+
+  const head = makeElement('div', 'head', '');
+  head.append(makeElement('span', 'title', PANEL_LABELS.title));
+  panel.append(head);
+
+  ui.status = makeElement('div', 'status', '');
+  panel.append(ui.status);
+  panel.append(makeElement('div', 'notes', staticNotes().join('\n')));
+
+  ui.recompile = makeElement('button', 'recompile', PANEL_LABELS.recompile);
+  ui.recompile.type = 'button';
+  ui.recompile.addEventListener('click', onRecompile);
+  const actions = makeElement('div', 'section', '');
+  actions.append(ui.recompile);
+  panel.append(actions);
+
+  ui.message = makeElement('div', 'message', '');
+  panel.append(ui.message);
+
+  const exportSection = makeElement('div', 'section', '');
+  exportSection.append(makeElement('div', 'section-head', PANEL_LABELS.exportHeading));
+  ui.exportArea = makeElement('textarea', 'export', '');
+  ui.exportArea.readOnly = true;
+  ui.exportArea.spellcheck = false;
+  ui.exportArea.addEventListener('focus', () => ui.exportArea.select());
+  exportSection.append(ui.exportArea);
+  panel.append(exportSection);
+
+  const importSection = makeElement('div', 'section', '');
+  importSection.append(makeElement('div', 'section-head', PANEL_LABELS.importHeading));
+  ui.importArea = makeElement('textarea', 'import', '');
+  ui.importArea.spellcheck = false;
+  const importButton = makeElement('button', 'import-run', PANEL_LABELS.importButton);
+  importButton.type = 'button';
+  importButton.addEventListener('click', onImport);
+  importSection.append(ui.importArea, importButton);
+  panel.append(importSection);
+
+  return panel;
+}
+
+function installPanel() {
+  if (document.getElementById(PANEL_HOST_ID) !== null) return;
+
+  const host = document.createElement('div');
+  host.id = PANEL_HOST_ID;
+  const shadow = host.attachShadow({ mode: 'open' });
+
+  const style = document.createElement('style');
+  style.textContent = PANEL_CSS;
+
+  const panel = buildPanel();
+  const launcher = makeElement('button', 'launcher', PANEL_LABELS.launcher);
+  launcher.type = 'button';
+  launcher.addEventListener('click', () => {
+    panel.hidden = !panel.hidden;
+    renderPanel();
+  });
+
+  shadow.append(style, launcher, panel);
+  document.documentElement.append(host);
+
+  setStatusListener(renderPanel);
+  window.addEventListener('storage', onStorage);
+  renderPanel();
+}
+
 // ---- janitor/main.js ----
 // transform-seam: the request pipeline is the shell's only protocol consumer → docs/modules/janitor-transport.md#transform-seam
 installTransport(transformRequest);
 installXhrWarning();
+// panel-host: the script's only DOM surface, human-facing only → docs/modules/janitor-panel.md#what-it-is
+installPanel();
 
 })();
