@@ -1,5 +1,5 @@
 # Brief 0038 — Janitor stream-side boundary suppression and per-route `stop` rejection learning
-Status: implemented
+Status: done
 Complexity: high  (owns INV-2 on the response side of this host, rewrites provider frames for the first time, widens the shell's transform seam, adds a second storage key, and rebuilds the committed bundle)
 PLAN sections: §8 (the hard boundary is the bare reserved literal at a block start; when the backend has no usable stop-string support the boundary must be enforced on the stream instead), §14 (the generation ends at the handoff and an empty completion is the correct record of it — no filler is synthesised into the manuscript), §23 (a host supplies behaviours, not APIs: the stop parameter and the stream cut are two implementations of the same §23 requirement), §27 (nothing the rewriter emits may make the transport legible to the reader or the model)
 Invariants touched: INV-2 (the stream cut is the fallback the invariant names for backends that ignore stop strings), INV-8 (the rewriter decides whether a generation ended deliberately, which is what exempts it from brief 0037's rollback)
