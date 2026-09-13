@@ -1,6 +1,6 @@
 # 0007 — Janitor host deviations from the SillyTavern implementation
 Date: 2026-09-13
-Brief: docs/briefs/0031-selectcut-last-message-clamp.md, docs/briefs/0032-janitor-identity-storage-shim.md
+Brief: docs/briefs/0031-selectcut-last-message-clamp.md, docs/briefs/0032-janitor-identity-storage-shim.md, docs/briefs/0033-janitor-request-transform.md
 PLAN: §3, §9, §10, §16, §17, §23, §27
 
 The second host reaches the model through the provider request rather than through a chat log it owns. Where that forces the protocol's mechanics to be arranged differently from the SillyTavern extension, the difference is recorded here. Each section is written by the brief that made the deviation; brief 0033 extends this record.
@@ -37,3 +37,28 @@ The cost is the occurrence index: delete the earlier of two byte-identical messa
 - **Envelope positional ids.** `/generateAlpha` numbers its `chatMessages`, and the numbering is positional (`docs/api/janitor.md`, 2026-09-13): every deletion renumbers everything after it. Decision 0004 already rejected index-derived ids on the SillyTavern host, for the identity reason (they repair badly) and for the INV-10 reason (a stored index is a record of where in the exchange a turn sat — the interaction topology the protocol exists to discard). Neither objection is weaker here. The envelope ids are used for alignment inside a single request and never stored.
 - **A stored parallel array keyed by position** — state keeps `['first turn text', 'second turn text', …]` and matches by index. Same objection twice over: the index is topology, and it is invalidated by the first deletion or reorder. It also stores a second copy of the manuscript's uncompiled text, which is the accumulation decision 0004 removed.
 - **Asking the human to keep the chat append-only.** A protocol rule that depends on the collaborator not using the host's edit button is not a rule, and §10 explicitly grants manuscript-wide editing within the mutable frontier.
+
+## Script-enforced horizon
+
+The provider window is finite and a manuscript grows without bound, so something has to decide what leaves the request. On SillyTavern the host does it: the extension hands over a reconstructed chat and SillyTavern's own context management trims it. On Janitor the script assembles the final body itself, and whatever Janitor would have trimmed it has already trimmed before `/generateAlpha` — the script's body replaces that history wholesale.
+
+So the script carries its own window policy (`docs/modules/janitor-adapter.md#transport-horizon`): a fixed budget of 100,000 estimated tokens, hysteresis down to 80% of it once exceeded, whole `[final, control]` pairs dropped from the front, and span 0 — the §19 seed or the character greeting — pinned. The frontier turn and the edge control are never touched, and canonical state is never written, so this is invisible to `state.frozen`, to Export and to every compilation horizon in PLAN §18. It is a transport-window policy and nothing else.
+
+The budget is a constant rather than a setting because PLAN.txt names no such choice as host-selectable and because 128k (`docs/api/janitor.md#the-context-window-is-128k-tokens`) minus room for the assembled system message and a full-length response is not a number a human needs to tune.
+
+### Alternatives rejected (horizon)
+
+- **Reading Janitor's own context-size setting from `generation_settings`.** The field name for the 128k window and its truncation unit are an open ledger item (`docs/api/janitor.md#open`); reading a field whose name is a guess means either silently reading `undefined` and falling back anyway, or reading a number in the wrong unit and trimming by a factor of four. A constant that is deliberately under the known window is honest about what is known. If the ledger item is ever answered, this section is what gets revisited.
+- **Trimming the frontier instead of dropping finals.** The frontier text and `derived.segments` share one offset space and the watermark is computed by mapping a cut offset back through those segments (`docs/modules/freeze.md#watermark-mapping`). A transport-level trim of the frontier would desynchronise the watermark from the text the next derivation produces, and it would hide uncompiled human contributions from the model while leaving them in the manuscript — the frontier is exactly the part that may not be edited by the transport.
+- **Dropping single messages instead of whole pairs.** A final without its continuation control puts two assistant turns next to each other, which is transport shape leaking into the fiction (§27), and the resulting prefix changes every turn instead of every few turns.
+
+## Trailing prefill stripped
+
+Janitor appends its configured prefill text as a trailing `assistant` message. The reconstructed request drops it, because every non-system message is replaced and `buildHistory` ends on the continuation control (`docs/modules/janitor-adapter.md#prefill-strip`).
+
+It is a protocol violation and a compatibility hazard at once. Under §27 the model must perceive a continuous manuscript: a prefill is a fragment of transport configuration presented as the beginning of the model's own next turn, which is neither manuscript nor the continuation control, and it would sit directly against the boundary machinery INV-2 puts at the edge. And a trailing assistant turn is the request shape modern Gemini refuses outright, which is the same shape `JANITOR_LEAD_IN` exists to avoid at the other end of the array.
+
+### Alternatives rejected (prefill)
+
+- **Folding the prefill into the continuation control.** The control is byte-identical in frozen history by INV-4 and §13 (`CONTINUATION_CONTROL` is imported, never re-composed); appending a user-configured string to it would break every cached prefix and make the control a function of Janitor's settings.
+- **Passing the prefill through and relying on the provider.** Providers disagree about trailing assistant turns, and the ones that accept it treat it as text the model has already written — so the prefill would be indistinguishable from manuscript to the model and absent from canonical state.
