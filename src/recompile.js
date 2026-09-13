@@ -2,7 +2,8 @@ import { getCtx } from './host.js';
 import { METADATA_KEY } from './constants.js';
 import { reservedLiteral } from './boundary.js';
 import { assignIds, deriveFrontier } from './derive.js';
-import { createState, save } from './state.js';
+import { createState } from './state.js';
+import { save } from './state-host.js';
 import { compileUnit } from './freeze.js';
 
 // loop-bound: hard stop, the state already guarantees termination → docs/modules/recompile.md#loop

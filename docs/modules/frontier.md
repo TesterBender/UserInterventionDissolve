@@ -48,6 +48,8 @@ The generation type selects the **derivation scope** as well as whether to recon
 
 The derivation is repeated in full on every request, with no cache, no dirty flag and no debounce (`docs/modules/derive.md#purity`); the reserved literal is resolved fresh per request from `boundary` (`docs/modules/boundary.md#reserved-literal`), the same source the stop string uses.
 
+The body is `src/frontier-host.js`; `buildHistory`, `applyToRequestChat`, `shouldReconstruct` and `regeneratesLastMessage` stayed in `src/frontier.js` unchanged (`docs/modules/host.md#host-shell`). The reconstruction INV-4 and INV-5 rest on is therefore the same code on every host, proved by the same tests.
+
 `ctx` is a defaulted parameter so tests can inject a host without a global (`docs/decisions/0002-structure-from-intercede.md`), and it is never cached (`docs/api/sillytavern.md#getcontext`). `contextSize` is accepted and ignored: no trimming, no budget arithmetic, no dropping of frozen spans to fit. `abort` is accepted and never called — this module has no failure mode that should cancel a generation; an empty or malformed state simply leaves the request array alone. Nothing is persisted: no `saveMetadata`, no `saveChat`, no mutation of canonical state. `getState` may lazily materialise state on first read (`docs/modules/state.md#lazy-init`); that is `state`'s documented behaviour, and this module adds no persistence of its own.
 
 ## Generation types this module skips {#skipped-generation-types}

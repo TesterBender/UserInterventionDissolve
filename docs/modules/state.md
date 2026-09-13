@@ -38,6 +38,8 @@ The materialised object is empty: no frozen spans, no consumed ids, no watermark
 
 This keeps installation inert: opening a chat and doing nothing leaves the chat file byte-identical, and a user who installs and uninstalls the extension without interacting leaves no residue. It also means there is exactly one code path that produces state, so the "chat that existed before the extension" and the "chat created after" cases cannot diverge.
 
+`getState` lives in `src/state-host.js`, not here: it is the only reader of `ctx.chatMetadata` (`docs/modules/host.md#host-shell`). The rest of the module is host-free, so a second host can import `createState`/`pushUnit`/`sealUnits` directly and supply its own storage.
+
 ## Mutation is storage
 
 `getState` returns the stored object itself, not a copy. `pushFrozen` and `advanceWatermark` mutate that object in place, so a mutation is immediately visible at `chatMetadata[METADATA_KEY]` with no write-back step; persisting it to disk is a separate `save()` call. This is intentional: one object, one owner, no reconciliation between a working copy and a stored copy, and no window in which the two disagree. Callers must not hold a state object across a chat change — `getState()` is cheap and is called fresh where it is needed.
@@ -82,4 +84,4 @@ Discarding rather than migrating is safer than guessing, and simpler than carryi
 
 ## Save
 
-`save(ctx)` awaits `ctx.saveMetadata()` and does nothing else. Only metadata changes in this module, so `saveChat` is not called. Intercede's real-install sequence saves chat then metadata (`docs/api/sillytavern.md#chat-metadata`), and the `saveChat` leg belongs to the module that edits `chat[]` messages — `recovery`. There is no debounced variant here: the protocol's writes are request-scoped, not keystroke-scoped, and a debounced save could lose a freeze to a reload.
+`save(ctx)` lives in `src/state-host.js` (`docs/modules/host.md#host-shell`). It awaits `ctx.saveMetadata()` and does nothing else. Only metadata changes in this module, so `saveChat` is not called. Intercede's real-install sequence saves chat then metadata (`docs/api/sillytavern.md#chat-metadata`), and the `saveChat` leg belongs to the module that edits `chat[]` messages — `recovery`. There is no debounced variant here: the protocol's writes are request-scoped, not keystroke-scoped, and a debounced save could lose a freeze to a reload.

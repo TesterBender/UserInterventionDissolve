@@ -8,6 +8,8 @@ import {
   applyStopStrings,
   findBoundary,
   trimAtBoundary,
+} from '../src/boundary.js';
+import {
   resetBoundaryState,
   suspendBoundary,
   onGenerationStarted,
@@ -15,7 +17,7 @@ import {
   onTextCompletionSettings,
   onStreamToken,
   onMessageReceived,
-} from '../src/boundary.js';
+} from '../src/boundary-host.js';
 
 const LITERAL = 'Mara:';
 

@@ -1,5 +1,5 @@
 # Brief 0034 — Split host-bound wrappers out of the lifted src/ modules
-Status: draft
+Status: implemented
 Complexity: high  (touches `src/frontier.js`, `src/state.js`, `src/boundary.js`, `src/freeze.js` and `index.js`; the INV-4/INV-5 reconstruction tests must survive byte-identical)
 PLAN sections: §12 (immediate frontier normalization — `buildHistory`/`applyToRequestChat`/`shouldReconstruct` are the reconstruction and must stay exactly what they are; only the SillyTavern *call site* moves), §23 (what a host must provide — the protocol is host-independent, so the code that expresses the protocol must be importable without a host)
 Invariants touched: INV-4, INV-5 (the reconstruction is the moved-around code's neighbour; nothing in it may change), INV-6 (`compileUnit` and `sealUnits` keep their current bodies and callers), INV-2 (`reservedLiteral`, `applyStopStrings`, `findBoundary`, `trimAtBoundary` stay in `src/boundary.js` unchanged)
@@ -76,16 +76,16 @@ No new API is introduced; if the implementer finds an anchor above that does not
 - (empty) No new SillyTavern API is used. Every call site listed above already exists in the repository and only changes file.
 
 ## Acceptance
-- [ ] `git diff` for every moved function shows relocation only: the moved text in the new file is byte-identical to the removed text in the old file, pointer comments included.
-- [ ] `src/state.js`, `src/frontier.js`, `src/boundary.js`, `src/freeze.js`, `src/derive.js`, `src/grammar.js`, `src/prompt.js`, `src/constants.js` contain no `host.js` import, and a transitive walk from each of them reaches neither `src/host.js` nor the string `SillyTavern`.
-- [ ] `buildJanitorBundle(tests/janitor/fixtures/lifted-entry.js)` succeeds (no duplicate top-level name, no cycle) and its output contains no `SillyTavern`; the committed `dist/janitor-manuscript-dissolve.user.js` contains no `SillyTavern`.
-- [ ] The isolation walk fails loudly on a deliberately introduced `src/host.js` import (assert the negative case with a temporary in-test fixture path, not by editing a real file).
-- [ ] `tests/frontier.test.js`, `tests/freeze.test.js`, `tests/boundary.test.js`, `tests/recovery.test.js`, `tests/state.test.js` differ from their previous versions in import lines only, except the single `src/state.js` export-surface assertion; the INV-4/INV-5 reconstruction assertions are byte-identical.
-- [ ] `tests/state.test.js` asserts `src/state.js` exports exactly `advanceWatermark`, `canPushSpan`, `createState`, `pushFrozen`, `pushUnit`, `sealUnits`, and `src/state-host.js` exports exactly `getState`, `save`.
-- [ ] `index.js` has the same runtime behaviour: the extension's interceptor global, its event subscriptions and its slash commands are wired exactly as before (`tests/bootstrap.test.js` passes unchanged apart from import lines).
-- [ ] `janitor/**` and `dist/**` are byte-identical to their pre-brief state.
-- [ ] `npm run check` passes
-- [ ] every new pointer comment resolves (`node tools/check-comments.mjs`)
+- [x] `git diff` for every moved function shows relocation only: the moved text in the new file is byte-identical to the removed text in the old file, pointer comments included.
+- [x] `src/state.js`, `src/frontier.js`, `src/boundary.js`, `src/freeze.js`, `src/derive.js`, `src/grammar.js`, `src/prompt.js`, `src/constants.js` contain no `host.js` import, and a transitive walk from each of them reaches neither `src/host.js` nor the string `SillyTavern`.
+- [x] `buildJanitorBundle(tests/janitor/fixtures/lifted-entry.js)` succeeds (no duplicate top-level name, no cycle) and its output contains no `SillyTavern`; the committed `dist/janitor-manuscript-dissolve.user.js` contains no `SillyTavern`.
+- [x] The isolation walk fails loudly on a deliberately introduced `src/host.js` import (assert the negative case with a temporary in-test fixture path, not by editing a real file).
+- [x] `tests/frontier.test.js`, `tests/freeze.test.js`, `tests/boundary.test.js`, `tests/recovery.test.js`, `tests/state.test.js` differ from their previous versions in import lines only, except the single `src/state.js` export-surface assertion; the INV-4/INV-5 reconstruction assertions are byte-identical.
+- [x] `tests/state.test.js` asserts `src/state.js` exports exactly `advanceWatermark`, `canPushSpan`, `createState`, `pushFrozen`, `pushUnit`, `sealUnits`, and `src/state-host.js` exports exactly `getState`, `save`.
+- [x] `index.js` has the same runtime behaviour: the extension's interceptor global, its event subscriptions and its slash commands are wired exactly as before (`tests/bootstrap.test.js` passes unchanged apart from import lines).
+- [x] `janitor/**` and `dist/**` are byte-identical to their pre-brief state.
+- [x] `npm run check` passes
+- [x] every new pointer comment resolves (`node tools/check-comments.mjs`)
 
 ## Docs to write/update
 - `docs/modules/host.md` — new `## Host shell modules {#host-shell}`: the `x.js` / `x-host.js` convention; the rule that a pure module may never import `./host.js` and that the seam is enforced by `tests/janitor/isolation.test.js`'s import walk, not by convention alone; which four pairs exist; why siblings rather than one aggregate (the three reasons above); and that `recovery`, `recompile`, `starter` and `ui/settings` are host-side in whole, with `recovery`/`recompile` explicitly deferred to the response-side Janitor brief.
@@ -93,3 +93,7 @@ No new API is introduced; if the implementer finds an anchor above that does not
 - `docs/modules/frontier.md#interceptor-body` — record that the interceptor body is `src/frontier-host.js` and that `buildHistory`/`applyToRequestChat`/`shouldReconstruct`/`regeneratesLastMessage` stayed in `src/frontier.js` unchanged, so INV-4/INV-5 are proved by the same tests against the same code on both hosts.
 - `docs/modules/boundary.md#stream-fallback` (or `#suspension`, whichever the pointer comments target) — the split: the literal and the four pure text functions stay in `src/boundary.js`; the per-generation state and the five event handlers are `src/boundary-host.js`. Note that `applyStopStrings` is therefore importable by a non-SillyTavern host (INV-2 travels with it).
 - `docs/modules/freeze.md#frozen-edit-notice` — the notice and its toast live in `src/freeze-host.js`; `selectCut`/`compileUnit`/`countWords` are host-free.
+
+## Implementation note
+
+One assertion beyond the permitted `src/state.js` export-surface change: `tests/freeze.test.js`'s `SOURCE` fixture line now reads `src/freeze.js` **and** `src/freeze-host.js` and joins them. Every `it(...)` body and expectation in that file is byte-identical; without it the pre-existing expectations `export function noticeFrozenEdit` and `getCtx()` count of 1 would assert against text the brief itself moved out of `src/freeze.js`.

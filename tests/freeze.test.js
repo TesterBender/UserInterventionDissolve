@@ -1,7 +1,8 @@
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
 import fs from 'node:fs';
 import path from 'node:path';
-import { countWords, selectCut, compileUnit, noticeFrozenEdit, FROZEN_EDIT_NOTICE } from '../src/freeze.js';
+import { countWords, selectCut, compileUnit } from '../src/freeze.js';
+import { noticeFrozenEdit, FROZEN_EDIT_NOTICE } from '../src/freeze-host.js';
 import { createState, pushFrozen } from '../src/state.js';
 import { deriveFrontier } from '../src/derive.js';
 import { isTrailingBlockComplete, parseManuscript, groupSpans } from '../src/grammar.js';
@@ -17,7 +18,9 @@ import {
 
 const LITERAL = 'Mara:';
 const ABSENT = 'Zed:';
-const SOURCE = fs.readFileSync(path.join(process.cwd(), 'src/freeze.js'), 'utf8');
+const SOURCE = ['src/freeze.js', 'src/freeze-host.js']
+  .map((file) => fs.readFileSync(path.join(process.cwd(), file), 'utf8'))
+  .join('\n');
 
 function buf(n, label = 'w') {
   const parts = [];

@@ -56,6 +56,8 @@ Two consequences follow from the host. The abort check runs *before* the emit fo
 
 The stop fires at most once per generation: `stoppedThisGeneration` is set before the call and cleared only by `onGenerationStarted`. `text` is cumulative, so without that flag every subsequent chunk would call `stopGeneration` again.
 
+This handler, the four other event handlers and the per-generation state live in `src/boundary-host.js`. `reservedLiteral`, `applyStopStrings`, `findBoundary` and `trimAtBoundary` stay in `src/boundary.js`, which imports no host (`docs/modules/host.md#host-shell`) — so a non-SillyTavern host can import `applyStopStrings` and INV-2 travels with it.
+
 ## Receipt-side trim {#receipt-trim}
 
 `onMessageReceived` is the last line of defence and the only one that changes stored history. For a non-user message whose `mes` contains the literal at a block start, it sets `mes` to everything before that index with trailing whitespace stripped, mirrors the same string into `swipes[swipe_id]` when that entry exists (editing an assistant message in place must update the active swipe too — `docs/api/sillytavern.md#message-shape`), sets the boundary marker, re-renders, and `await`s `saveChat()`. A message with no block-start occurrence is not written to, not re-rendered and not saved.

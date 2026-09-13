@@ -1,39 +1,9 @@
-import { getCtx } from './host.js';
-import { METADATA_KEY, STATE_VERSION, LOG_PREFIX, BLOCK_DELIMITER } from './constants.js';
+import { STATE_VERSION, BLOCK_DELIMITER } from './constants.js';
 import { isTrailingBlockComplete } from './grammar.js';
-
-// unknown-version: warn once per stored object, never migrate → docs/modules/state.md#unknown-version
-const warned = new WeakSet();
-
-function warnOnce(stored) {
-  if (warned.has(stored)) return;
-  warned.add(stored);
-  console.warn(`${LOG_PREFIX} unknown state version: ${stored.version}`);
-}
 
 // state-shape: final spans, unsealed units, consumed ids, one watermark → docs/modules/state.md#shape
 export function createState() {
   return { version: STATE_VERSION, frozen: [], units: [], frozenIds: [], watermark: { messageId: null, offset: 0 } };
-}
-
-// lazy-init: materialised on first read, assigned but not saved → docs/modules/state.md#lazy-init
-export function getState(ctx = getCtx()) {
-  const stored = ctx.chatMetadata?.[METADATA_KEY];
-  // v2-upgrade: units added in place, existing spans stay final → docs/modules/state.md#unknown-version
-  if (stored !== undefined && stored.version === 2) {
-    stored.units = [];
-    stored.version = STATE_VERSION;
-    return stored;
-  }
-
-  if (stored === undefined || stored.version !== STATE_VERSION) {
-    if (stored !== undefined) warnOnce(stored);
-    const state = createState();
-    ctx.chatMetadata[METADATA_KEY] = state;
-    return state;
-  }
-
-  return stored;
 }
 
 // can-push-span: the accept test both push paths and freeze's pre-check share → docs/modules/state.md#can-push-span
@@ -85,9 +55,4 @@ export function advanceWatermark(state, { messageId, offset, consumedIds }) {
     state.frozenIds.push(id);
   }
   state.watermark = { messageId: messageId ?? null, offset: Number.isFinite(offset) ? offset : 0 };
-}
-
-// save-metadata-only: message markers are saved by their own handlers → docs/modules/state.md#save
-export async function save(ctx = getCtx()) {
-  await ctx.saveMetadata();
 }

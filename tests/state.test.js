@@ -3,9 +3,11 @@ import fs from 'node:fs';
 import path from 'node:path';
 import { installFakeContext, uninstall, makeMessage } from './helpers/fake-context.js';
 import { METADATA_KEY, STATE_VERSION, INTERCEPTOR_GLOBAL, BLOCK_DELIMITER } from '../src/constants.js';
-import { createState, getState, pushFrozen, pushUnit, sealUnits, canPushSpan, save, advanceWatermark } from '../src/state.js';
+import { createState, pushFrozen, pushUnit, sealUnits, canPushSpan, advanceWatermark } from '../src/state.js';
+import { getState, save } from '../src/state-host.js';
 import { deriveFrontier } from '../src/derive.js';
 import * as stateModule from '../src/state.js';
+import * as stateHostModule from '../src/state-host.js';
 
 const COMPLETE = 'Anton: he reaches for the lamp.';
 const INCOMPLETE = 'Anton: he reaches for the';
@@ -208,12 +210,14 @@ describe('pushFrozen', () => {
       'advanceWatermark',
       'canPushSpan',
       'createState',
-      'getState',
       'pushFrozen',
       'pushUnit',
-      'save',
       'sealUnits',
     ]);
+  });
+
+  it('keeps the host-bound pair in src/state-host.js', () => {
+    expect(Object.keys(stateHostModule).sort()).toEqual(['getState', 'save']);
   });
 });
 

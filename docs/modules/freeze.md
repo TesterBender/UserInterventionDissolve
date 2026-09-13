@@ -147,6 +147,8 @@ The **watermark message is deliberately excluded**. Only its head has been compi
 
 `toastr` is a page global in SillyTavern, not an import (`docs/api/sillytavern.md#toastr`), so the call is `globalThis.toastr?.info(...)`: message only, no title, no options, and no console fallback — a host without the global simply shows nothing, which is the correct failure mode for an advisory notice.
 
+The notice and its toast live in `src/freeze-host.js`; `selectCut`, `compileUnit` and `countWords` are host-free and stay in `src/freeze.js` (`docs/modules/host.md#host-shell`).
+
 ## Three horizons {#three-horizons}
 
 PLAN §18 keeps three lengths independent: how long a single generation runs, how long the human's authorship turn is, and how much manuscript one transport span carries. This module owns the transport horizon only, and it is keyed to nothing but frontier text. It counts no generations, no external-character appearances and no elapsed time, and it has no "freeze after N turns" path.
