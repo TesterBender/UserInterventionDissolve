@@ -1,5 +1,5 @@
 # Brief 0040 — Janitor panel: shadow-DOM launcher, status line, Recompile, Export/Import, cross-tab listener
-Status: implemented
+Status: done
 Complexity: high  (it adds the script's first DOM surface and its first cross-tab listener, and it wires a second install call into the build entry)
 PLAN sections: §10 (the rebuild is editorial authority and must be collaborator-initiated — this is the only place a human can ask for it), §23 (the host contract includes giving the human a way to see and keep canonical state, which this host otherwise hides in `localStorage`), §27 (the panel is human-facing and sits outside the model's world; nothing it renders may ever enter a request)
 Invariants touched: INV-6 (the panel reports an edit to compiled text and offers a rebuild; it never repairs a span), INV-10 (the exported JSON and everything the panel renders stay on the page — no id, hash or offset may reach a request through this surface)
