@@ -94,6 +94,9 @@ No new API is introduced; if the implementer finds an anchor above that does not
 - `docs/modules/boundary.md#stream-fallback` (or `#suspension`, whichever the pointer comments target) — the split: the literal and the four pure text functions stay in `src/boundary.js`; the per-generation state and the five event handlers are `src/boundary-host.js`. Note that `applyStopStrings` is therefore importable by a non-SillyTavern host (INV-2 travels with it).
 - `docs/modules/freeze.md#frozen-edit-notice` — the notice and its toast live in `src/freeze-host.js`; `selectCut`/`compileUnit`/`countWords` are host-free.
 
-## Implementation note
+## Amendment 1 (2026-09-14)
 
-One assertion beyond the permitted `src/state.js` export-surface change: `tests/freeze.test.js`'s `SOURCE` fixture line now reads `src/freeze.js` **and** `src/freeze-host.js` and joins them. Every `it(...)` body and expectation in that file is byte-identical; without it the pre-existing expectations `export function noticeFrozenEdit` and `getCtx()` count of 1 would assert against text the brief itself moved out of `src/freeze.js`.
+Orchestrator clarification after the scope audit; no code change.
+
+1. The test bullet permits import-specifier edits only. It is amended to also permit one fixture edit: `tests/freeze.test.js` reads `src/freeze.js` **and** `src/freeze-host.js` and joins them for its `SOURCE` fixture, because its pre-existing text assertions (`export function noticeFrozenEdit`, one `getCtx()` call) target lines this brief moves into the sibling. Every `it(...)` body and expectation stays byte-identical.
+2. The "must not touch `docs/briefs/**`" line does not cover the lifecycle bookkeeping of this brief itself (Status line, acceptance ticks), per `docs/workflow/workflow.md#brief-lifecycle`.
