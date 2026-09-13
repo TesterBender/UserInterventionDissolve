@@ -75,11 +75,17 @@ status: assumed — decided 2026-09-13, unverified
 
 Assumption: Janitor persists the text the page received from the (script-wrapped) stream, not an internal accumulator fed by a terminal event. If this is wrong, a later stream-side cut shows up as a saved message that continues past the cut; the model view stays correct because the next derivation trims at the literal, and only the human-visible log leaks. Endpoint and payload are not captured.
 
+## The context window is 128k tokens
+
+status: answered — captured 2026-09-13
+
+Janitor's total context size setting is 128,000 tokens (user report). The script's horizon budget of 100,000 tokens (brief 0033) sits under it with room for the assembled system message and a full-length response (the response cap is ~19k characters). The name of the field in `generation_settings` and whether Janitor trims by tokens or by messages are still open.
+
 ## Open
 
 No answers are invented for these; nothing in phase 2 depends on any of them.
 
-- The `generation_settings` context-size field and its truncation unit (tokens or messages). Related, captured 2026-09-13: the *response*-length setting is in characters, capped at 20,000, landing near 19k characters in practice — an output ceiling, not the history window.
+- The `generation_settings` field name for the 128k context window and its truncation unit (tokens or messages). Related, captured 2026-09-13: the *response*-length setting is in characters, capped at 20,000, landing near 19k characters in practice — an output ceiling, not the history window.
 - Whether Janitor's composer stores the sentinel literal `//` verbatim.
 - The Anthropic path: `/v1/messages` with a top-level `system`, or a converted chat body.
 - Behaviour on a completion that ends at a stop sequence, and on an early stream close with no terminal frames.
