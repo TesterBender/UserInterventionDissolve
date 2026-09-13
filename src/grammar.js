@@ -10,10 +10,6 @@ const NEUTRAL_HEADER = /^∅:(?=\s|$)/u;
 // block-completeness: terminal punctuation plus balanced double quotes → docs/modules/grammar.md#block-completeness
 const TERMINAL = /[.!?…]["”'’)\]*]*$/;
 
-function normalise(name) {
-  return name.trim().toLowerCase();
-}
-
 function trimRange(text, start, end) {
   let s = start;
   let e = end;
@@ -96,15 +92,6 @@ export function groupSpans(blocks, options = {}) {
     });
   });
   return spans;
-}
-
-// actor-classification: individual vs aggregate against a caller-supplied set → docs/modules/grammar.md#actor-classification
-export function classifyActor(actor, individuatedActors) {
-  const key = normalise(actor);
-  for (const member of individuatedActors) {
-    if (normalise(member) === key) return 'individual';
-  }
-  return 'aggregate';
 }
 
 // tag-literal-lookup: caller names the actor; grammar knows no character → docs/modules/grammar.md#tag-literal-lookup

@@ -2,7 +2,6 @@ import { describe, it, expect } from 'vitest';
 import {
   parseManuscript,
   parseTagHeader,
-  classifyActor,
   groupSpans,
   findTagLiteral,
   isTrailingBlockComplete,
@@ -216,15 +215,6 @@ describe('groupSpans', () => {
     }
     expect(spans.flatMap((span) => span.blockIndices)).toEqual(blocks.map((_, i) => i));
     expect(groupSpans([])).toEqual([]);
-  });
-});
-
-describe('classifyActor', () => {
-  it('reports individual and aggregate', () => {
-    expect(classifyActor('anton', ['Anton'])).toBe('individual');
-    expect(classifyActor('Anton', new Set(['Anton']))).toBe('individual');
-    expect(classifyActor('The guards', ['Anton'])).toBe('aggregate');
-    expect(classifyActor('Everyone', ['Anton'])).toBe('aggregate');
   });
 });
 
