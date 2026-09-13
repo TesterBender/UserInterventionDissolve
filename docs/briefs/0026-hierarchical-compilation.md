@@ -97,6 +97,9 @@ Compilation becomes two-tier. A cut at the existing 3,000–4,200-word target no
 
 ## Amendment 1 (orchestrator, 2026-09-13)
 
-`sealUnits` must honour `pushFrozen`'s boolean: when the push is refused it leaves `state.units` untouched and returns `false`, so no text is lost and no caller can read a `frozen` entry that was never created. `compileUnit`'s seal step handles a `false` seal by reporting no seal in `seals` and carrying on. Covered by a test that forces the refusal with a mid-block unit text and asserts `units` and `frozen` unchanged (`tests/state.test.js`, `tests/freeze.test.js`).
+`sealUnits` must honour `pushFrozen`'s boolean: when the push is refused it leaves `state.units` untouched and returns `false`, so no text is lost and no caller can read a `frozen` entry that was never created. `compileUnit`'s seal step handles a `false` seal by recording no entry in `seals`.
 
-- [x] `sealUnits` returns `false` and keeps the units when `pushFrozen` refuses; `compileUnit` reports no seal
+Revised after re-audit (INV-6, addendum §16.4): when the **ceiling guard** is the seal that was refused, `compileUnit` **stalls** — it does not push the new unit, does not advance the watermark, returns `null` with the state byte-identical, and warns once per state object (`console.warn` with `LOG_PREFIX`). Pushing anyway would build the over-ceiling combination the guard exists to prevent, and the post-push clause would then seal it as one oversized final. The ceiling therefore holds under any state, including an unsealable unit set.
+
+- [x] `sealUnits` returns `false` and keeps the units when `pushFrozen` refuses; `compileUnit` records no seal
+- [x] a refused ceiling-guard seal yields `null` with no new unit, `units`, `frozen`, `frozenIds` and `watermark` unchanged, and one warning per state

@@ -1,7 +1,14 @@
 import { getCtx } from './host.js';
 import { parseManuscript, groupSpans } from './grammar.js';
 import { getState, canPushSpan, pushUnit, sealUnits, advanceWatermark } from './state.js';
-import { METADATA_KEY, FREEZE_MIN_WORDS, FREEZE_MAX_WORDS, FINAL_MIN_WORDS, FINAL_MAX_WORDS } from './constants.js';
+import {
+  METADATA_KEY,
+  LOG_PREFIX,
+  FREEZE_MIN_WORDS,
+  FREEZE_MAX_WORDS,
+  FINAL_MIN_WORDS,
+  FINAL_MAX_WORDS,
+} from './constants.js';
 
 // sentence-final: copy of grammar's private TERMINAL → docs/modules/freeze.md#salience-heuristics
 const SENTENCE_FINAL = /[.!?…]["”'’)\]*]*$/;
@@ -129,6 +136,15 @@ function unitsWords(state) {
   return state.units.reduce((total, unit) => total + unit.words, 0);
 }
 
+// stall-warning: one warn per state whose units cannot be sealed → docs/modules/freeze.md#seal-policy
+const stalled = new WeakSet();
+
+function warnStalled(state) {
+  if (stalled.has(state)) return;
+  stalled.add(state);
+  console.warn(`${LOG_PREFIX} compilation stalled: the compiled units cannot be sealed`);
+}
+
 // seal-record: one entry per seal, none when the push was refused → docs/modules/freeze.md#seal-policy
 function seal(state, seals) {
   const frozenIndex = sealUnits(state);
@@ -167,7 +183,14 @@ export function compileUnit(state, derived, literal, opts = {}) {
 
   const seals = [];
   // ceiling-guard: a combination above the ceiling is never created → docs/modules/freeze.md#seal-policy
-  if (state.units.length > 0 && unitsWords(state) + cut.words > FINAL_MAX_WORDS) seal(state, seals);
+  if (state.units.length > 0 && unitsWords(state) + cut.words > FINAL_MAX_WORDS) {
+    seal(state, seals);
+    // ceiling-stall: a refused seal stops the push, state byte-identical → docs/modules/freeze.md#seal-policy
+    if (seals.length === 0) {
+      warnStalled(state);
+      return null;
+    }
+  }
 
   pushUnit(state, { text, words: cut.words });
   advanceWatermark(state, { messageId, offset, consumedIds });
