@@ -1806,7 +1806,7 @@ function transformRequest(data, context) {
   let derived = deriveFrontier(shaped, state, literal);
 
   let froze = false;
-  // rebuild-here: the loop needs the same shaped, trimmed, identified entries → docs/modules/janitor-adapter.md#recompile
+  // rebuild-here: the loop needs the same shaped, trimmed, identified entries → docs/modules/janitor-adapter.md#request-pipeline
   if (rebuilding) {
     rebuildState(shaped, literal, state);
     saveJanitorState(context.chatId, state);
