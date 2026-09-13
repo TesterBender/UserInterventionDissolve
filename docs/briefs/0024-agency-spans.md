@@ -1,5 +1,5 @@
 # Brief 0024 — carry the agency-span grammar in code
-Status: implemented
+Status: done
 Complexity: high
 PLAN sections: §5 (a manuscript is atomic blocks separated by a blank line; a block is a tag block or a buffer block; the compiler never freezes through the middle of a complete block), §9 (the collaborator's input is transformed into manuscript text and merged after the model-generated material, never left as a user turn), §17 (transport cuts may correlate with low-salience structure — mid-passage buffer boundaries, ordinary non-climactic transitions — and must avoid immediately before/after the external character, dense external runs, scene openings and closures), plus `PLAN-addendum-agency-spans.md` §2 (a character header opens a span that persists across paragraphs), §3 (the application recognises headers only where ownership protection needs it and never judges prose as character vs neutral), §9 (the host may recognise `∅:` structurally for safe cut selection; it must never manufacture a neutral buffer), §10 (lint stays advisory — not implemented), §12 (transport must not become aligned with every agency transition), §14 (no state machine deciding when narration enters or leaves neutral scope)
 Invariants touched: INV-1 (commitment occurs through ownership-safe tag blocks — "block" now reads as "span", `docs/protocol/invariants.md#agency-spans`), INV-7 (transport cuts avoid the external character — the avoided unit becomes the external character's *span*, not a single block)
@@ -109,3 +109,6 @@ User decision: rule (b) "should not exist — too heavy-handed and not that impo
 This amendment extends the file allowlist to `src/constants.js`.
 
 - [x] the dense-run rule, its constant and its tests are gone; the starvation case cuts in budget.
+
+## Amendment 2 (orchestrator, 2026-09-13) — reserved literal opens a span
+Scope audit found an INV-7 regression: a reserved literal that `TAG_HEADER` cannot parse (`Anton_S:`, a >40-char name, a leading quote) did not open a span, so its block joined the previous span and a cut could land immediately before the external character. Authorised fix: `groupSpans(blocks, { reservedActor })` opens a `reserved: true` span on any block where `findTagLiteral` hits at block start, independent of `TAG_HEADER`; freeze keys rule (a) on `span.reserved`; regression tests for the three name shapes; heading `docs/modules/grammar.md#reserved-spans`. Re-audit confirmed INV-7 resolved (439 tests).
