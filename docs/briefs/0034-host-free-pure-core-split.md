@@ -1,5 +1,5 @@
 # Brief 0034 — Split host-bound wrappers out of the lifted src/ modules
-Status: implemented
+Status: done
 Complexity: high  (touches `src/frontier.js`, `src/state.js`, `src/boundary.js`, `src/freeze.js` and `index.js`; the INV-4/INV-5 reconstruction tests must survive byte-identical)
 PLAN sections: §12 (immediate frontier normalization — `buildHistory`/`applyToRequestChat`/`shouldReconstruct` are the reconstruction and must stay exactly what they are; only the SillyTavern *call site* moves), §23 (what a host must provide — the protocol is host-independent, so the code that expresses the protocol must be importable without a host)
 Invariants touched: INV-4, INV-5 (the reconstruction is the moved-around code's neighbour; nothing in it may change), INV-6 (`compileUnit` and `sealUnits` keep their current bodies and callers), INV-2 (`reservedLiteral`, `applyStopStrings`, `findBoundary`, `trimAtBoundary` stay in `src/boundary.js` unchanged)

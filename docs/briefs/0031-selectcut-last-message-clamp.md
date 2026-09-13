@@ -1,5 +1,5 @@
 # Brief 0031 — `selectCut` last-message clamp (option)
-Status: implemented
+Status: done
 Complexity: high  (touches INV-6 and INV-7 in the module that owns them; one `src/` module, but every existing cut-selection test is downstream of it)
 PLAN sections: §16 (freezing is append-only, old spans are not re-cut; the target is advisory and belongs to the compiler — a clamp that only *withholds* candidates is inside what §16 licenses), §17 (cut selection: hard safety rules first, preferences after; the clamp is a new hard rule and therefore goes in the hard-rule loop, never into the preference tiers)
 Invariants touched: INV-6 (cut point — the clamp narrows where a cut may land, never widens it), INV-7 (cut selection — the clamp must not be expressible as a preference, or a dense-external-character frontier could cut through the protected region anyway)
